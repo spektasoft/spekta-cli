@@ -85,12 +85,27 @@ export async function runReview() {
     await fs.writeFile(filePath, finalPrompt);
     console.log(`Generated: ${filePath}`);
   } else {
-    // ... AI logic (ensure callAI is awaited)
-    const result = await callAI(
-      env.OPENROUTER_API_KEY!,
-      selection.provider!.model,
-      finalPrompt
-    );
-    await fs.writeFile(filePath, result || "");
+    if (!env.OPENROUTER_API_KEY) {
+      console.error("Configuration Error: Missing OPENROUTER_API_KEY");
+      return;
+    }
+
+    const provider = selection.provider!;
+    const spinner = ora(
+      `AI is reviewing your code using ${provider.model}...`
+    ).start();
+
+    try {
+      const result = await callAI(
+        env.OPENROUTER_API_KEY,
+        provider.model,
+        finalPrompt
+      );
+
+      await fs.writeFile(filePath, result || "");
+      spinner.succeed(`Review saved: ${filePath}`);
+    } catch (error: any) {
+      spinner.fail(`AI Review failed: ${error.message}`);
+    }
   }
 }
