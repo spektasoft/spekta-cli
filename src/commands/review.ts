@@ -52,7 +52,7 @@ export async function runReview() {
     ],
   });
 
-  const dirInfo = getReviewDir(isInitial, folderId);
+  const dirInfo = await getReviewDir(isInitial, folderId);
   const [metadata, diff] = await Promise.all([
     getNextReviewMetadata(dirInfo.dir),
     getGitDiff(start, end, ignorePatterns),

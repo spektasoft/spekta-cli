@@ -1,12 +1,11 @@
 import path from "path";
 import fs from "fs-extra";
 
-export const getReviewDir = (isInitial: boolean, folderId?: string) => {
+export const getReviewDir = async (isInitial: boolean, folderId?: string) => {
   const base = path.join(process.cwd(), "temp", "docs", "reviews");
   if (isInitial) {
     const now = new Date();
 
-    // Use Intl.DateTimeFormat to extract local time components
     const format = (options: Intl.DateTimeFormatOptions) =>
       new Intl.DateTimeFormat("en-GB", options).format(now);
 
@@ -16,15 +15,17 @@ export const getReviewDir = (isInitial: boolean, folderId?: string) => {
     const hour = format({ hour: "2-digit", hour12: false });
     const minute = format({ minute: "2-digit" });
 
-    // Construct ID in YYYYMMDDHHmm format
     const id = `${year}${month}${day}${hour}${minute}`;
 
     const dir = path.join(base, id);
-    fs.ensureDirSync(dir);
+    await fs.ensureDir(dir);
     return { dir, id };
   }
+
   const dir = path.join(base, folderId!);
-  if (!fs.existsSync(dir)) throw new Error("Folder ID not found");
+  if (!(await fs.pathExists(dir))) {
+    throw new Error(`Review folder not found: ${folderId}`);
+  }
   return { dir, id: folderId! };
 };
 
