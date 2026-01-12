@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOME_DIR = path.join(os.homedir(), ".llm-sh");
 const HOME_PROMPTS = path.join(HOME_DIR, "prompts");
 const ASSET_PROMPTS = path.join(__dirname, "prompts");
+const HOME_IGNORE = path.join(HOME_DIR, ".llmignore");
 
 export const bootstrap = () => {
   fs.ensureDirSync(HOME_PROMPTS);
@@ -21,6 +22,19 @@ export const bootstrap = () => {
       }
     }
   }
+
+  if (!fs.existsSync(HOME_IGNORE)) {
+    const defaultIgnores = [
+      "package-lock.json",
+      "yarn.lock",
+      "pnpm-lock.yaml",
+      "composer.lock",
+      "Gemfile.lock",
+      "Cargo.lock",
+      "mix.lock",
+    ].join("\n");
+    fs.writeFileSync(HOME_IGNORE, defaultIgnores);
+  }
 };
 
 export const getEnv = () => {
@@ -29,6 +43,21 @@ export const getEnv = () => {
   if (fs.existsSync(workspaceEnv)) dotenv.config({ path: workspaceEnv });
   else if (fs.existsSync(homeEnv)) dotenv.config({ path: homeEnv });
   return process.env;
+};
+
+export const getIgnorePatterns = (): string[] => {
+  const workspaceIgnore = path.join(process.cwd(), ".llmignore");
+  const targetFile = fs.existsSync(workspaceIgnore)
+    ? workspaceIgnore
+    : HOME_IGNORE;
+
+  if (!fs.existsSync(targetFile)) return [];
+
+  return fs
+    .readFileSync(targetFile, "utf-8")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
 };
 
 export const getProviders = async () => {
