@@ -1,0 +1,8 @@
+{
+    "providers": [
+        {
+            "name": "Model Name",
+            "id": "model-id"
+        }
+    ]
+}
