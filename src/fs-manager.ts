@@ -2,7 +2,7 @@ import path from "path";
 import fs from "fs-extra";
 
 export const getReviewDir = (isInitial: boolean, folderId?: string) => {
-  const base = path.join(process.cwd(), ".temp", "docs", "reviews");
+  const base = path.join(process.cwd(), "temp", "docs", "reviews");
   if (isInitial) {
     const id = new Date().toISOString().replace(/[-T:]/g, "").slice(0, 12);
     const dir = path.join(base, id);
