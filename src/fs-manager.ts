@@ -15,14 +15,33 @@ export const getReviewDir = (isInitial: boolean, folderId?: string) => {
 };
 
 export const getNextReviewMetadata = (dir: string) => {
-  const files = fs
-    .readdirSync(dir)
-    .filter((f) => f.startsWith("r-") && f.endsWith(".md"));
-  if (files.length === 0) return { nextNum: 1, lastFile: null };
-  const nums = files.map((f) => parseInt(f.split("-")[1]));
-  const lastNum = Math.max(...nums);
-  const lastFile = files.find((f) =>
-    f.includes(`r-${String(lastNum).padStart(3, "0")}`)
+  const files = fs.readdirSync(dir);
+
+  // Regex: matches 'r-', captures digits, followed by '-'
+  const sequenceRegex = /^r-(\d+)-/;
+
+  const validFiles = files
+    .map((f) => {
+      const match = f.match(sequenceRegex);
+      if (!match) return null;
+      return {
+        name: f,
+        num: parseInt(match[1], 10),
+      };
+    })
+    .filter((item): item is { name: string; num: number } => item !== null);
+
+  if (validFiles.length === 0) {
+    return { nextNum: 1, lastFile: null };
+  }
+
+  // Find the file with the highest sequence number
+  const lastEntry = validFiles.reduce((prev, current) =>
+    prev.num > current.num ? prev : current
   );
-  return { nextNum: lastNum + 1, lastFile };
+
+  return {
+    nextNum: lastEntry.num + 1,
+    lastFile: lastEntry.name,
+  };
 };
