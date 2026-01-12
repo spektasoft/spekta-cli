@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import { builtinModules } from "module";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
@@ -28,4 +28,7 @@ export default defineConfig({
       ],
     }),
   ],
+  test: {
+    include: ["src/**/*.test.ts"],
+  },
 });
