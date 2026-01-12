@@ -1,8 +1,15 @@
 import { execSync } from "child_process";
 
-export const getGitDiff = (start: string, end: string): string => {
+export const getGitDiff = (
+  start: string,
+  end: string,
+  ignorePatterns: string[] = []
+): string => {
   try {
-    return execSync(`git diff ${start}..${end}`, {
+    const pathspecs = ignorePatterns.map((p) => `':!${p}'`).join(" ");
+    const command = `git diff ${start}..${end} -- . ${pathspecs}`;
+
+    return execSync(command, {
       encoding: "utf-8",
       maxBuffer: 10 * 1024 * 1024,
     });
