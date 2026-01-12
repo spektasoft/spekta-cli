@@ -16,7 +16,6 @@ interface ProvidersConfig {
   providers: Provider[];
 }
 
-// Allow environment variable override for testing
 const GET_HOME_DIR = () =>
   process.env.SPEKTA_HOME_OVERRIDE || path.join(os.homedir(), ".spekta");
 
@@ -24,22 +23,18 @@ export let HOME_DIR = GET_HOME_DIR();
 export let HOME_PROMPTS = path.join(HOME_DIR, "prompts");
 const ASSET_ROOT = __dirname;
 const ASSET_PROMPTS = path.join(ASSET_ROOT, "prompts");
-const HOME_IGNORE = path.join(HOME_DIR, ".llmignore");
+const HOME_IGNORE = path.join(HOME_DIR, ".spektaignore");
 
-/**
- * Updates the paths based on the current home directory logic.
- * Useful for testing when environment variables change.
- */
 export const refreshPaths = () => {
   HOME_DIR = GET_HOME_DIR();
   HOME_PROMPTS = path.join(HOME_DIR, "prompts");
 };
 
-export const bootstrap = () => {
-  fs.ensureDirSync(HOME_DIR);
-  fs.ensureDirSync(HOME_PROMPTS);
+export const bootstrap = async () => {
+  await fs.ensureDir(HOME_DIR);
+  await fs.ensureDir(HOME_PROMPTS);
 
-  if (!fs.existsSync(HOME_IGNORE)) {
+  if (!(await fs.pathExists(HOME_IGNORE))) {
     const defaultIgnores = [
       "package-lock.json",
       "yarn.lock",
@@ -49,50 +44,43 @@ export const bootstrap = () => {
       "Cargo.lock",
       "mix.lock",
     ].join("\n");
-    fs.writeFileSync(HOME_IGNORE, defaultIgnores);
+    await fs.writeFile(HOME_IGNORE, defaultIgnores);
   }
 };
 
-/**
- * Resolves prompt content with fallback logic:
- * 1. Check ~/.spekta/prompts/filename
- * 2. Check internal package dist/filename
- */
-export const getPromptContent = (fileName: string): string => {
+export const getPromptContent = async (fileName: string): Promise<string> => {
   const userPath = path.join(HOME_PROMPTS, fileName);
   const internalPath = path.join(ASSET_PROMPTS, fileName);
 
-  if (fs.existsSync(userPath)) {
-    return fs.readFileSync(userPath, "utf-8");
+  if (await fs.pathExists(userPath)) {
+    return fs.readFile(userPath, "utf-8");
   }
 
-  if (fs.existsSync(internalPath)) {
-    return fs.readFileSync(internalPath, "utf-8");
+  if (await fs.pathExists(internalPath)) {
+    return fs.readFile(internalPath, "utf-8");
   }
 
-  throw new Error(
-    `Prompt template not found: ${fileName}. Searched in ${userPath} and ${internalPath}`
-  );
+  throw new Error(`Prompt template not found: ${fileName}.`);
 };
 
-export const getEnv = () => {
+export const getEnv = async () => {
   const workspaceEnv = path.join(process.cwd(), ".env");
   const homeEnv = path.join(HOME_DIR, ".env");
-  if (fs.existsSync(workspaceEnv)) dotenv.config({ path: workspaceEnv });
-  else if (fs.existsSync(homeEnv)) dotenv.config({ path: homeEnv });
+  if (await fs.pathExists(workspaceEnv)) dotenv.config({ path: workspaceEnv });
+  else if (await fs.pathExists(homeEnv)) dotenv.config({ path: homeEnv });
   return process.env;
 };
 
-export const getIgnorePatterns = (): string[] => {
-  const workspaceIgnore = path.join(process.cwd(), ".llmignore");
-  const targetFile = fs.existsSync(workspaceIgnore)
+export const getIgnorePatterns = async (): Promise<string[]> => {
+  const workspaceIgnore = path.join(process.cwd(), ".spektaignore");
+  const targetFile = (await fs.pathExists(workspaceIgnore))
     ? workspaceIgnore
     : HOME_IGNORE;
 
-  if (!fs.existsSync(targetFile)) return [];
+  if (!(await fs.pathExists(targetFile))) return [];
 
-  return fs
-    .readFileSync(targetFile, "utf-8")
+  const content = await fs.readFile(targetFile, "utf-8");
+  return content
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"));
@@ -100,16 +88,8 @@ export const getIgnorePatterns = (): string[] => {
 
 export const getProviders = async (): Promise<ProvidersConfig> => {
   const configPath = path.join(HOME_DIR, "providers.json");
-  if (!fs.existsSync(configPath)) {
-    throw new Error(
-      `Providers config not found at ${configPath}. Please create it.`
-    );
+  if (!(await fs.pathExists(configPath))) {
+    throw new Error(`Providers config not found at ${configPath}.`);
   }
-  const data = await fs.readJSON(configPath);
-  if (!data.providers || !Array.isArray(data.providers)) {
-    throw new Error(
-      "Invalid providers.json format: expected 'providers' array."
-    );
-  }
-  return data as ProvidersConfig;
+  return fs.readJSON(configPath);
 };
