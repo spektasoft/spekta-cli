@@ -20,7 +20,16 @@ type ProviderChoice = {
 };
 
 export async function runReview() {
-  const { providers } = await getProviders();
+  // Initialization check
+  let providersData;
+  try {
+    providersData = await getProviders();
+  } catch (error: any) {
+    console.error(`Configuration Error: ${error.message}`);
+    return;
+  }
+
+  const { providers } = providersData;
   const env = getEnv();
   const ignorePatterns = getIgnorePatterns();
 
@@ -84,7 +93,12 @@ export async function runReview() {
     fs.writeFileSync(filePath, finalPrompt);
     console.log(`Generated: ${filePath}`);
   } else {
-    if (!env.OPENROUTER_API_KEY) throw new Error("Missing OPENROUTER_API_KEY");
+    if (!env.OPENROUTER_API_KEY) {
+      console.error(
+        "Configuration Error: Missing OPENROUTER_API_KEY environment variable"
+      );
+      return;
+    }
 
     const provider = selection.provider!;
     const spinner = ora(
