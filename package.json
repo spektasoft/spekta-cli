@@ -1,9 +1,9 @@
 {
-    "name": "llm-sh",
+    "name": "spekta-cli",
     "version": "1.0.0",
     "type": "module",
     "bin": {
-        "llm-sh": "./dist/index.js"
+        "spekta": "./dist/index.js"
     },
     "scripts": {
         "build": "vite build",

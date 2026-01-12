@@ -5,7 +5,7 @@ import fs from "fs-extra";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const HOME_DIR = path.join(os.homedir(), ".llm-sh");
+const HOME_DIR = path.join(os.homedir(), ".spekta");
 const HOME_PROMPTS = path.join(HOME_DIR, "prompts");
 const ASSET_ROOT = __dirname; // Points to dist/ in production
 const HOME_IGNORE = path.join(HOME_DIR, ".llmignore");
