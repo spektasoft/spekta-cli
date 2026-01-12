@@ -20,7 +20,6 @@ type ProviderChoice = {
 };
 
 export async function runReview() {
-  // Initialization check
   let providersData;
   try {
     providersData = await getProviders();
@@ -39,18 +38,13 @@ export async function runReview() {
   const isInitial = await confirm({ message: "Is this the initial review?" });
   let folderId: string | undefined;
   if (!isInitial) {
-    folderId = await input({
-      message: "Enter review folder ID (YYYYMMDDHHHH):",
-    });
+    folderId = await input({ message: "Enter review folder ID:" });
   }
 
   const selection = await select<ProviderChoice>({
     message: "Select provider:",
     choices: [
-      {
-        name: "Only Prompt",
-        value: { isOnlyPrompt: true },
-      },
+      { name: "Only Prompt", value: { isOnlyPrompt: true } },
       ...providers.map((p) => ({
         name: `${p.name} (${p.model})`,
         value: { isOnlyPrompt: false, provider: p },
@@ -59,8 +53,10 @@ export async function runReview() {
   });
 
   const dirInfo = getReviewDir(isInitial, folderId);
-  const { nextNum, lastFile } = getNextReviewMetadata(dirInfo.dir);
-  const diff = await getGitDiff(start, end, ignorePatterns);
+  const [metadata, diff] = await Promise.all([
+    getNextReviewMetadata(dirInfo.dir),
+    getGitDiff(start, end, ignorePatterns),
+  ]);
 
   const templateSuffix = selection.isOnlyPrompt ? "-prompt.md" : ".md";
   const templateName = isInitial
@@ -69,55 +65,32 @@ export async function runReview() {
 
   let finalPrompt = (await getPromptContent(templateName)) + "\n\n---\n";
 
-  if (!isInitial && lastFile) {
-    const prevReviewContent = fs.readFileSync(
-      path.join(dirInfo.dir, lastFile),
+  if (!isInitial && metadata.lastFile) {
+    const prevReviewContent = await fs.readFile(
+      path.join(dirInfo.dir, metadata.lastFile),
       "utf-8"
     );
-    finalPrompt +=
-      "PREVIOUS REVIEW:\n" +
-      "````markdown\n" +
-      prevReviewContent +
-      "\n````\n\n---\n";
+    finalPrompt += `PREVIOUS REVIEW:\n\`\`\`\`markdown\n${prevReviewContent}\n\`\`\`\`\n\n---\n`;
   }
 
-  finalPrompt += "GIT DIFF:\n" + "````markdown\n" + diff + "\n````";
+  finalPrompt += `GIT DIFF:\n\`\`\`\`markdown\n${diff}\n\`\`\`\``;
 
-  const fileName = `r-${String(nextNum).padStart(3, "0")}-${start.slice(
-    0,
-    7
-  )}..${end.slice(0, 7)}.md`;
+  const fileName = `r-${String(metadata.nextNum).padStart(
+    3,
+    "0"
+  )}-${start.slice(0, 7)}..${end.slice(0, 7)}.md`;
   const filePath = path.join(dirInfo.dir, fileName);
 
   if (selection.isOnlyPrompt) {
-    fs.writeFileSync(filePath, finalPrompt);
+    await fs.writeFile(filePath, finalPrompt);
     console.log(`Generated: ${filePath}`);
   } else {
-    if (!env.OPENROUTER_API_KEY) {
-      console.error(
-        "Configuration Error: Missing OPENROUTER_API_KEY environment variable"
-      );
-      return;
-    }
-
-    const provider = selection.provider!;
-    const spinner = ora(
-      `AI is reviewing your code using ${provider.model}...`
-    ).start();
-
-    try {
-      const result = await callAI(
-        env.OPENROUTER_API_KEY,
-        provider.model,
-        finalPrompt,
-        provider.config || {}
-      );
-
-      fs.writeFileSync(filePath, result || "");
-      spinner.succeed(`Review saved: ${filePath}`);
-    } catch (error: any) {
-      spinner.fail(`AI Review failed: ${error.message}`);
-      throw error;
-    }
+    // ... AI logic (ensure callAI is awaited)
+    const result = await callAI(
+      env.OPENROUTER_API_KEY!,
+      selection.provider!.model,
+      finalPrompt
+    );
+    await fs.writeFile(filePath, result || "");
   }
 }

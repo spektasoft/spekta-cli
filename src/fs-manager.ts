@@ -14,20 +14,14 @@ export const getReviewDir = (isInitial: boolean, folderId?: string) => {
   return { dir, id: folderId! };
 };
 
-export const getNextReviewMetadata = (dir: string) => {
-  const files = fs.readdirSync(dir);
-
-  // Regex: matches 'r-', captures digits, followed by '-'
+export const getNextReviewMetadata = async (dir: string) => {
+  const files = await fs.readdir(dir);
   const sequenceRegex = /^r-(\d+)-/;
 
   const validFiles = files
     .map((f) => {
       const match = f.match(sequenceRegex);
-      if (!match) return null;
-      return {
-        name: f,
-        num: parseInt(match[1], 10),
-      };
+      return match ? { name: f, num: parseInt(match[1], 10) } : null;
     })
     .filter((item): item is { name: string; num: number } => item !== null);
 
@@ -35,7 +29,6 @@ export const getNextReviewMetadata = (dir: string) => {
     return { nextNum: 1, lastFile: null };
   }
 
-  // Find the file with the highest sequence number
   const lastEntry = validFiles.reduce((prev, current) =>
     prev.num > current.num ? prev : current
   );
