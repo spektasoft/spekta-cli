@@ -31,9 +31,11 @@ export async function runReview() {
     message: "Select provider:",
     choices: [
       { name: "Only Prompt", value: "ONLY_PROMPT" },
-      ...providers.map((p: any) => ({ name: p.name, value: p.id })),
+      ...providers.map((p: any) => ({ name: p.name, value: p.model })),
     ],
   });
+
+  const selectedProvider = providers.find((p: any) => p.model === providerId);
 
   const dirInfo = getReviewDir(isInitial, folderId);
   const { nextNum, lastFile } = getNextReviewMetadata(dirInfo.dir);
@@ -72,11 +74,15 @@ export async function runReview() {
     console.log(`Generated: ${filePath}`);
   } else {
     if (!env.OPENROUTER_API_KEY) throw new Error("Missing OPENROUTER_API_KEY");
+
+    // Pass the config from the selected provider (defaults to empty object if none)
     const result = await callAI(
       env.OPENROUTER_API_KEY,
       providerId,
-      finalPrompt
+      finalPrompt,
+      selectedProvider?.config || {}
     );
+
     fs.writeFileSync(filePath, result || "");
     console.log(`Review saved: ${filePath}`);
   }
