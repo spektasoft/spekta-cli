@@ -5,29 +5,29 @@ import fs from "fs-extra";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const HOME_DIR = path.join(os.homedir(), ".spekta");
-const HOME_PROMPTS = path.join(HOME_DIR, "prompts");
-const ASSET_ROOT = __dirname; // Points to dist/ in production
+
+// Allow environment variable override for testing
+const GET_HOME_DIR = () =>
+  process.env.SPEKTA_HOME_OVERRIDE || path.join(os.homedir(), ".spekta");
+
+export let HOME_DIR = GET_HOME_DIR();
+export let HOME_PROMPTS = path.join(HOME_DIR, "prompts");
+const ASSET_ROOT = __dirname;
+const ASSET_PROMPTS = path.join(ASSET_ROOT, "prompts");
 const HOME_IGNORE = path.join(HOME_DIR, ".llmignore");
+
+/**
+ * Updates the paths based on the current home directory logic.
+ * Useful for testing when environment variables change.
+ */
+export const refreshPaths = () => {
+  HOME_DIR = GET_HOME_DIR();
+  HOME_PROMPTS = path.join(HOME_DIR, "prompts");
+};
 
 export const bootstrap = () => {
   fs.ensureDirSync(HOME_DIR);
   fs.ensureDirSync(HOME_PROMPTS);
-
-  // Define files/folders to sync from templates to HOME_DIR
-  const templateItems = ["prompts", "providers.json"];
-
-  for (const item of templateItems) {
-    const assetPath = path.join(ASSET_ROOT, item);
-    const targetPath = path.join(HOME_DIR, item);
-
-    if (fs.existsSync(assetPath)) {
-      if (!fs.existsSync(targetPath)) {
-        // Use copySync with overwrite: false to ensure we never touch existing user files
-        fs.copySync(assetPath, targetPath, { overwrite: false });
-      }
-    }
-  }
 
   if (!fs.existsSync(HOME_IGNORE)) {
     const defaultIgnores = [
@@ -41,6 +41,28 @@ export const bootstrap = () => {
     ].join("\n");
     fs.writeFileSync(HOME_IGNORE, defaultIgnores);
   }
+};
+
+/**
+ * Resolves prompt content with fallback logic:
+ * 1. Check ~/.spekta/prompts/filename
+ * 2. Check internal package dist/filename
+ */
+export const getPromptContent = (fileName: string): string => {
+  const userPath = path.join(HOME_PROMPTS, fileName);
+  const internalPath = path.join(ASSET_PROMPTS, fileName);
+
+  if (fs.existsSync(userPath)) {
+    return fs.readFileSync(userPath, "utf-8");
+  }
+
+  if (fs.existsSync(internalPath)) {
+    return fs.readFileSync(internalPath, "utf-8");
+  }
+
+  throw new Error(
+    `Prompt template not found: ${fileName}. Searched in ${userPath} and ${internalPath}`
+  );
 };
 
 export const getEnv = () => {
@@ -69,9 +91,9 @@ export const getIgnorePatterns = (): string[] => {
 export const getProviders = async () => {
   const configPath = path.join(HOME_DIR, "providers.json");
   if (!fs.existsSync(configPath)) {
-    throw new Error(`Providers config not found at ${configPath}`);
+    throw new Error(
+      `Providers config not found at ${configPath}. Please create it.`
+    );
   }
   return fs.readJSON(configPath);
 };
-
-export { HOME_PROMPTS };

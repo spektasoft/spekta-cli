@@ -2,10 +2,10 @@ import path from "path";
 import fs from "fs-extra";
 import ora from "ora";
 import {
-  HOME_PROMPTS,
   getEnv,
   getProviders,
   getIgnorePatterns,
+  getPromptContent,
 } from "../config";
 import { getGitDiff } from "../git";
 import { getReviewDir, getNextReviewMetadata } from "../fs-manager";
@@ -46,9 +46,8 @@ export async function runReview() {
   const templateName = isInitial
     ? `review-initial${templateSuffix}`
     : `review-validation${templateSuffix}`;
-  const templatePath = path.join(HOME_PROMPTS, templateName);
 
-  let finalPrompt = fs.readFileSync(templatePath, "utf-8") + "\n\n---\n";
+  let finalPrompt = getPromptContent(templateName) + "\n\n---\n";
 
   if (!isInitial && lastFile) {
     const prevReviewContent = fs.readFileSync(
