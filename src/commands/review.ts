@@ -1,5 +1,6 @@
 import path from "path";
 import fs from "fs-extra";
+import ora from "ora";
 import {
   HOME_PROMPTS,
   getEnv,
@@ -75,15 +76,23 @@ export async function runReview() {
   } else {
     if (!env.OPENROUTER_API_KEY) throw new Error("Missing OPENROUTER_API_KEY");
 
-    // Pass the config from the selected provider (defaults to empty object if none)
-    const result = await callAI(
-      env.OPENROUTER_API_KEY,
-      providerId,
-      finalPrompt,
-      selectedProvider?.config || {}
-    );
+    const spinner = ora(
+      `AI is reviewing your code using ${providerId}...`
+    ).start();
 
-    fs.writeFileSync(filePath, result || "");
-    console.log(`Review saved: ${filePath}`);
+    try {
+      const result = await callAI(
+        env.OPENROUTER_API_KEY,
+        providerId,
+        finalPrompt,
+        selectedProvider?.config || {}
+      );
+
+      fs.writeFileSync(filePath, result || "");
+      spinner.succeed(`Review saved: ${filePath}`);
+    } catch (error: any) {
+      spinner.fail(`AI Review failed: ${error.message}`);
+      throw error;
+    }
   }
 }
