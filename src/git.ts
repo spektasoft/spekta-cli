@@ -1,14 +1,21 @@
-import { spawnSync } from "child_process";
+import { execa } from "execa";
 
 const isValidHash = (hash: string): boolean => {
   return /^[0-9a-f]{7,40}$/i.test(hash);
 };
 
-export const getGitDiff = (
+/**
+ * Retrieves the git diff between two commits.
+ * @param start - The older commit hash.
+ * @param end - The newer commit hash.
+ * @param ignorePatterns - List of patterns to exclude from the diff.
+ * @returns A promise that resolves to the diff string.
+ */
+export const getGitDiff = async (
   start: string,
   end: string,
   ignorePatterns: string[] = []
-): string => {
+): Promise<string> => {
   if (!isValidHash(start) || !isValidHash(end)) {
     throw new Error("Invalid commit hash format. Use 7-40 hex characters.");
   }
@@ -16,18 +23,16 @@ export const getGitDiff = (
   const pathspecs = ignorePatterns.map((p) => `:!${p}`);
   const args = ["diff", `${start}..${end}`, "--", ".", ...pathspecs];
 
-  const result = spawnSync("git", args, {
-    encoding: "utf-8",
-    maxBuffer: 10 * 1024 * 1024,
-  });
+  try {
+    const { stdout } = await execa("git", args, {
+      all: true,
+      maxBuffer: 10 * 1024 * 1024, // 10MB
+    });
 
-  if (result.error) {
-    throw new Error(`Git process error: ${result.error.message}`);
+    return stdout;
+  } catch (error: any) {
+    // Best practice: include the underlying stderr for debugging
+    const message = error.stderr || error.message;
+    throw new Error(`Git diff failed: ${message}`);
   }
-
-  if (result.status !== 0) {
-    throw new Error(`Git error: ${result.stderr}`);
-  }
-
-  return result.stdout;
 };

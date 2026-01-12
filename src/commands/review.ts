@@ -30,8 +30,8 @@ export async function runReview() {
   }
 
   const { providers } = providersData;
-  const env = getEnv();
-  const ignorePatterns = getIgnorePatterns();
+  const env = await getEnv();
+  const ignorePatterns = await getIgnorePatterns();
 
   const start = await input({ message: "Older commit hash:" });
   const end = await input({ message: "Newer commit hash:" });
@@ -60,14 +60,14 @@ export async function runReview() {
 
   const dirInfo = getReviewDir(isInitial, folderId);
   const { nextNum, lastFile } = getNextReviewMetadata(dirInfo.dir);
-  const diff = getGitDiff(start, end, ignorePatterns);
+  const diff = await getGitDiff(start, end, ignorePatterns);
 
   const templateSuffix = selection.isOnlyPrompt ? "-prompt.md" : ".md";
   const templateName = isInitial
     ? `review-initial${templateSuffix}`
     : `review-validation${templateSuffix}`;
 
-  let finalPrompt = getPromptContent(templateName) + "\n\n---\n";
+  let finalPrompt = (await getPromptContent(templateName)) + "\n\n---\n";
 
   if (!isInitial && lastFile) {
     const prevReviewContent = fs.readFileSync(
