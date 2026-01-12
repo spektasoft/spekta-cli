@@ -22,8 +22,8 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
-          src: "prompts/*",
-          dest: "prompts",
+          src: "templates/*",
+          dest: ".",
         },
       ],
     }),

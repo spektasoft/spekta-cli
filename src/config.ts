@@ -7,18 +7,24 @@ import { fileURLToPath } from "url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOME_DIR = path.join(os.homedir(), ".llm-sh");
 const HOME_PROMPTS = path.join(HOME_DIR, "prompts");
-const ASSET_PROMPTS = path.join(__dirname, "prompts");
+const ASSET_ROOT = __dirname; // Points to dist/ in production
 const HOME_IGNORE = path.join(HOME_DIR, ".llmignore");
 
 export const bootstrap = () => {
+  fs.ensureDirSync(HOME_DIR);
   fs.ensureDirSync(HOME_PROMPTS);
 
-  if (fs.existsSync(ASSET_PROMPTS)) {
-    const files = fs.readdirSync(ASSET_PROMPTS);
-    for (const file of files) {
-      const targetPath = path.join(HOME_PROMPTS, file);
+  // Define files/folders to sync from templates to HOME_DIR
+  const templateItems = ["prompts", "providers.json"];
+
+  for (const item of templateItems) {
+    const assetPath = path.join(ASSET_ROOT, item);
+    const targetPath = path.join(HOME_DIR, item);
+
+    if (fs.existsSync(assetPath)) {
       if (!fs.existsSync(targetPath)) {
-        fs.copySync(path.join(ASSET_PROMPTS, file), targetPath);
+        // Use copySync with overwrite: false to ensure we never touch existing user files
+        fs.copySync(assetPath, targetPath, { overwrite: false });
       }
     }
   }
@@ -61,7 +67,10 @@ export const getIgnorePatterns = (): string[] => {
 };
 
 export const getProviders = async () => {
-  const configPath = path.join(HOME_PROMPTS, "providers.json");
+  const configPath = path.join(HOME_DIR, "providers.json");
+  if (!fs.existsSync(configPath)) {
+    throw new Error(`Providers config not found at ${configPath}`);
+  }
   return fs.readJSON(configPath);
 };
 
