@@ -4,7 +4,21 @@ import fs from "fs-extra";
 export const getReviewDir = (isInitial: boolean, folderId?: string) => {
   const base = path.join(process.cwd(), "temp", "docs", "reviews");
   if (isInitial) {
-    const id = new Date().toISOString().replace(/[-T:]/g, "").slice(0, 12);
+    const now = new Date();
+
+    // Use Intl.DateTimeFormat to extract local time components
+    const format = (options: Intl.DateTimeFormatOptions) =>
+      new Intl.DateTimeFormat("en-GB", options).format(now);
+
+    const year = format({ year: "numeric" });
+    const month = format({ month: "2-digit" });
+    const day = format({ day: "2-digit" });
+    const hour = format({ hour: "2-digit", hour12: false });
+    const minute = format({ minute: "2-digit" });
+
+    // Construct ID in YYYYMMDDHHmm format
+    const id = `${year}${month}${day}${hour}${minute}`;
+
     const dir = path.join(base, id);
     fs.ensureDirSync(dir);
     return { dir, id };
