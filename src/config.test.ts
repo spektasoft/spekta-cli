@@ -23,25 +23,25 @@ describe("Config & Prompt Resolution", () => {
     expect(HOME_DIR).toBe(tempTestDir);
   });
 
-  it("should create necessary directories on bootstrap", () => {
-    bootstrap();
+  it("should create necessary directories on bootstrap", async () => {
+    await bootstrap();
     expect(fs.existsSync(path.join(tempTestDir, "prompts"))).toBe(true);
   });
 
-  it("should resolve prompt from user home directory if it exists", () => {
-    bootstrap();
+  it("should resolve prompt from user home directory if it exists", async () => {
+    await bootstrap();
     const fileName = "test-prompt.md";
     const userPromptPath = path.join(tempTestDir, "prompts", fileName);
     const mockContent = "User Override Content";
 
     fs.writeFileSync(userPromptPath, mockContent);
 
-    const content = getPromptContent(fileName);
+    const content = await getPromptContent(fileName);
     expect(content).toBe(mockContent);
   });
 
-  it("should throw error if prompt exists in neither location", () => {
-    expect(() => getPromptContent("non-existent.md")).toThrow(
+  it("should throw error if prompt exists in neither location", async () => {
+    await expect(getPromptContent("non-existent.md")).rejects.toThrow(
       /Prompt template not found/
     );
   });
