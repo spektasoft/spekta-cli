@@ -6,11 +6,18 @@ import {
   getProviders,
   getIgnorePatterns,
   getPromptContent,
+  Provider,
 } from "../config";
 import { getGitDiff } from "../git";
 import { getReviewDir, getNextReviewMetadata } from "../fs-manager";
 import { callAI } from "../api";
 import { input, confirm, select } from "@inquirer/prompts";
+
+// Helper type for selection
+type ProviderChoice = {
+  isOnlyPrompt: boolean;
+  provider?: Provider;
+};
 
 export async function runReview() {
   const { providers } = await getProviders();
@@ -28,21 +35,25 @@ export async function runReview() {
     });
   }
 
-  const providerId = await select({
+  const selection = await select<ProviderChoice>({
     message: "Select provider:",
     choices: [
-      { name: "Only Prompt", value: "ONLY_PROMPT" },
-      ...providers.map((p: any) => ({ name: p.name, value: p.model })),
+      {
+        name: "Only Prompt",
+        value: { isOnlyPrompt: true },
+      },
+      ...providers.map((p) => ({
+        name: `${p.name} (${p.model})`,
+        value: { isOnlyPrompt: false, provider: p },
+      })),
     ],
   });
-
-  const selectedProvider = providers.find((p: any) => p.model === providerId);
 
   const dirInfo = getReviewDir(isInitial, folderId);
   const { nextNum, lastFile } = getNextReviewMetadata(dirInfo.dir);
   const diff = getGitDiff(start, end, ignorePatterns);
 
-  const templateSuffix = providerId === "ONLY_PROMPT" ? "-prompt.md" : ".md";
+  const templateSuffix = selection.isOnlyPrompt ? "-prompt.md" : ".md";
   const templateName = isInitial
     ? `review-initial${templateSuffix}`
     : `review-validation${templateSuffix}`;
@@ -69,22 +80,23 @@ export async function runReview() {
   )}..${end.slice(0, 7)}.md`;
   const filePath = path.join(dirInfo.dir, fileName);
 
-  if (providerId === "ONLY_PROMPT") {
+  if (selection.isOnlyPrompt) {
     fs.writeFileSync(filePath, finalPrompt);
     console.log(`Generated: ${filePath}`);
   } else {
     if (!env.OPENROUTER_API_KEY) throw new Error("Missing OPENROUTER_API_KEY");
 
+    const provider = selection.provider!;
     const spinner = ora(
-      `AI is reviewing your code using ${providerId}...`
+      `AI is reviewing your code using ${provider.model}...`
     ).start();
 
     try {
       const result = await callAI(
         env.OPENROUTER_API_KEY,
-        providerId,
+        provider.model,
         finalPrompt,
-        selectedProvider?.config || {}
+        provider.config || {}
       );
 
       fs.writeFileSync(filePath, result || "");
