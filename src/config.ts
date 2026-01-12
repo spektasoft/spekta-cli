@@ -6,6 +6,16 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+export interface Provider {
+  name: string;
+  model: string;
+  config?: Record<string, any>;
+}
+
+interface ProvidersConfig {
+  providers: Provider[];
+}
+
 // Allow environment variable override for testing
 const GET_HOME_DIR = () =>
   process.env.SPEKTA_HOME_OVERRIDE || path.join(os.homedir(), ".spekta");
@@ -88,12 +98,18 @@ export const getIgnorePatterns = (): string[] => {
     .filter((line) => line && !line.startsWith("#"));
 };
 
-export const getProviders = async () => {
+export const getProviders = async (): Promise<ProvidersConfig> => {
   const configPath = path.join(HOME_DIR, "providers.json");
   if (!fs.existsSync(configPath)) {
     throw new Error(
       `Providers config not found at ${configPath}. Please create it.`
     );
   }
-  return fs.readJSON(configPath);
+  const data = await fs.readJSON(configPath);
+  if (!data.providers || !Array.isArray(data.providers)) {
+    throw new Error(
+      "Invalid providers.json format: expected 'providers' array."
+    );
+  }
+  return data as ProvidersConfig;
 };
