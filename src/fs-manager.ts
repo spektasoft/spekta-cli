@@ -59,11 +59,15 @@ export const getReviewDir = async (
     return { dir, id };
   }
 
-  const dir = path.join(base, folderId!);
+  if (!folderId) {
+    throw new Error("Folder ID is required for non-initial review.");
+  }
+
+  const dir = path.join(base, folderId);
   if (!(await fs.pathExists(dir))) {
     throw new Error(`Review folder not found: ${folderId}`);
   }
-  return { dir, id: folderId! };
+  return { dir, id: folderId };
 };
 
 export const getNextReviewMetadata = async (dir: string) => {
