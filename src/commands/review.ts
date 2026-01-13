@@ -8,16 +8,46 @@ import {
   getPromptContent,
   Provider,
 } from "../config";
-import { getGitDiff } from "../git";
-import { getReviewDir, getNextReviewMetadata } from "../fs-manager";
+import {
+  getGitDiff,
+  resolveHash,
+  getNearestMerge,
+  getInitialCommit,
+} from "../git";
+import {
+  getReviewDir,
+  getNextReviewMetadata,
+  listReviewFolders,
+  getHashesFromReviewFile,
+} from "../fs-manager";
 import { callAI } from "../api";
 import { input, confirm, select } from "@inquirer/prompts";
 
-// Helper type for selection
 type ProviderChoice = {
   isOnlyPrompt: boolean;
   provider?: Provider;
 };
+
+async function getHashRange(suggestedStart: string, suggestedEnd: string) {
+  const useSuggested = await confirm({
+    message: `Use suggested range ${suggestedStart.slice(
+      0,
+      7
+    )}..${suggestedEnd.slice(0, 7)}?`,
+    default: true,
+  });
+
+  if (useSuggested) {
+    return { start: suggestedStart, end: suggestedEnd };
+  }
+
+  const start = await input({ message: "Older commit hash:" });
+  const end = await input({ message: "Newer commit hash:" });
+  return {
+    start: await resolveHash(start),
+    end: await resolveHash(end),
+  };
+}
 
 export async function runReview() {
   let providersData;
@@ -32,14 +62,47 @@ export async function runReview() {
   const env = await getEnv();
   const ignorePatterns = await getIgnorePatterns();
 
-  const start = await input({ message: "Older commit hash:" });
-  const end = await input({ message: "Newer commit hash:" });
-
   const isInitial = await confirm({ message: "Is this the initial review?" });
   let folderId: string | undefined;
-  if (!isInitial) {
-    folderId = await input({ message: "Enter review folder ID:" });
+  let suggestedStart = "";
+  let suggestedEnd = await resolveHash("HEAD");
+
+  if (isInitial) {
+    const nearestMerge = await getNearestMerge();
+    suggestedStart = nearestMerge || (await getInitialCommit());
+    const dirInfo = await getReviewDir(true);
+    folderId = dirInfo.id;
+  } else {
+    const folders = await listReviewFolders();
+    if (folders.length === 0) {
+      console.error(
+        "No previous reviews found. Please start an initial review."
+      );
+      return;
+    }
+
+    folderId = await select({
+      message: "Select review folder:",
+      choices: folders.map((f) => ({ name: f, value: f })),
+    });
+
+    const dirInfo = await getReviewDir(false, folderId);
+    const metadata = await getNextReviewMetadata(dirInfo.dir);
+
+    if (metadata.lastFile) {
+      const extracted = getHashesFromReviewFile(metadata.lastFile);
+      if (extracted) {
+        suggestedStart = await resolveHash(extracted.end);
+      }
+    }
+
+    if (!suggestedStart) {
+      const startInput = await input({ message: "Older commit hash:" });
+      suggestedStart = await resolveHash(startInput);
+    }
   }
+
+  const { start, end } = await getHashRange(suggestedStart, suggestedEnd);
 
   const selection = await select<ProviderChoice>({
     message: "Select provider:",
