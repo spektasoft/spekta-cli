@@ -36,3 +36,50 @@ export const getGitDiff = async (
     throw new Error(`Git diff failed: ${message}`);
   }
 };
+
+/**
+ * Resolves a git reference (like HEAD or a short hash) to a full 40-character hash.
+ */
+export const resolveHash = async (ref: string): Promise<string> => {
+  try {
+    const { stdout } = await execa("git", ["rev-parse", ref]);
+    return stdout.trim();
+  } catch (error: any) {
+    throw new Error(`Failed to resolve hash for ${ref}: ${error.message}`);
+  }
+};
+
+/**
+ * Finds the most recent merge commit hash.
+ */
+export const getNearestMerge = async (): Promise<string | null> => {
+  try {
+    const { stdout } = await execa("git", [
+      "log",
+      "--merges",
+      "-n",
+      "1",
+      "--format=%H",
+    ]);
+    return stdout.trim() || null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Finds the initial commit hash of the repository.
+ */
+export const getInitialCommit = async (): Promise<string> => {
+  try {
+    const { stdout } = await execa("git", [
+      "rev-list",
+      "--max-parents=0",
+      "HEAD",
+    ]);
+    // rev-list returns all roots; we take the first one (usually just one)
+    return stdout.trim().split("\n")[0];
+  } catch (error: any) {
+    throw new Error(`Failed to find initial commit: ${error.message}`);
+  }
+};
