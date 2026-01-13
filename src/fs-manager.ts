@@ -26,7 +26,15 @@ export const getHashesFromReviewFile = (
   };
 };
 
-export const getReviewDir = async (isInitial: boolean, folderId?: string) => {
+export interface ReviewDirInfo {
+  dir: string;
+  id: string;
+}
+
+export const getReviewDir = async (
+  isInitial: boolean,
+  folderId?: string
+): Promise<ReviewDirInfo> => {
   const base = REVIEWS_BASE_PATH;
 
   if (isInitial) {
