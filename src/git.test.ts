@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getGitDiff } from "./git";
+import { getGitDiff, getStagedDiff } from "./git";
 import { execa } from "execa";
 
 vi.mock("execa", () => ({
@@ -51,6 +51,35 @@ describe("getGitDiff", () => {
 
     await expect(getGitDiff("abc1234", "def5678")).rejects.toThrow(
       "Git diff failed: fatal: not a git repository"
+    );
+  });
+});
+
+describe("getStagedDiff", () => {
+  it("constructs correct git pathspecs for ignore patterns", async () => {
+    const mockExeca = vi.mocked(execa);
+    mockExeca.mockResolvedValue({ stdout: "staged content" } as any);
+
+    const ignore = ["*.log", "dist/"];
+    await getStagedDiff(ignore);
+
+    expect(mockExeca).toHaveBeenCalledWith(
+      "git",
+      ["diff", "--staged", "--", ".", ":!*.log", ":!dist/"],
+      expect.any(Object)
+    );
+  });
+
+  it("handles empty ignore patterns", async () => {
+    const mockExeca = vi.mocked(execa);
+    mockExeca.mockResolvedValue({ stdout: "all staged" } as any);
+
+    await getStagedDiff([]);
+
+    expect(mockExeca).toHaveBeenCalledWith(
+      "git",
+      ["diff", "--staged", "--", "."],
+      expect.any(Object)
     );
   });
 });
