@@ -182,4 +182,89 @@ describe("runReview", () => {
 
     await expect(runReview()).rejects.toThrow("API Timeout");
   });
+
+  it("should handle the full review flow", async () => {
+    // 1. Mock Config Data
+    const mockProvider = {
+      name: "Model Name",
+      model: "model-id",
+      config: { temperature: 0.7 },
+    };
+
+    vi.mocked(config.getProviders).mockResolvedValue({
+      providers: [mockProvider],
+    });
+
+    vi.mocked(config.getEnv).mockResolvedValue({
+      OPENROUTER_API_KEY: "test-key",
+    });
+
+    vi.mocked(config.getIgnorePatterns).mockResolvedValue(["node_modules"]);
+    vi.mocked(config.getPromptContent).mockResolvedValue(
+      "Test Prompt Template"
+    );
+
+    // 2. Mock FS Manager Data
+    vi.mocked(fsManager.listReviewFolders).mockResolvedValue(["202401011200"]);
+    vi.mocked(fsManager.getReviewDir).mockResolvedValue({
+      dir: "/mock/dir/202401011200",
+      id: "202401011200",
+    });
+    vi.mocked(fsManager.getNextReviewMetadata).mockResolvedValue({
+      nextNum: 2,
+      lastFile: "r-001-abc..def.md",
+    });
+    vi.mocked(fsManager.getHashesFromReviewFile).mockReturnValue({
+      start: "abc1234",
+      end: "def5678",
+    });
+
+    // 3. Mock Prompt Interactions in order of execution
+    // First confirm: isInitial?
+    vi.mocked(prompts.confirm).mockResolvedValueOnce(false);
+
+    // select: folderId?
+    vi.mocked(prompts.select).mockResolvedValueOnce("202401011200");
+
+    // Inside getHashRange - confirm: useSuggested?
+    vi.mocked(prompts.confirm).mockResolvedValueOnce(true);
+
+    // select: provider selection?
+    vi.mocked(prompts.select).mockResolvedValueOnce({
+      isOnlyPrompt: false,
+      provider: mockProvider,
+    });
+
+    // 4. Mock Git and Logic Side-Effects
+    vi.mocked(git.resolveHash).mockImplementation(async (ref) => `full-${ref}`);
+    vi.mocked(git.getGitDiff).mockResolvedValue("fake diff content");
+
+    // @ts-ignore
+    vi.mocked(fs.readFile).mockResolvedValue("previous review content");
+    vi.mocked(api.callAI).mockResolvedValue("AI Review Result");
+
+    // 5. Execute
+    await runReview();
+
+    // 6. Assertions
+    expect(api.callAI).toHaveBeenCalledWith(
+      "test-key",
+      "model-id",
+      expect.stringContaining("GIT DIFF:"),
+      { temperature: 0.7 }
+    );
+
+    expect(api.callAI).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      expect.stringContaining("fake diff content"),
+      expect.any(Object)
+    );
+
+    // Verify file write (r-002 because nextNum was 2)
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining("r-002-"),
+      "AI Review Result"
+    );
+  });
 });
