@@ -83,3 +83,27 @@ export const getInitialCommit = async (): Promise<string> => {
     throw new Error(`Failed to find initial commit: ${error.message}`);
   }
 };
+
+/**
+ * Retrieves the git diff for staged changes.
+ * @param ignorePatterns - List of patterns to exclude from the diff.
+ * @returns A promise that resolves to the diff string.
+ */
+export const getStagedDiff = async (
+  ignorePatterns: string[] = []
+): Promise<string> => {
+  const pathspecs = ignorePatterns.map((p) => `:!${p}`);
+  const args = ["diff", "--staged", "--", ".", ...pathspecs];
+
+  try {
+    const { stdout } = await execa("git", args, {
+      all: true,
+      maxBuffer: 10 * 1024 * 1024, // 10MB
+    });
+
+    return stdout.trim();
+  } catch (error: any) {
+    const message = error.stderr || error.message;
+    throw new Error(`Git staged diff failed: ${message}`);
+  }
+};
