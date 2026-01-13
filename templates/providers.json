@@ -1,0 +1,17 @@
+{
+    "providers": [
+        {
+            "name": "Model Name",
+            "model": "model-id",
+            "config": {
+                "provider": {
+                    "allow_fallbacks": false,
+                    "data_collection": "deny",
+                    "only": [
+                        "Provider"
+                    ]
+                }
+            }
+        }
+    ]
+}
