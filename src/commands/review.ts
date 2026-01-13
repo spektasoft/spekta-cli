@@ -67,10 +67,12 @@ export async function runReview() {
   let suggestedStart = "";
   let suggestedEnd = await resolveHash("HEAD");
 
+  let dirInfo;
+
   if (isInitial) {
     const nearestMerge = await getNearestMerge();
     suggestedStart = nearestMerge || (await getInitialCommit());
-    const dirInfo = await getReviewDir(true);
+    dirInfo = await getReviewDir(true);
     folderId = dirInfo.id;
   } else {
     const folders = await listReviewFolders();
@@ -86,7 +88,7 @@ export async function runReview() {
       choices: folders.map((f) => ({ name: f, value: f })),
     });
 
-    const dirInfo = await getReviewDir(false, folderId);
+    dirInfo = await getReviewDir(false, folderId);
     const metadata = await getNextReviewMetadata(dirInfo.dir);
 
     if (metadata.lastFile) {
@@ -115,7 +117,6 @@ export async function runReview() {
     ],
   });
 
-  const dirInfo = await getReviewDir(isInitial, folderId);
   const [metadata, diff] = await Promise.all([
     getNextReviewMetadata(dirInfo.dir),
     getGitDiff(start, end, ignorePatterns),
