@@ -19,6 +19,7 @@ import {
   getNextReviewMetadata,
   listReviewFolders,
   getHashesFromReviewFile,
+  ReviewDirInfo,
 } from "../fs-manager";
 import { callAI } from "../api";
 import { input, confirm, select } from "@inquirer/prompts";
@@ -67,7 +68,7 @@ export async function runReview() {
   let suggestedStart = "";
   let suggestedEnd = await resolveHash("HEAD");
 
-  let dirInfo;
+  let dirInfo: ReviewDirInfo | undefined;
 
   if (isInitial) {
     const nearestMerge = await getNearestMerge();
@@ -102,6 +103,10 @@ export async function runReview() {
       const startInput = await input({ message: "Older commit hash:" });
       suggestedStart = await resolveHash(startInput);
     }
+  }
+
+  if (!dirInfo) {
+    throw new Error("Failed to initialize review directory.");
   }
 
   const { start, end } = await getHashRange(suggestedStart, suggestedEnd);
