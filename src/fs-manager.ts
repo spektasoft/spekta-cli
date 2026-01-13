@@ -57,7 +57,8 @@ export const getReviewDir = async (isInitial: boolean, folderId?: string) => {
 
 export const getNextReviewMetadata = async (dir: string) => {
   const files = await fs.readdir(dir);
-  const sequenceRegex = /^r-(\d+)-/;
+  // Matches r-001- and captures the number, ensuring it's followed by hex hashes and double dots
+  const sequenceRegex = /^r-(\d+)-[0-9a-f]+\.\.[0-9a-f]+\.md$/i;
 
   const validFiles = files
     .map((f) => {
