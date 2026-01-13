@@ -5,7 +5,7 @@ export const callAI = async (
   model: string,
   prompt: string,
   config: Record<string, any> = {}
-) => {
+): Promise<string> => {
   const openai = new OpenAI({
     apiKey,
     baseURL: "https://openrouter.ai/api/v1",
@@ -17,5 +17,11 @@ export const callAI = async (
     ...config,
   });
 
-  return response.choices[0].message.content;
+  const content = response.choices[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("The AI provider returned an empty response.");
+  }
+
+  return content;
 };
