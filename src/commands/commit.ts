@@ -28,11 +28,9 @@ async function saveToTempFile(
     await fs.writeFile(tempFilePath, content, "utf-8");
     return tempFilePath;
   } catch (error: any) {
-    console.error(
-      `\nFatal File System Error: Could not write to ${tempFilePath}`
+    throw new Error(
+      `Fatal File System Error: Could not write to ${tempFilePath}. ${error.message}`
     );
-    console.error(error.message);
-    process.exit(1);
   }
 }
 
@@ -107,6 +105,6 @@ export async function runCommit() {
     } else {
       console.error(`Error: ${error.message}`);
     }
-    process.exit(1);
+    throw error;
   }
 }
