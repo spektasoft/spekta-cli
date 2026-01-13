@@ -1,4 +1,7 @@
 import ora from "ora";
+import os from "os";
+import path from "path";
+import fs from "fs-extra";
 import {
   getEnv,
   getProviders,
@@ -9,6 +12,29 @@ import {
 import { getStagedDiff } from "../git";
 import { callAI } from "../api";
 import { select } from "@inquirer/prompts";
+
+/**
+ * Persists content to a temporary file and logs the path.
+ * Crashes gracefully on failure.
+ */
+async function saveToTempFile(
+  content: string,
+  prefix: string
+): Promise<string> {
+  const tempFileName = `${prefix}-${Date.now()}.md`;
+  const tempFilePath = path.join(os.tmpdir(), tempFileName);
+
+  try {
+    await fs.writeFile(tempFilePath, content, "utf-8");
+    return tempFilePath;
+  } catch (error: any) {
+    console.error(
+      `\nFatal File System Error: Could not write to ${tempFilePath}`
+    );
+    console.error(error.message);
+    process.exit(1);
+  }
+}
 
 export async function runCommit() {
   let providersData;
@@ -48,8 +74,8 @@ export async function runCommit() {
   const finalPrompt = template.replace("{{diff}}", diff);
 
   if (selection.isOnlyPrompt) {
-    console.log("\n--- GENERATED PROMPT ---\n");
-    console.log(finalPrompt);
+    const filePath = await saveToTempFile(finalPrompt, "spekta-prompt");
+    console.log(`\nGenerated: ${filePath}\n`);
     return;
   }
 
@@ -71,10 +97,18 @@ export async function runCommit() {
       provider.config || {}
     );
 
-    spinner.succeed("Commit message generated:");
+    spinner.succeed("Commit message generated.");
+
+    const filePath = await saveToTempFile(result, "spekta-commit");
+
     console.log("\n" + result + "\n");
+    console.log(`Generated: ${filePath}\n`);
   } catch (error: any) {
-    spinner.fail(`Generation failed: ${error.message}`);
+    if (spinner.isSpinning) {
+      spinner.fail(`Generation failed: ${error.message}`);
+    } else {
+      console.error(`Error: ${error.message}`);
+    }
     process.exit(1);
   }
 }
