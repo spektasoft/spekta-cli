@@ -49,6 +49,13 @@ export async function runCommit() {
 
   const diff = await getStagedDiff(ignorePatterns);
 
+  const DIFF_WARNING_THRESHOLD = 30000;
+  if (diff.length > DIFF_WARNING_THRESHOLD) {
+    console.warn(
+      `Warning: Staged diff is large (${diff.length} characters). The AI may truncate its response or fail due to context limits.`
+    );
+  }
+
   if (!diff) {
     console.error("No staged changes found. Please stage your changes first.");
     return;
