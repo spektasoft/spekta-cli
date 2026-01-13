@@ -75,7 +75,7 @@ export async function runCommit() {
 
   if (selection.isOnlyPrompt) {
     const filePath = await saveToTempFile(finalPrompt, "spekta-prompt");
-    console.log(`\nGenerated: ${filePath}\n`);
+    console.log(`Generated: ${filePath}`);
     return;
   }
 
@@ -100,9 +100,7 @@ export async function runCommit() {
     spinner.succeed("Commit message generated.");
 
     const filePath = await saveToTempFile(result, "spekta-commit");
-
-    console.log("\n" + result + "\n");
-    console.log(`Generated: ${filePath}\n`);
+    console.log(`Generated: ${filePath}`);
   } catch (error: any) {
     if (spinner.isSpinning) {
       spinner.fail(`Generation failed: ${error.message}`);
