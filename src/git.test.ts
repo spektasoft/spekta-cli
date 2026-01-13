@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { getGitDiff } from "./git";
-import { spawnSync } from "child_process";
+import { execa } from "execa";
 
-vi.mock("child_process", () => ({
-  spawnSync: vi.fn(),
+vi.mock("execa", () => ({
+  execa: vi.fn(),
 }));
 
 describe("getGitDiff", () => {
@@ -11,34 +11,31 @@ describe("getGitDiff", () => {
     vi.clearAllMocks();
   });
 
-  it("throws error for invalid hash format", () => {
-    expect(() => getGitDiff("invalid-hash", "abc1234")).toThrow(
-      "Invalid commit hash format"
+  it("throws error for invalid hash format", async () => {
+    await expect(getGitDiff("invalid-hash", "abc1234")).rejects.toThrow(
+      "Invalid commit hash format. Use 7-40 hex characters."
     );
   });
 
-  it("throws error for injection attempts", () => {
-    expect(() => getGitDiff("abc1234; rm -rf /", "def5678")).toThrow(
-      "Invalid commit hash format"
+  it("throws error for injection attempts", async () => {
+    await expect(getGitDiff("abc1234; rm -rf /", "def5678")).rejects.toThrow(
+      "Invalid commit hash format. Use 7-40 hex characters."
     );
   });
 
-  it("calls git diff with correct arguments for valid hashes", () => {
-    const mockSpawn = vi.mocked(spawnSync);
-    mockSpawn.mockReturnValue({
-      status: 0,
+  it("calls git diff with correct arguments for valid hashes", async () => {
+    const mockExeca = vi.mocked(execa);
+    mockExeca.mockResolvedValue({
       stdout: "diff content",
-      stderr: "",
-      error: undefined,
     } as any);
 
     const start = "abc1234";
     const end = "def5678";
     const ignore = ["node_modules"];
 
-    const result = getGitDiff(start, end, ignore);
+    const result = await getGitDiff(start, end, ignore);
 
-    expect(mockSpawn).toHaveBeenCalledWith(
+    expect(mockExeca).toHaveBeenCalledWith(
       "git",
       ["diff", "abc1234..def5678", "--", ".", ":!node_modules"],
       expect.objectContaining({ maxBuffer: 10485760 })
@@ -46,17 +43,14 @@ describe("getGitDiff", () => {
     expect(result).toBe("diff content");
   });
 
-  it("throws error when git command returns non-zero status", () => {
-    const mockSpawn = vi.mocked(spawnSync);
-    mockSpawn.mockReturnValue({
-      status: 128,
-      stdout: "",
+  it("throws error when git command fails", async () => {
+    const mockExeca = vi.mocked(execa);
+    mockExeca.mockRejectedValue({
       stderr: "fatal: not a git repository",
-      error: undefined,
-    } as any);
+    });
 
-    expect(() => getGitDiff("abc1234", "def5678")).toThrow(
-      "Git error: fatal: not a git repository"
+    await expect(getGitDiff("abc1234", "def5678")).rejects.toThrow(
+      "Git diff failed: fatal: not a git repository"
     );
   });
 });
