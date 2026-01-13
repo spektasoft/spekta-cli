@@ -32,16 +32,17 @@ export const getReviewDir = async (isInitial: boolean, folderId?: string) => {
   if (isInitial) {
     const now = new Date();
 
-    const format = (options: Intl.DateTimeFormatOptions) =>
-      new Intl.DateTimeFormat("en-GB", options).format(now);
+    const format = (options: Intl.DateTimeFormatOptions) => {
+      const val = new Intl.DateTimeFormat("en-GB", options).format(now);
+      // Remove any non-digit characters (fixes issues with some Node/ICU versions)
+      return val.replace(/\D/g, "");
+    };
 
     const year = format({ year: "numeric" });
-    const month = format({ month: "2-digit" }).toString().padStart(2, "0");
-    const day = format({ day: "2-digit" }).toString().padStart(2, "0");
-    const hour = format({ hour: "2-digit", hour12: false })
-      .toString()
-      .padStart(2, "0");
-    const minute = format({ minute: "2-digit" }).toString().padStart(2, "0");
+    const month = format({ month: "2-digit" }).padStart(2, "0");
+    const day = format({ day: "2-digit" }).padStart(2, "0");
+    const hour = format({ hour: "2-digit", hour12: false }).padStart(2, "0");
+    const minute = format({ minute: "2-digit" }).padStart(2, "0");
 
     const id = `${year}${month}${day}${hour}${minute}`;
 
