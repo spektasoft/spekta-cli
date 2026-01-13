@@ -123,8 +123,9 @@ describe("runReview", () => {
       start: "aaaaaaa",
       end: "bbbbbbb",
     });
-    // @ts-ignore
-    vi.mocked(fs.readFile).mockResolvedValue("CONTENT_OF_PREVIOUS_REVIEW");
+
+    vi.mocked(fs.readFile).mockImplementation((() =>
+      Promise.resolve("previous review content")) as any);
     vi.mocked(git.getGitDiff).mockResolvedValue("NEW_DIFF");
     vi.mocked(api.callAI).mockResolvedValue("AI_RESPONSE_CONTENT");
 
@@ -239,8 +240,8 @@ describe("runReview", () => {
     vi.mocked(git.resolveHash).mockImplementation(async (ref) => `full-${ref}`);
     vi.mocked(git.getGitDiff).mockResolvedValue("fake diff content");
 
-    // @ts-ignore
-    vi.mocked(fs.readFile).mockResolvedValue("previous review content");
+    vi.mocked(fs.readFile).mockImplementation((() =>
+      Promise.resolve("previous review content")) as any);
     vi.mocked(api.callAI).mockResolvedValue("AI Review Result");
 
     // 5. Execute
