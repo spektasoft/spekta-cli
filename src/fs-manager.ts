@@ -1,8 +1,34 @@
 import path from "path";
 import fs from "fs-extra";
 
+const REVIEWS_BASE_PATH = path.join(process.cwd(), "temp", "docs", "reviews");
+
+export const listReviewFolders = async (): Promise<string[]> => {
+  if (!(await fs.pathExists(REVIEWS_BASE_PATH))) {
+    return [];
+  }
+  const dirs = await fs.readdir(REVIEWS_BASE_PATH);
+  // Filter for YYYYMMDDHHmm pattern and sort descending
+  return dirs
+    .filter((d) => /^\d{12}$/.test(d))
+    .sort((a, b) => b.localeCompare(a));
+};
+
+export const getHashesFromReviewFile = (
+  fileName: string
+): { start: string; end: string } | null => {
+  const hashRegex = /^r-\d+-([0-9a-f]+)\.\.([0-9a-f]+)\.md$/i;
+  const match = fileName.match(hashRegex);
+  if (!match) return null;
+  return {
+    start: match[1],
+    end: match[2],
+  };
+};
+
 export const getReviewDir = async (isInitial: boolean, folderId?: string) => {
-  const base = path.join(process.cwd(), "temp", "docs", "reviews");
+  const base = REVIEWS_BASE_PATH;
+
   if (isInitial) {
     const now = new Date();
 
