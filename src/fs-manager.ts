@@ -36,10 +36,12 @@ export const getReviewDir = async (isInitial: boolean, folderId?: string) => {
       new Intl.DateTimeFormat("en-GB", options).format(now);
 
     const year = format({ year: "numeric" });
-    const month = format({ month: "2-digit" });
-    const day = format({ day: "2-digit" });
-    const hour = format({ hour: "2-digit", hour12: false });
-    const minute = format({ minute: "2-digit" });
+    const month = format({ month: "2-digit" }).toString().padStart(2, "0");
+    const day = format({ day: "2-digit" }).toString().padStart(2, "0");
+    const hour = format({ hour: "2-digit", hour12: false })
+      .toString()
+      .padStart(2, "0");
+    const minute = format({ minute: "2-digit" }).toString().padStart(2, "0");
 
     const id = `${year}${month}${day}${hour}${minute}`;
 
