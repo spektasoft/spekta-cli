@@ -136,7 +136,7 @@ export async function runReview() {
     finalPrompt += `PREVIOUS REVIEW:\n\`\`\`\`markdown\n${prevReviewContent}\n\`\`\`\`\n\n---\n`;
   }
 
-  finalPrompt += `GIT DIFF:\n\`\`\`\`markdown\n${diff}\n\`\`\`\``;
+  finalPrompt += `GIT DIFF:\n\`\`\`\`markdown\n${diff}\n\`\`\`\`\n`; // Ensure 4 backticks matches opening
 
   const fileName = `r-${String(metadata.nextNum).padStart(
     3,
@@ -162,13 +162,15 @@ export async function runReview() {
       const result = await callAI(
         env.OPENROUTER_API_KEY,
         provider.model,
-        finalPrompt
+        finalPrompt,
+        provider.config || {} // Pass the config
       );
 
       await fs.writeFile(filePath, result || "");
       spinner.succeed(`Review saved: ${filePath}`);
     } catch (error: any) {
       spinner.fail(`AI Review failed: ${error.message}`);
+      throw error; // Re-throw for CLI exit code and testing
     }
   }
 }
