@@ -3,33 +3,49 @@ import { runReview } from "./commands/review";
 import { runCommit } from "./commands/commit";
 import { select } from "@inquirer/prompts";
 
+interface CommandDefinition {
+  name: string;
+  run: () => Promise<void>;
+}
+
+const COMMANDS: Record<string, CommandDefinition> = {
+  review: {
+    name: "Run Git Review",
+    run: runReview,
+  },
+  commit: {
+    name: "Generate Commit Message",
+    run: runCommit,
+  },
+};
+
 async function main() {
   await bootstrap();
 
   const args = process.argv.slice(2);
-  const command = args[0];
+  const commandArg = args[0];
 
-  if (command === "review") {
-    await runReview();
+  // 1. Check CLI Arguments
+  if (commandArg && COMMANDS[commandArg]) {
+    await COMMANDS[commandArg].run();
     return;
   }
 
-  if (command === "commit") {
-    await runCommit();
-    return;
-  }
-
+  // 2. Fallback to Interactive Menu
   const action = await select({
     message: "What would you like to do?",
     choices: [
-      { name: "Run Git Review", value: "review" },
-      { name: "Generate Commit Message", value: "commit" },
+      ...Object.entries(COMMANDS).map(([value, def]) => ({
+        name: def.name,
+        value: value,
+      })),
       { name: "Exit", value: "exit" },
     ],
   });
 
-  if (action === "review") await runReview();
-  else if (action === "commit") await runCommit();
+  if (action !== "exit" && COMMANDS[action]) {
+    await COMMANDS[action].run();
+  }
 }
 
 main().catch((err) => {
