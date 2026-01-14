@@ -15,7 +15,14 @@ export async function promptProviderSelection(
   providers: Provider[],
   contextMessage: string = "Select provider:"
 ): Promise<ProviderSelection> {
-  const tokenCount = encode(prompt).length;
+  let tokenCount: number | string;
+
+  // Only encode if the prompt is under 1MB to prevent blocking the thread
+  if (prompt.length < 1000000) {
+    tokenCount = encode(prompt).length;
+  } else {
+    tokenCount = `~${Math.round(prompt.length / 4)} (Estimated)`;
+  }
 
   console.log(`\nEstimated Prompt Tokens: ${tokenCount}`);
 
