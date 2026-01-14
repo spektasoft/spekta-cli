@@ -123,6 +123,14 @@ export async function runReview() {
       await fs.writeFile(filePath, finalPrompt);
       console.log(`Generated: ${filePath}`);
     } else {
+      // Pre-validate API key before calling orchestrator
+      if (!env.OPENROUTER_API_KEY) {
+        console.error(
+          "Configuration Error: Missing OPENROUTER_API_KEY. Please set it in your .env file."
+        );
+        return;
+      }
+
       const result = await executeAiAction({
         apiKey: env.OPENROUTER_API_KEY,
         provider: selection.provider!,
