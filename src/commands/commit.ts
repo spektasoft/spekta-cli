@@ -22,42 +22,54 @@ async function saveToTempFile(
 }
 
 export async function runCommit() {
-  const [providersData, env, ignorePatterns] = await Promise.all([
-    getProviders(),
-    getEnv(),
-    getIgnorePatterns(),
-  ]);
+  try {
+    const [providersData, env, ignorePatterns] = await Promise.all([
+      getProviders(),
+      getEnv(),
+      getIgnorePatterns(),
+    ]);
 
-  const diff = await getStagedDiff(ignorePatterns);
-  if (!diff) {
-    console.error("No staged changes found.");
-    return;
-  }
+    const diff = await getStagedDiff(ignorePatterns);
+    if (!diff) {
+      console.error("No staged changes found.");
+      return;
+    }
 
-  const template = await getPromptContent("commit.md");
-  const finalPrompt = template.replace("{{diff}}", diff);
+    const DIFF_WARNING_THRESHOLD = 30000;
+    if (diff.length > DIFF_WARNING_THRESHOLD) {
+      console.warn(
+        `Warning: Staged diff is large (${diff.length} characters).`
+      );
+    }
 
-  const selection = await promptProviderSelection(
-    finalPrompt,
-    providersData.providers,
-    "Select provider for commit message:"
-  );
+    const template = await getPromptContent("commit.md");
+    const finalPrompt = template.replace("{{diff}}", diff);
 
-  if (selection.isOnlyPrompt) {
-    const filePath = await saveToTempFile(finalPrompt, "spekta-prompt");
+    const selection = await promptProviderSelection(
+      finalPrompt,
+      providersData.providers,
+      "Select provider for commit message:"
+    );
+
+    if (selection.isOnlyPrompt) {
+      const filePath = await saveToTempFile(finalPrompt, "spekta-prompt");
+      console.log(`Generated: ${filePath}`);
+      return;
+    }
+
+    const result = await executeAiAction({
+      apiKey: env.OPENROUTER_API_KEY,
+      provider: selection.provider!,
+      prompt: finalPrompt,
+      spinnerTitle: `Generating commit message using ${
+        selection.provider!.model
+      }...`,
+    });
+
+    const filePath = await saveToTempFile(result, "spekta-commit");
     console.log(`Generated: ${filePath}`);
-    return;
+  } catch (error: any) {
+    console.error(`Error: ${error.message}`);
+    process.exitCode = 1;
   }
-
-  const result = await executeAiAction({
-    apiKey: env.OPENROUTER_API_KEY,
-    provider: selection.provider!,
-    prompt: finalPrompt,
-    spinnerTitle: `Generating commit message using ${
-      selection.provider!.model
-    }...`,
-  });
-
-  const filePath = await saveToTempFile(result, "spekta-commit");
-  console.log(`Generated: ${filePath}`);
 }
