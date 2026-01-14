@@ -1,24 +1,28 @@
 import OpenAI from "openai";
 
-let openai: OpenAI | null = null;
+const clientMap = new Map<string, OpenAI>();
 
-const getClient = (apiKey: string): OpenAI => {
-  if (!openai) {
-    openai = new OpenAI({
+export const getAIClient = (apiKey: string): OpenAI => {
+  let client = clientMap.get(apiKey);
+  if (!client) {
+    client = new OpenAI({
       apiKey,
       baseURL: "https://openrouter.ai/api/v1",
     });
+    clientMap.set(apiKey, client);
   }
-  return openai;
+  return client;
 };
 
 export const callAI = async (
   apiKey: string,
   model: string,
   prompt: string,
-  config: Record<string, any> = {}
+  config: Record<string, any> = {},
+  // Best practice: Allow injection for testing
+  clientOverride?: OpenAI
 ): Promise<string> => {
-  const client = getClient(apiKey);
+  const client = clientOverride || getAIClient(apiKey);
 
   const response = await client.chat.completions.create({
     model,
