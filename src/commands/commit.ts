@@ -1,4 +1,3 @@
-import ora from "ora";
 import os from "os";
 import path from "path";
 import fs from "fs-extra";
@@ -7,78 +6,42 @@ import {
   getProviders,
   getIgnorePatterns,
   getPromptContent,
-  Provider,
 } from "../config";
 import { getStagedDiff } from "../git";
-import { callAI } from "../api";
-import { select } from "@inquirer/prompts";
+import { promptProviderSelection } from "../ui";
+import { executeAiAction } from "../orchestrator";
 
-/**
- * Persists content to a temporary file and logs the path.
- * Crashes gracefully on failure.
- */
 async function saveToTempFile(
   content: string,
   prefix: string
 ): Promise<string> {
   const tempFileName = `${prefix}-${Date.now()}.md`;
   const tempFilePath = path.join(os.tmpdir(), tempFileName);
-
-  try {
-    await fs.writeFile(tempFilePath, content, "utf-8");
-    return tempFilePath;
-  } catch (error: any) {
-    throw new Error(
-      `Fatal File System Error: Could not write to ${tempFilePath}. ${error.message}`
-    );
-  }
+  await fs.writeFile(tempFilePath, content, "utf-8");
+  return tempFilePath;
 }
 
 export async function runCommit() {
-  let providersData;
-  try {
-    providersData = await getProviders();
-  } catch (error: any) {
-    // Ensure early returns still communicate failure if not throwing
-    console.error(`Configuration Error: ${error.message}`);
-    process.exitCode = 1;
-    return;
-  }
-
-  const { providers } = providersData;
-  const env = await getEnv();
-  const ignorePatterns = await getIgnorePatterns();
+  const [providersData, env, ignorePatterns] = await Promise.all([
+    getProviders(),
+    getEnv(),
+    getIgnorePatterns(),
+  ]);
 
   const diff = await getStagedDiff(ignorePatterns);
-
-  const DIFF_WARNING_THRESHOLD = 30000;
-  if (diff.length > DIFF_WARNING_THRESHOLD) {
-    console.warn(
-      `Warning: Staged diff is large (${diff.length} characters). The AI may truncate its response or fail due to context limits.`
-    );
-  }
-
   if (!diff) {
-    console.error("No staged changes found. Please stage your changes first.");
+    console.error("No staged changes found.");
     return;
   }
-
-  const selection = await select<{
-    isOnlyPrompt: boolean;
-    provider?: Provider;
-  }>({
-    message: "Select provider for commit message generation:",
-    choices: [
-      { name: "Only Prompt", value: { isOnlyPrompt: true } },
-      ...providers.map((p) => ({
-        name: `${p.name} (${p.model})`,
-        value: { isOnlyPrompt: false, provider: p },
-      })),
-    ],
-  });
 
   const template = await getPromptContent("commit.md");
   const finalPrompt = template.replace("{{diff}}", diff);
+
+  const selection = await promptProviderSelection(
+    finalPrompt,
+    providersData.providers,
+    "Select provider for commit message:"
+  );
 
   if (selection.isOnlyPrompt) {
     const filePath = await saveToTempFile(finalPrompt, "spekta-prompt");
@@ -86,34 +49,15 @@ export async function runCommit() {
     return;
   }
 
-  if (!env.OPENROUTER_API_KEY) {
-    console.error("Configuration Error: Missing OPENROUTER_API_KEY");
-    return;
-  }
+  const result = await executeAiAction({
+    apiKey: env.OPENROUTER_API_KEY,
+    provider: selection.provider!,
+    prompt: finalPrompt,
+    spinnerTitle: `Generating commit message using ${
+      selection.provider!.model
+    }...`,
+  });
 
-  const provider = selection.provider!;
-  const spinner = ora(
-    `Generating commit message using ${provider.model}...`
-  ).start();
-
-  try {
-    const result = await callAI(
-      env.OPENROUTER_API_KEY,
-      provider.model,
-      finalPrompt,
-      provider.config || {}
-    );
-
-    spinner.succeed("Commit message generated.");
-
-    const filePath = await saveToTempFile(result, "spekta-commit");
-    console.log(`Generated: ${filePath}`);
-  } catch (error: any) {
-    if (spinner.isSpinning) {
-      spinner.fail(`Generation failed: ${error.message}`);
-    } else {
-      console.error(`Error: ${error.message}`);
-    }
-    throw error;
-  }
+  const filePath = await saveToTempFile(result, "spekta-commit");
+  console.log(`Generated: ${filePath}`);
 }
