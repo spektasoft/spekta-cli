@@ -39,7 +39,9 @@ export async function runCommit() {
   try {
     providersData = await getProviders();
   } catch (error: any) {
+    // Ensure early returns still communicate failure if not throwing
     console.error(`Configuration Error: ${error.message}`);
+    process.exitCode = 1;
     return;
   }
 
