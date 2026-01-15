@@ -15,6 +15,7 @@ import {
   ReviewDirInfo,
 } from "../fs-manager";
 import { input, confirm, select } from "@inquirer/prompts";
+import { execa } from "execa";
 
 async function getHashRange(suggestedStart: string, suggestedEnd: string) {
   const useSuggested = await confirm({
@@ -108,6 +109,19 @@ export async function runReview() {
 
     await fs.writeFile(filePath, finalPrompt);
     console.log(`Generated: ${filePath}`);
+
+    const editor = env.SPEKTA_EDITOR;
+    if (editor) {
+      try {
+        await execa(editor, [filePath], { stdio: "inherit" });
+      } catch (editorError: any) {
+        console.warn(`Could not open editor: ${editorError.message}`);
+      }
+    } else {
+      console.log(
+        "Set SPEKTA_EDITOR in your .env to open prompts automatically."
+      );
+    }
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;
