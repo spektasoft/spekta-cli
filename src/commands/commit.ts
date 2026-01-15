@@ -1,6 +1,3 @@
-import os from "os";
-import path from "path";
-import fs from "fs-extra";
 import {
   getEnv,
   getProviders,
@@ -11,16 +8,6 @@ import { getStagedDiff } from "../git";
 import { promptProviderSelection } from "../ui";
 import { executeAiAction } from "../orchestrator";
 import { finalizeOutput } from "../editor-utils";
-
-async function saveToTempFile(
-  content: string,
-  prefix: string
-): Promise<string> {
-  const tempFileName = `${prefix}-${Date.now()}.md`;
-  const tempFilePath = path.join(os.tmpdir(), tempFileName);
-  await fs.writeFile(tempFilePath, content, "utf-8");
-  return tempFilePath;
-}
 
 export async function runCommit() {
   try {
