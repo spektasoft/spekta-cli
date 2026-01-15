@@ -38,7 +38,7 @@ export async function runPr() {
   const result = await executeAiAction({
     apiKey: env.OPENROUTER_API_KEY,
     provider: selection.provider!,
-    prompt: finalPrompt,
+    messages: [{ role: "user", content: finalPrompt }],
     spinnerTitle: `Generating PR message using ${selection.provider!.model}...`,
   });
 

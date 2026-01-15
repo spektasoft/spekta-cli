@@ -1,11 +1,11 @@
 import ora from "ora";
-import { callAI } from "./api";
+import { callAI, Message } from "./api";
 import { Provider } from "./config";
 
 interface AiExecutionOptions {
   apiKey: string | undefined;
   provider: Provider;
-  prompt: string;
+  messages: Message[];
   spinnerTitle: string;
 }
 
@@ -25,7 +25,7 @@ export async function executeAiAction(
     const result = await callAI(
       options.apiKey,
       options.provider.model,
-      options.prompt,
+      options.messages,
       options.provider.config || {}
     );
     spinner.succeed("Generation complete.");

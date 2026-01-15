@@ -69,7 +69,7 @@ export async function runCommit() {
     const result = await executeAiAction({
       apiKey: env.OPENROUTER_API_KEY,
       provider: selection.provider!,
-      prompt: finalPrompt,
+      messages: [{ role: "user", content: finalPrompt }],
       spinnerTitle: `Generating commit message using ${
         selection.provider!.model
       }...`,
