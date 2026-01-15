@@ -10,6 +10,7 @@ import {
 import { getStagedDiff } from "../git";
 import { promptProviderSelection } from "../ui";
 import { executeAiAction } from "../orchestrator";
+import { openEditor } from "../editor-utils";
 
 async function saveToTempFile(
   content: string,
@@ -75,7 +76,12 @@ export async function runCommit() {
     });
 
     const filePath = await saveToTempFile(result, "spekta-commit");
-    console.log(`Generated: ${filePath}`);
+    console.log(`Commit message generated: ${filePath}`);
+
+    const editor = env.SPEKTA_EDITOR;
+    if (editor) {
+      await openEditor(editor, filePath);
+    }
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;
