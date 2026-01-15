@@ -1,11 +1,6 @@
 import path from "path";
 import fs from "fs-extra";
-import {
-  getEnv,
-  getProviders,
-  getIgnorePatterns,
-  getPromptContent,
-} from "../config";
+import { getEnv, getIgnorePatterns, getPromptContent } from "../config";
 import {
   getGitDiff,
   resolveHash,
@@ -20,8 +15,7 @@ import {
   ReviewDirInfo,
 } from "../fs-manager";
 import { input, confirm, select } from "@inquirer/prompts";
-import { promptProviderSelection } from "../ui";
-import { executeAiAction } from "../orchestrator";
+import { execa } from "execa";
 
 async function getHashRange(suggestedStart: string, suggestedEnd: string) {
   const useSuggested = await confirm({
@@ -41,8 +35,7 @@ async function getHashRange(suggestedStart: string, suggestedEnd: string) {
 
 export async function runReview() {
   try {
-    const [providersData, env, ignorePatterns] = await Promise.all([
-      getProviders(),
+    const [env, ignorePatterns] = await Promise.all([
       getEnv(),
       getIgnorePatterns(),
     ]);
@@ -93,14 +86,9 @@ export async function runReview() {
       getGitDiff(start, end, ignorePatterns),
     ]);
 
-    const selection = await promptProviderSelection(
-      diff,
-      providersData.providers
-    );
-    const templateSuffix = selection.isOnlyPrompt ? "-prompt.md" : ".md";
     const templateName = isInitial
-      ? `review-initial${templateSuffix}`
-      : `review-validation${templateSuffix}`;
+      ? "review-initial.md"
+      : "review-validation.md";
 
     let finalPrompt = (await getPromptContent(templateName)) + "\n\n---\n";
 
@@ -119,28 +107,29 @@ export async function runReview() {
     )}-${start.slice(0, 7)}..${end.slice(0, 7)}.md`;
     const filePath = path.join(dirInfo.dir, fileName);
 
-    if (selection.isOnlyPrompt) {
-      await fs.writeFile(filePath, finalPrompt);
-      console.log(`Generated: ${filePath}`);
-    } else {
-      // Pre-validate API key before calling orchestrator
-      if (!env.OPENROUTER_API_KEY) {
-        console.error(
-          "Configuration Error: Missing OPENROUTER_API_KEY. Please set it in your .env file."
-        );
-        return;
-      }
+    if (!(await fs.pathExists(dirInfo.dir))) {
+      await fs.ensureDir(dirInfo.dir);
+    }
 
-      const result = await executeAiAction({
-        apiKey: env.OPENROUTER_API_KEY,
-        provider: selection.provider!,
-        prompt: finalPrompt,
-        spinnerTitle: `AI is reviewing your code using ${
-          selection.provider!.model
-        }...`,
-      });
-      await fs.writeFile(filePath, result);
-      console.log(`Review saved: ${filePath}`);
+    await fs.writeFile(filePath, finalPrompt);
+    console.log(`Generated: ${filePath}`);
+
+    const editor = env.SPEKTA_EDITOR;
+    if (editor) {
+      try {
+        // Ensure stdio: "inherit" is kept for terminal-based editors like vim/nano
+        await execa(editor, [filePath], { stdio: "inherit" });
+      } catch (editorError: any) {
+        console.warn(`\nWarning: Failed to open editor "${editor}".`);
+        console.warn(`Detail: ${editorError.message}`);
+        console.log(`You can manually open the review at: ${filePath}`);
+      }
+    } else {
+      console.log("\n--- Action Required ---");
+      console.log(`Review prompt generated at: ${filePath}`);
+      console.log(
+        "Tip: Set SPEKTA_EDITOR in your .env to open this automatically."
+      );
     }
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
