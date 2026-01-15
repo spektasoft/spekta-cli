@@ -8,7 +8,7 @@ import {
 import { promptHashRange } from "../git-ui";
 import { promptProviderSelection } from "../ui";
 import { executeAiAction } from "../orchestrator";
-import { saveToTempFile, openEditor } from "../editor-utils";
+import { finalizeOutput } from "../editor-utils";
 
 export async function runPr() {
   const [env, providersData] = await Promise.all([getEnv(), getProviders()]);
@@ -20,35 +20,33 @@ export async function runPr() {
   const { start, end } = await promptHashRange(suggestedStart, suggestedEnd);
   const commitMessages = await getCommitMessages(start, end);
 
-  const template = await getPromptContent("pull-request.md");
-  const finalPrompt = template.replace("{{commit_messages}}", commitMessages);
+  const systemPrompt = await getPromptContent("pull-request.md");
+  const userContext = `### COMMIT MESSAGES\n\`\`\`markdown\n${commitMessages}\n\`\`\``;
 
   const selection = await promptProviderSelection(
-    finalPrompt,
+    systemPrompt + "\n" + userContext,
     providersData.providers,
     "Select provider for PR message:"
   );
 
   if (selection.isOnlyPrompt) {
-    const filePath = await saveToTempFile(finalPrompt, "spekta-pr-prompt");
-    console.log(`Prompt saved to: ${filePath}`);
+    await finalizeOutput(
+      systemPrompt + "\n" + userContext,
+      "spekta-pr-prompt",
+      "Prompt saved"
+    );
     return;
   }
 
   const result = await executeAiAction({
     apiKey: env.OPENROUTER_API_KEY,
     provider: selection.provider!,
-    messages: [{ role: "user", content: finalPrompt }],
-    spinnerTitle: `Generating PR message using ${selection.provider!.model}...`,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userContext },
+    ],
+    spinnerTitle: "Generating PR message...",
   });
 
-  const filePath = await saveToTempFile(result, "spekta-pr");
-  console.log(`PR message generated: ${filePath}`);
-
-  const editor = env.SPEKTA_EDITOR;
-  if (editor) {
-    await openEditor(editor, filePath);
-  } else {
-    console.log("Tip: Set SPEKTA_EDITOR in .env to open automatically.");
-  }
+  await finalizeOutput(result, "spekta-pr", "PR message generated");
 }

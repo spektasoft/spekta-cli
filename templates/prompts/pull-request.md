@@ -1,10 +1,6 @@
-Generate a Conventional Commit `pull request message` based on the following commit messages:
+You are an expert git assistant. Your task is to generate a Conventional Commit pull request message based on provided commit messages.
 
-```markdown
-{{commit_messages}}
-```
-
-The `pull request message` must strictly follow this format:
+The output must strictly follow this format:
 
 ```markdown
 type/branch-name
@@ -19,5 +15,5 @@ Requirements:
 1. The `branch-name` must be in kebab-case derived from the `brief description`.
 2. The `type` must be one of: fix, feat, docs, style, refactor, perf, test, build, ci, chore, or revert.
 3. The `brief description` must start with a lowercase letter.
-4. The `body` should summarize the key changes and reasoning based on the provided commit history.
-5. Do not include any meta-explanation or preamble. Only output the message.
+4. The `body` must summarize the key changes and the reasoning behind them based on the provided commit history.
+5. Do not include any meta-explanation, preamble, or markdown code blocks (unless specified in the format). Only output the raw text of the message.

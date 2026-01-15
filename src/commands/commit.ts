@@ -10,7 +10,7 @@ import {
 import { getStagedDiff } from "../git";
 import { promptProviderSelection } from "../ui";
 import { executeAiAction } from "../orchestrator";
-import { openEditor } from "../editor-utils";
+import { finalizeOutput } from "../editor-utils";
 
 async function saveToTempFile(
   content: string,
@@ -43,25 +43,19 @@ export async function runCommit() {
       );
     }
 
-    const template = await getPromptContent("commit.md");
-    const finalPrompt = template.replace("{{diff}}", diff);
+    const systemPrompt = await getPromptContent("commit.md");
+    const userContext = `### GIT STAGED DIFF\n\`\`\`markdown\n${diff}\n\`\`\``;
 
     const selection = await promptProviderSelection(
-      finalPrompt,
-      providersData.providers,
-      "Select provider for commit message:"
+      systemPrompt + "\n" + userContext,
+      providersData.providers
     );
 
     if (selection.isOnlyPrompt) {
-      const filePath = await saveToTempFile(finalPrompt, "spekta-prompt");
-      console.log(`Generated: ${filePath}`);
-      return;
-    }
-
-    // Pre-validate API key before calling orchestrator
-    if (!env.OPENROUTER_API_KEY) {
-      console.error(
-        "Configuration Error: Missing OPENROUTER_API_KEY. Please set it in your .env file."
+      await finalizeOutput(
+        systemPrompt + "\n" + userContext,
+        "spekta-prompt",
+        "Prompt saved"
       );
       return;
     }
@@ -69,19 +63,14 @@ export async function runCommit() {
     const result = await executeAiAction({
       apiKey: env.OPENROUTER_API_KEY,
       provider: selection.provider!,
-      messages: [{ role: "user", content: finalPrompt }],
-      spinnerTitle: `Generating commit message using ${
-        selection.provider!.model
-      }...`,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContext },
+      ],
+      spinnerTitle: "Generating commit message...",
     });
 
-    const filePath = await saveToTempFile(result, "spekta-commit");
-    console.log(`Commit message generated: ${filePath}`);
-
-    const editor = env.SPEKTA_EDITOR;
-    if (editor) {
-      await openEditor(editor, filePath);
-    }
+    await finalizeOutput(result, "spekta-commit", "Commit message generated");
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;
