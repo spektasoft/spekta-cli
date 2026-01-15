@@ -113,13 +113,18 @@ export async function runReview() {
     const editor = env.SPEKTA_EDITOR;
     if (editor) {
       try {
+        // Ensure stdio: "inherit" is kept for terminal-based editors like vim/nano
         await execa(editor, [filePath], { stdio: "inherit" });
       } catch (editorError: any) {
-        console.warn(`Could not open editor: ${editorError.message}`);
+        console.warn(`\nWarning: Failed to open editor "${editor}".`);
+        console.warn(`Detail: ${editorError.message}`);
+        console.log(`You can manually open the review at: ${filePath}`);
       }
     } else {
+      console.log("\n--- Action Required ---");
+      console.log(`Review prompt generated at: ${filePath}`);
       console.log(
-        "Set SPEKTA_EDITOR in your .env to open prompts automatically."
+        "Tip: Set SPEKTA_EDITOR in your .env to open this automatically."
       );
     }
   } catch (error: any) {
