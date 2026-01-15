@@ -2,6 +2,7 @@ import os from "os";
 import path from "path";
 import fs from "fs-extra";
 import { execa } from "execa";
+import { getEnv } from "./config";
 
 /**
  * Saves content to a temporary markdown file.
@@ -29,5 +30,25 @@ export async function openEditor(
     throw new Error(
       `Failed to open editor "${editorCommand}": ${error.message}`
     );
+  }
+}
+
+export async function finalizeOutput(
+  content: string,
+  prefix: string,
+  successMessage: string
+): Promise<void> {
+  const filePath = await saveToTempFile(content, prefix);
+  console.log(`${successMessage}: ${filePath}`);
+
+  const env = await getEnv();
+  const editor = env.SPEKTA_EDITOR;
+
+  if (editor) {
+    try {
+      await openEditor(editor, filePath);
+    } catch (error: any) {
+      console.warn(`Warning: Could not open editor: ${error.message}`);
+    }
   }
 }
