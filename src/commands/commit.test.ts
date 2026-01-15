@@ -99,15 +99,21 @@ describe("Command: runCommit", () => {
     await runCommit();
 
     // Assert
-    // 1. Check AI execution
+    // 1. Check AI execution with messages array
     expect(orchestrator.executeAiAction).toHaveBeenCalledWith({
       apiKey: "sk-test",
       provider: mockProvider,
-      prompt: "Commit Template: diff content",
-      spinnerTitle: expect.stringContaining("Generating commit message"),
+      messages: [
+        { role: "system", content: "Commit Template: {{diff}}" },
+        {
+          role: "user",
+          content: expect.stringContaining("### GIT STAGED DIFF"),
+        },
+      ],
+      spinnerTitle: "Generating commit message...",
     });
 
-    // 2. Check File Save
+    // 2. Check File Save (via finalizeOutput)
     expect(fs.writeFile).toHaveBeenCalledWith(
       expect.stringContaining(path.join("/tmp/mock-dir", "spekta-commit-")),
       mockAiResult,
@@ -116,7 +122,7 @@ describe("Command: runCommit", () => {
 
     // 3. Check Success Log
     expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Generated:")
+      expect.stringContaining("Commit message generated")
     );
   });
 
@@ -134,11 +140,16 @@ describe("Command: runCommit", () => {
     // Assert
     expect(orchestrator.executeAiAction).not.toHaveBeenCalled();
 
-    const expectedPrompt = "Commit Template: diff content";
+    // The prompt now includes both system prompt and user context
+    const expectedPromptContent = expect.stringContaining("Commit Template:");
     expect(fs.writeFile).toHaveBeenCalledWith(
       expect.stringContaining(path.join("/tmp/mock-dir", "spekta-prompt-")),
-      expectedPrompt,
+      expectedPromptContent,
       "utf-8"
+    );
+
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Prompt saved")
     );
   });
 
