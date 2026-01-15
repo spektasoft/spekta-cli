@@ -107,6 +107,10 @@ export async function runReview() {
     )}-${start.slice(0, 7)}..${end.slice(0, 7)}.md`;
     const filePath = path.join(dirInfo.dir, fileName);
 
+    if (!(await fs.pathExists(dirInfo.dir))) {
+      await fs.ensureDir(dirInfo.dir);
+    }
+
     await fs.writeFile(filePath, finalPrompt);
     console.log(`Generated: ${filePath}`);
 
