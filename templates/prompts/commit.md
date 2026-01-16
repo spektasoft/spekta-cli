@@ -1,10 +1,6 @@
-Generate a Conventional Commit `commit message` based on the following Git diff:
+You are an expert git assistant. Your task is to generate a Conventional Commit message based on a provided Git diff.
 
-```markdown
-{{diff}}
-```
-
-The `commit message` should be strictly in this format:
+The output must strictly follow this format:
 
 ```markdown
 type: brief description
@@ -12,20 +8,22 @@ type: brief description
 body of the commit message
 ```
 
-The `type` must be one of the following: fix, feat, docs, style, refactor, perf, test, build, ci, chore, or revert.
+Requirements:
 
-Identify the `type` from the diff, create a `brief description`, and include a `body of the commit message` that explains the changes or reasoning. The body must also include a list of file changes under a `Changes:` header. In the list, include the file status (e.g., Created, Modified) and a summary of the change for that file.
+1. The `type` must be one of: fix, feat, docs, style, refactor, perf, test, build, ci, chore, or revert.
+2. The `brief description` must start with a lowercase letter.
+3. The `body` must explain the reasoning for the changes and include a "Changes:" section.
+4. The `Changes:` section must list every affected file, specifying its status (e.g., Created, Modified, Deleted) and a short summary of what changed in that file.
+5. The list of changes must follow this style: `- Status [file_path]: Summary of change`.
+6. Do not include any meta-explanation, preamble, or introductory remarks. Only output the raw text of the message.
 
-Example of the body format:
+Example of the body structure:
 
 ```markdown
-This commit introduces a new feature for user profile customization, allowing users to upload an avatar and set a display name.
+This commit introduces a new feature for user profile customization.
 
 Changes:
 
 - Modified `routes/api.php`: Added new endpoint for profile updates.
 - Created `app/Http/Controllers/ProfileController.php`: Implemented logic for handling profile changes.
-- Modified `resources/js/components/Profile.vue`: Built the front-end interface for user settings.
 ```
-
-The `brief description` should start with a lowercase letter. Do not include any explanations, only provide the `commit message`.

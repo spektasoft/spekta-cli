@@ -1,6 +1,3 @@
-import os from "os";
-import path from "path";
-import fs from "fs-extra";
 import {
   getEnv,
   getProviders,
@@ -10,16 +7,7 @@ import {
 import { getStagedDiff } from "../git";
 import { promptProviderSelection } from "../ui";
 import { executeAiAction } from "../orchestrator";
-
-async function saveToTempFile(
-  content: string,
-  prefix: string
-): Promise<string> {
-  const tempFileName = `${prefix}-${Date.now()}.md`;
-  const tempFilePath = path.join(os.tmpdir(), tempFileName);
-  await fs.writeFile(tempFilePath, content, "utf-8");
-  return tempFilePath;
-}
+import { finalizeOutput } from "../editor-utils";
 
 export async function runCommit() {
   try {
@@ -42,25 +30,19 @@ export async function runCommit() {
       );
     }
 
-    const template = await getPromptContent("commit.md");
-    const finalPrompt = template.replace("{{diff}}", diff);
+    const systemPrompt = await getPromptContent("commit.md");
+    const userContext = `### GIT STAGED DIFF\n\`\`\`markdown\n${diff}\n\`\`\``;
 
     const selection = await promptProviderSelection(
-      finalPrompt,
-      providersData.providers,
-      "Select provider for commit message:"
+      systemPrompt + "\n" + userContext,
+      providersData.providers
     );
 
     if (selection.isOnlyPrompt) {
-      const filePath = await saveToTempFile(finalPrompt, "spekta-prompt");
-      console.log(`Generated: ${filePath}`);
-      return;
-    }
-
-    // Pre-validate API key before calling orchestrator
-    if (!env.OPENROUTER_API_KEY) {
-      console.error(
-        "Configuration Error: Missing OPENROUTER_API_KEY. Please set it in your .env file."
+      await finalizeOutput(
+        systemPrompt + "\n" + userContext,
+        "spekta-prompt",
+        "Prompt saved"
       );
       return;
     }
@@ -68,14 +50,14 @@ export async function runCommit() {
     const result = await executeAiAction({
       apiKey: env.OPENROUTER_API_KEY,
       provider: selection.provider!,
-      prompt: finalPrompt,
-      spinnerTitle: `Generating commit message using ${
-        selection.provider!.model
-      }...`,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContext },
+      ],
+      spinnerTitle: "Generating commit message...",
     });
 
-    const filePath = await saveToTempFile(result, "spekta-commit");
-    console.log(`Generated: ${filePath}`);
+    await finalizeOutput(result, "spekta-commit", "Commit message generated");
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;

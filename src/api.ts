@@ -1,5 +1,10 @@
 import OpenAI from "openai";
 
+export interface Message {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
 const clientMap = new Map<string, OpenAI>();
 
 export const getAIClient = (apiKey: string): OpenAI => {
@@ -17,7 +22,7 @@ export const getAIClient = (apiKey: string): OpenAI => {
 export const callAI = async (
   apiKey: string,
   model: string,
-  prompt: string,
+  messages: Message[],
   config: Record<string, any> = {},
   // Best practice: Allow injection for testing
   clientOverride?: OpenAI
@@ -26,7 +31,7 @@ export const callAI = async (
 
   const response = await client.chat.completions.create({
     model,
-    messages: [{ role: "user", content: prompt }],
+    messages,
     ...config,
   });
 

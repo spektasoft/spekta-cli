@@ -107,3 +107,24 @@ export const getStagedDiff = async (
     throw new Error(`Git staged diff failed: ${message}`);
   }
 };
+
+/**
+ * Retrieves commit messages between two hashes in reverse chronological order.
+ * @param start - The older commit hash.
+ * @param end - The newer commit hash.
+ * @returns A promise resolving to a formatted string of commit messages.
+ */
+export const getCommitMessages = async (
+  start: string,
+  end: string
+): Promise<string> => {
+  const args = ["log", "--format=%B%n---", "--reverse", `${start}..${end}`];
+
+  try {
+    const { stdout } = await execa("git", args);
+    return stdout.trim();
+  } catch (error: any) {
+    const message = error.stderr || error.message;
+    throw new Error(`Failed to get commit messages: ${message}`);
+  }
+};

@@ -31,7 +31,7 @@ export async function promptProviderSelection(
     choices: [
       { name: "Only Prompt (Save to file)", value: { isOnlyPrompt: true } },
       ...providers.map((p) => ({
-        name: `${p.name} (${p.model})`,
+        name: `${p.name}`,
         value: { isOnlyPrompt: false, provider: p },
       })),
     ],

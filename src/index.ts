@@ -2,6 +2,7 @@ import { bootstrap } from "./config";
 import { runReview } from "./commands/review";
 import { runCommit } from "./commands/commit";
 import { select } from "@inquirer/prompts";
+import { runPr } from "./commands/pr";
 
 interface CommandDefinition {
   name: string;
@@ -16,6 +17,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
   commit: {
     name: "Generate Commit Message",
     run: runCommit,
+  },
+  pr: {
+    name: "Generate PR Message",
+    run: runPr,
   },
 };
 
