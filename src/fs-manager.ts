@@ -30,8 +30,12 @@ export const ensureIgnoredDir = async (
   await fs.ensureDir(root);
 
   const spektaIgnorePath = path.join(root, ".gitignore");
-  if (!(await fs.pathExists(spektaIgnorePath))) {
-    await fs.writeFile(spektaIgnorePath, "*\n");
+  try {
+    // Attempt exclusive creation
+    await fs.writeFile(spektaIgnorePath, "*\n", { flag: "wx" });
+  } catch (err: any) {
+    if (err.code !== "EEXIST") throw err;
+    // File already exists; do nothing
   }
 };
 
