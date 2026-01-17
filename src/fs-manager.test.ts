@@ -80,8 +80,6 @@ describe("ensureIgnoredDir", () => {
   });
 
   it("creates the input directory and initializes .gitignore if missing", async () => {
-    // @ts-ignore
-    vi.mocked(fs.pathExists).mockResolvedValue(false);
     vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
     vi.mocked(fs.writeFile).mockResolvedValue(undefined as any);
 
@@ -90,17 +88,22 @@ describe("ensureIgnoredDir", () => {
     expect(fs.ensureDir).toHaveBeenCalledWith(mockDir);
     expect(fs.ensureDir).toHaveBeenCalledWith(mockRoot);
     const expectedIgnorePath = path.join(mockRoot, ".gitignore");
-    expect(fs.pathExists).toHaveBeenCalledWith(expectedIgnorePath);
-    expect(fs.writeFile).toHaveBeenCalledWith(expectedIgnorePath, "*\n");
+    expect(fs.writeFile).toHaveBeenCalledWith(expectedIgnorePath, "*\n", {
+      flag: "wx",
+    });
   });
 
   it("does not overwrite existing .gitignore", async () => {
-    // @ts-ignore
-    vi.mocked(fs.pathExists).mockResolvedValue(true);
     vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+    vi.mocked(fs.writeFile).mockRejectedValue(
+      Object.assign(new Error("File exists"), { code: "EEXIST" })
+    );
 
-    await ensureIgnoredDir(mockDir, mockRoot);
+    await expect(ensureIgnoredDir(mockDir, mockRoot)).resolves.not.toThrow();
 
-    expect(fs.writeFile).not.toHaveBeenCalled();
+    const expectedIgnorePath = path.join(mockRoot, ".gitignore");
+    expect(fs.writeFile).toHaveBeenCalledWith(expectedIgnorePath, "*\n", {
+      flag: "wx",
+    });
   });
 });
