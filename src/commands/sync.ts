@@ -7,11 +7,12 @@ export async function runSync() {
     throw new Error("OPENROUTER_API_KEY not found in environment.");
   }
 
-  const spinner = ora("Syncing free models from OpenRouter...").start();
+  const spinner = ora("Fetching models...").start();
   try {
-    await syncFreeModels(env.OPENROUTER_API_KEY);
-    spinner.succeed("Free models updated successfully.");
+    const count = await syncFreeModels(env.OPENROUTER_API_KEY);
+    spinner.succeed(`Successfully synced ${count} free models.`);
   } catch (err: any) {
     spinner.fail(`Sync failed: ${err.message}`);
+    throw err;
   }
 }

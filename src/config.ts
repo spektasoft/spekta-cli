@@ -74,7 +74,7 @@ export const bootstrap = async () => {
       }
     } else {
       console.warn(
-        "Warning: OPENROUTER_API_KEY not found. Free models won't be fetched."
+        "Warning: OPENROUTER_API_KEY not found. Free models won't be fetched.",
       );
     }
   }
@@ -125,14 +125,14 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   const [userRes, freeRes] = await Promise.allSettled([
     fs.readJSON(HOME_PROVIDERS_USER).catch((err) => {
       console.warn(
-        `Warning: Failed to read user providers file: ${err.message}`
+        `Warning: Failed to read user providers file: ${err.message}`,
       );
       return { providers: [] };
     }),
     !disableFree
       ? fs.readJSON(HOME_PROVIDERS_FREE).catch((err) => {
           console.warn(
-            `Warning: Failed to read free providers file: ${err.message}`
+            `Warning: Failed to read free providers file: ${err.message}`,
           );
           return { providers: [] };
         })
@@ -167,7 +167,7 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   const providers = Array.from(mergedMap.values());
   if (providers.length === 0) {
     console.warn(
-      "Notice: No providers configured. Run 'spekta sync' to fetch free models."
+      "Notice: No providers configured. Run 'spekta sync' to fetch free models.",
     );
   }
 
@@ -176,9 +176,31 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
 
 export const syncFreeModels = async (apiKey: string) => {
   const models = await fetchFreeModels(apiKey);
-  const providers: Provider[] = models.map((m) => ({
+
+  // Validate that we received valid models
+  if (!models || !Array.isArray(models) || models.length === 0) {
+    throw new Error("No free models found on OpenRouter.");
+  }
+
+  // Validate each model has required properties
+  const validModels = models.filter(
+    (m) => m && typeof m.id === "string" && typeof m.name === "string",
+  );
+
+  if (validModels.length === 0) {
+    throw new Error("No valid free models found on OpenRouter.");
+  }
+
+  const providers: Provider[] = validModels.map((m) => ({
     name: `[Free] ${m.name}`,
     model: m.id,
   }));
+
+  // Validate that we have providers to write
+  if (providers.length === 0) {
+    throw new Error("No valid providers could be created from the models.");
+  }
+
   await fs.writeJSON(HOME_PROVIDERS_FREE, { providers }, { spaces: 2 });
+  return providers.length;
 };
