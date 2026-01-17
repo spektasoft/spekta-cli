@@ -4,6 +4,7 @@ import { runCommit } from "./commands/commit";
 import { select } from "@inquirer/prompts";
 import { runPr } from "./commands/pr";
 import { runPlan } from "./commands/plan";
+import { runSync } from "./commands/sync";
 
 interface CommandDefinition {
   name: string;
@@ -26,6 +27,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
   pr: {
     name: "Generate PR Message",
     run: runPr,
+  },
+  sync: {
+    name: "Sync Free Models",
+    run: runSync,
   },
 };
 
