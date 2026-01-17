@@ -26,7 +26,7 @@ export const callAI = async (
   messages: Message[],
   config: Record<string, any> = {},
   // Best practice: Allow injection for testing
-  clientOverride?: OpenAI
+  clientOverride?: OpenAI,
 ): Promise<string> => {
   const client = clientOverride || getAIClient(apiKey);
 
@@ -46,16 +46,14 @@ export const callAI = async (
 };
 
 export const fetchFreeModels = async (
-  apiKey: string
+  apiKey: string,
 ): Promise<OpenRouterModel[]> => {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+  const timeout = setTimeout(() => controller.abort(), 10000);
 
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/models", {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+    const response = await fetch("https://openrouter.ai/api/v1/models/user", {
+      headers: { Authorization: `Bearer ${apiKey}` },
       signal: controller.signal,
     });
 
@@ -70,21 +68,13 @@ export const fetchFreeModels = async (
 
     return data.data.filter((m: any) => {
       const p = m.pricing;
+      if (!p || typeof p !== "object") return false;
 
-      // Handle various data types and edge cases for pricing values
-      if (!p || typeof p !== "object") {
-        return false;
-      }
-
-      // Convert to strings and normalize for comparison
-      const prompt = String(p.prompt ?? "");
-      const completion = String(p.completion ?? "");
-      const request = String(p.request ?? "");
-
-      // Check if all pricing values are zero (including variations like "0.0", "0.00", etc.)
-      const isZero = (val: string) => /^0(?:\.0*)?$/.test(val.trim());
-
-      return isZero(prompt) && isZero(completion) && isZero(request);
+      return (
+        Number(p.prompt) === 0 &&
+        Number(p.completion) === 0 &&
+        Number(p.request) === 0
+      );
     });
   } finally {
     clearTimeout(timeout);
