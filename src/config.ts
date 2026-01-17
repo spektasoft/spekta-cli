@@ -12,14 +12,27 @@ export interface Provider {
   config?: Record<string, any>;
 }
 
+// Update ProvidersConfig to handle potential undefined
 interface ProvidersConfig {
   providers: Provider[];
+}
+
+export interface OpenRouterModel {
+  id: string;
+  name: string;
+  pricing: {
+    prompt: string;
+    completion: string;
+    request: string;
+  };
 }
 
 const GET_HOME_DIR = () =>
   process.env.SPEKTA_HOME_OVERRIDE || path.join(os.homedir(), ".spekta");
 
 export let HOME_DIR = GET_HOME_DIR();
+export const HOME_PROVIDERS_USER = path.join(HOME_DIR, "providers.json");
+export const HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.json");
 export let HOME_PROMPTS = path.join(HOME_DIR, "prompts");
 const ASSET_ROOT = __dirname;
 const ASSET_PROMPTS = path.join(ASSET_ROOT, "prompts");
