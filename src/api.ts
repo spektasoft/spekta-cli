@@ -48,24 +48,45 @@ export const callAI = async (
 export const fetchFreeModels = async (
   apiKey: string
 ): Promise<OpenRouterModel[]> => {
-  const response = await fetch("https://openrouter.ai/api/v1/models/user", {
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch models: ${response.statusText}`);
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/models", {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenRouter API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (!data?.data || !Array.isArray(data.data)) {
+      throw new Error("Invalid response format from OpenRouter.");
+    }
+
+    return data.data.filter((m: any) => {
+      const p = m.pricing;
+
+      // Handle various data types and edge cases for pricing values
+      if (!p || typeof p !== "object") {
+        return false;
+      }
+
+      // Convert to strings and normalize for comparison
+      const prompt = String(p.prompt ?? "");
+      const completion = String(p.completion ?? "");
+      const request = String(p.request ?? "");
+
+      // Check if all pricing values are zero (including variations like "0.0", "0.00", etc.)
+      const isZero = (val: string) => /^0(?:\.0*)?$/.test(val.trim());
+
+      return isZero(prompt) && isZero(completion) && isZero(request);
+    });
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const data = await response.json();
-  const models: OpenRouterModel[] = data.data;
-
-  // Filter for free models only
-  return models.filter(
-    (m) =>
-      m.pricing.prompt === "0" &&
-      m.pricing.completion === "0" &&
-      m.pricing.request === "0"
-  );
 };
