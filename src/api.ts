@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { OpenRouterModel } from "./config";
 
 export interface Message {
   role: "system" | "user" | "assistant";
@@ -42,4 +43,29 @@ export const callAI = async (
   }
 
   return content;
+};
+
+export const fetchFreeModels = async (
+  apiKey: string
+): Promise<OpenRouterModel[]> => {
+  const response = await fetch("https://openrouter.ai/api/v1/models/user", {
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch models: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  const models: OpenRouterModel[] = data.data;
+
+  // Filter for free models only
+  return models.filter(
+    (m) =>
+      m.pricing.prompt === "0" &&
+      m.pricing.completion === "0" &&
+      m.pricing.request === "0"
+  );
 };
