@@ -3,6 +3,7 @@ import { runReview } from "./commands/review";
 import { runCommit } from "./commands/commit";
 import { select } from "@inquirer/prompts";
 import { runPr } from "./commands/pr";
+import { runPlan } from "./commands/plan";
 
 interface CommandDefinition {
   name: string;
@@ -10,13 +11,17 @@ interface CommandDefinition {
 }
 
 const COMMANDS: Record<string, CommandDefinition> = {
-  review: {
-    name: "Run Git Review",
-    run: runReview,
-  },
   commit: {
     name: "Generate Commit Message",
     run: runCommit,
+  },
+  plan: {
+    name: "Generate Implementation Plan",
+    run: runPlan,
+  },
+  review: {
+    name: "Run Git Review",
+    run: runReview,
   },
   pr: {
     name: "Generate PR Message",
