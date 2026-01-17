@@ -11,6 +11,11 @@ export async function runPlan() {
     const plansDir = await getPlansDir();
 
     let template = await getPromptContent("plan.md");
+    if (!/{{ID}}/.test(template)) {
+      throw new Error(
+        'Template "plan.md" must contain the placeholder {{ID}}.'
+      );
+    }
     const content = template.replace(/{{ID}}/g, id);
 
     const fileName = `${id}.md`;
