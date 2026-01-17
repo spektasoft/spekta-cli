@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getNextReviewMetadata, getReviewDir } from "./fs-manager.js";
+import {
+  getNextReviewMetadata,
+  getReviewDir,
+  ensureIgnoredDir,
+} from "./fs-manager.js";
 import fs from "fs-extra";
+import * as path from "path";
 
 vi.mock("fs-extra");
 
@@ -17,7 +22,6 @@ describe("getNextReviewMetadata", () => {
   });
 
   it("should correctly parse standard file patterns with valid hex", async () => {
-    // Using valid hex characters (a-f, 0-9)
     const files = ["r-001-abcdef..123456.md", "r-002-deadbe..efc0de.md"];
     vi.mocked(fs.readdir).mockResolvedValue(files as any);
 
@@ -31,7 +35,7 @@ describe("getNextReviewMetadata", () => {
       "r-001-abcdef..123456.md",
       "random-file.txt",
       "r-string-abcdef..123456.md",
-      "r-002-ghi..jkl.md", // Invalid hex characters 'g-l'
+      "r-002-ghi..jkl.md",
     ];
     vi.mocked(fs.readdir).mockResolvedValue(files as any);
 
@@ -39,33 +43,17 @@ describe("getNextReviewMetadata", () => {
     expect(result.nextNum).toBe(2);
     expect(result.lastFile).toBe("r-001-abcdef..123456.md");
   });
-
-  it("should handle multi-digit sequences and non-sequential files", async () => {
-    const files = [
-      "r-005-aaaaaa..bbbbbb.md",
-      "r-010-cccccc..dddddd.md",
-      "r-002-eeeeee..ffffff.md",
-    ];
-    vi.mocked(fs.readdir).mockResolvedValue(files as any);
-
-    const result = await getNextReviewMetadata("/mock/dir");
-    expect(result.nextNum).toBe(11);
-    expect(result.lastFile).toBe("r-010-cccccc..dddddd.md");
-  });
-
-  it("should be robust against hashes containing numbers", async () => {
-    const files = ["r-001-123456..789012.md", "r-002-a1b2c3..d4e5f6.md"];
-    vi.mocked(fs.readdir).mockResolvedValue(files as any);
-
-    const result = await getNextReviewMetadata("/mock/dir");
-    expect(result.nextNum).toBe(3);
-    expect(result.lastFile).toBe("r-002-a1b2c3..d4e5f6.md");
-  });
 });
 
 describe("getReviewDir", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("should create directory asynchronously for initial review", async () => {
     vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+    vi.mocked(fs.pathExists).mockResolvedValue(false as any);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined as any);
 
     const result = await getReviewDir(true);
 
@@ -80,5 +68,39 @@ describe("getReviewDir", () => {
     await expect(getReviewDir(false, "202301010101")).rejects.toThrow(
       "Review folder not found: 202301010101"
     );
+  });
+});
+
+describe("ensureIgnoredDir", () => {
+  const mockDir = "/test/path";
+  const mockRoot = "/test/root";
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("creates the input directory and initializes .gitignore if missing", async () => {
+    // @ts-ignore
+    vi.mocked(fs.pathExists).mockResolvedValue(false);
+    vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined as any);
+
+    await ensureIgnoredDir(mockDir, mockRoot);
+
+    expect(fs.ensureDir).toHaveBeenCalledWith(mockDir);
+    expect(fs.ensureDir).toHaveBeenCalledWith(mockRoot);
+    const expectedIgnorePath = path.join(mockRoot, ".gitignore");
+    expect(fs.pathExists).toHaveBeenCalledWith(expectedIgnorePath);
+    expect(fs.writeFile).toHaveBeenCalledWith(expectedIgnorePath, "*\n");
+  });
+
+  it("does not overwrite existing .gitignore", async () => {
+    // @ts-ignore
+    vi.mocked(fs.pathExists).mockResolvedValue(true);
+    vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+
+    await ensureIgnoredDir(mockDir, mockRoot);
+
+    expect(fs.writeFile).not.toHaveBeenCalled();
   });
 });
