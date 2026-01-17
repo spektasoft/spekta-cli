@@ -1,5 +1,5 @@
-import { select } from "@inquirer/prompts";
 import { encode } from "gpt-tokenizer";
+import autocomplete from "inquirer-autocomplete-standalone";
 import { Provider } from "./config";
 
 export interface ProviderSelection {
@@ -13,27 +13,37 @@ export interface ProviderSelection {
 export async function promptProviderSelection(
   prompt: string,
   providers: Provider[],
-  contextMessage: string = "Select provider:"
+  contextMessage: string = "Select provider:",
 ): Promise<ProviderSelection> {
-  let tokenCount: number | string;
-
-  // Only encode if the prompt is under 1MB to prevent blocking the thread
-  if (prompt.length < 1000000) {
-    tokenCount = encode(prompt).length;
-  } else {
-    tokenCount = `~${Math.round(prompt.length / 4)} (Estimated)`;
-  }
+  const tokenCount =
+    prompt.length < 1000000
+      ? encode(prompt).length
+      : `~${Math.round(prompt.length / 4)} (Estimated)`;
 
   console.log(`\nEstimated Prompt Tokens: ${tokenCount}`);
 
-  return await select<ProviderSelection>({
+  const choices = [
+    {
+      name: "Only Prompt (Save to file)",
+      value: { isOnlyPrompt: true, provider: undefined },
+    },
+    ...providers.map((p) => ({
+      name: p.name,
+      value: { isOnlyPrompt: false, provider: p },
+      description: p.model,
+    })),
+  ];
+
+  return await autocomplete<ProviderSelection>({
     message: contextMessage,
-    choices: [
-      { name: "Only Prompt (Save to file)", value: { isOnlyPrompt: true } },
-      ...providers.map((p) => ({
-        name: `${p.name}`,
-        value: { isOnlyPrompt: false, provider: p },
-      })),
-    ],
+    source: async (input) => {
+      if (!input) return choices;
+      const term = input.toLowerCase();
+      return choices.filter(
+        (c) =>
+          c.name.toLowerCase().includes(term) ||
+          c.value.provider?.model.toLowerCase().includes(term),
+      );
+    },
   });
 }

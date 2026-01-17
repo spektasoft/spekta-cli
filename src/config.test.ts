@@ -2,7 +2,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import path from "path";
 import fs from "fs-extra";
 import os from "os";
-import { bootstrap, getPromptContent, refreshPaths, HOME_DIR } from "./config";
+import {
+  bootstrap,
+  getPromptContent,
+  refreshPaths,
+  HOME_DIR,
+  getProviders,
+  HOME_PROVIDERS_FREE,
+  HOME_PROVIDERS_USER,
+} from "./config";
 
 describe("Config & Prompt Resolution", () => {
   const tempTestDir = path.join(os.tmpdir(), "spekta-tests");
@@ -42,7 +50,54 @@ describe("Config & Prompt Resolution", () => {
 
   it("should throw error if prompt exists in neither location", async () => {
     await expect(getPromptContent("non-existent.md")).rejects.toThrow(
-      /Prompt template not found/
+      /Prompt template not found/,
     );
+  });
+
+  it("should update provider paths when refreshPaths is called", () => {
+    const originalProviderPath = HOME_PROVIDERS_USER;
+    const customDir = path.join(os.tmpdir(), "manual-override");
+
+    process.env.SPEKTA_HOME_OVERRIDE = customDir;
+    refreshPaths();
+
+    expect(HOME_PROVIDERS_USER).toBe(path.join(customDir, "providers.json"));
+    expect(HOME_PROVIDERS_USER).not.toBe(originalProviderPath);
+
+    // Cleanup
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+    refreshPaths();
+  });
+});
+
+describe("Provider Merging Logic", () => {
+  const tempTestDir = path.join(os.tmpdir(), "spekta-providers-test");
+
+  beforeEach(() => {
+    fs.ensureDirSync(tempTestDir);
+    process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
+    refreshPaths();
+  });
+
+  afterEach(() => {
+    fs.removeSync(tempTestDir);
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+    refreshPaths();
+  });
+
+  it("should prioritize user providers over free providers when IDs conflict", async () => {
+    const freeMock = { providers: [{ name: "Free A", model: "gpt-free" }] };
+    const userMock = {
+      providers: [{ name: "User Custom", model: "gpt-free" }],
+    };
+
+    await fs.writeJSON(HOME_PROVIDERS_FREE, freeMock);
+    await fs.writeJSON(HOME_PROVIDERS_USER, userMock);
+
+    const { providers } = await getProviders();
+    const target = providers.find((p) => p.model === "gpt-free");
+
+    expect(target?.name).toBe("User Custom");
+    expect(providers.length).toBe(1);
   });
 });
