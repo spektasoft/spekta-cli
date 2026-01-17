@@ -1,9 +1,10 @@
 import path from "path";
 import fs from "fs-extra";
 
-const SPEKTA_BASE = path.join(process.cwd(), "spekta");
-const REVIEWS_BASE_PATH = path.join(SPEKTA_BASE, "docs", "reviews");
-const PLANS_BASE_PATH = path.join(SPEKTA_BASE, "docs", "implementations");
+const getSpektaBase = () => path.join(process.cwd(), "spekta");
+const getReviewsBasePath = () => path.join(getSpektaBase(), "docs", "reviews");
+const getPlansBasePath = () =>
+  path.join(getSpektaBase(), "docs", "implementations");
 
 export const generateId = (): string => {
   const now = new Date();
@@ -21,22 +22,29 @@ export const generateId = (): string => {
   return `${year}${month}${day}${hour}${minute}`;
 };
 
-export const ensureIgnoredDir = async (dir: string) => {
+export const ensureIgnoredDir = async (
+  dir: string,
+  root: string = getSpektaBase()
+) => {
   await fs.ensureDir(dir);
-  const ignorePath = path.join(dir, ".gitignore");
-  if (!(await fs.pathExists(ignorePath))) {
-    await fs.writeFile(ignorePath, "*\n!.gitignore");
+  await fs.ensureDir(root);
+
+  const spektaIgnorePath = path.join(root, ".gitignore");
+  if (!(await fs.pathExists(spektaIgnorePath))) {
+    await fs.writeFile(spektaIgnorePath, "*\n");
   }
 };
 
 export const getPlansDir = async (): Promise<string> => {
-  await ensureIgnoredDir(PLANS_BASE_PATH);
-  return PLANS_BASE_PATH;
+  const plansPath = getPlansBasePath();
+  await ensureIgnoredDir(plansPath);
+  return plansPath;
 };
 
 export const listReviewFolders = async (): Promise<string[]> => {
-  if (!(await fs.pathExists(REVIEWS_BASE_PATH))) return [];
-  const dirs = await fs.readdir(REVIEWS_BASE_PATH);
+  const reviewsPath = getReviewsBasePath();
+  if (!(await fs.pathExists(reviewsPath))) return [];
+  const dirs = await fs.readdir(reviewsPath);
   return dirs
     .filter((d) => /^\d{12}$/.test(d))
     .sort((a, b) => b.localeCompare(a));
@@ -46,14 +54,15 @@ export const getReviewDir = async (
   isInitial: boolean,
   folderId?: string
 ): Promise<{ dir: string; id: string }> => {
+  const reviewsPath = getReviewsBasePath();
   if (isInitial) {
     const id = generateId();
-    const dir = path.join(REVIEWS_BASE_PATH, id);
+    const dir = path.join(reviewsPath, id);
     await ensureIgnoredDir(dir);
     return { dir, id };
   }
   if (!folderId) throw new Error("Folder ID is required.");
-  const dir = path.join(REVIEWS_BASE_PATH, folderId);
+  const dir = path.join(reviewsPath, folderId);
   if (!(await fs.pathExists(dir)))
     throw new Error(`Review folder not found: ${folderId}`);
   return { dir, id: folderId };
