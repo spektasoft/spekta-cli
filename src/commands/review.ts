@@ -12,7 +12,6 @@ import {
   getNextReviewMetadata,
   listReviewFolders,
   getHashesFromReviewFile,
-  ReviewDirInfo,
 } from "../fs-manager";
 import { input, confirm, select } from "@inquirer/prompts";
 import { execa } from "execa";
@@ -51,12 +50,11 @@ export async function runReview() {
     let folderId: string | undefined;
     let suggestedStart = "";
     let suggestedEnd = await resolveHash("HEAD");
-    let dirInfo: ReviewDirInfo;
+    const dirInfo = await getReviewDir(true);
 
     if (isInitial) {
       const nearestMerge = await getNearestMerge();
       suggestedStart = nearestMerge || (await getInitialCommit());
-      dirInfo = await getReviewDir(true);
     } else {
       const folders = await listReviewFolders();
       if (folders.length === 0) {
@@ -67,7 +65,6 @@ export async function runReview() {
         message: "Select review folder:",
         choices: folders.map((f) => ({ name: f, value: f })),
       });
-      dirInfo = await getReviewDir(false, folderId);
       const metadata = await getNextReviewMetadata(dirInfo.dir);
       if (metadata.lastFile) {
         const extracted = getHashesFromReviewFile(metadata.lastFile);
@@ -106,10 +103,6 @@ export async function runReview() {
       "0"
     )}-${start.slice(0, 7)}..${end.slice(0, 7)}.md`;
     const filePath = path.join(dirInfo.dir, fileName);
-
-    if (!(await fs.pathExists(dirInfo.dir))) {
-      await fs.ensureDir(dirInfo.dir);
-    }
 
     await fs.writeFile(filePath, finalPrompt);
     console.log(`Generated: ${filePath}`);
