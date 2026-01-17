@@ -3,6 +3,7 @@ import path from "path";
 import os from "os";
 import fs from "fs-extra";
 import { fileURLToPath } from "url";
+import { fetchFreeModels } from "./api";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -59,6 +60,17 @@ export const bootstrap = async () => {
     ].join("\n");
     await fs.writeFile(HOME_IGNORE, defaultIgnores);
   }
+
+  if (!(await fs.pathExists(HOME_PROVIDERS_FREE))) {
+    const env = await getEnv();
+    if (env.OPENROUTER_API_KEY) {
+      try {
+        await syncFreeModels(env.OPENROUTER_API_KEY);
+      } catch (e) {
+        // Silent fail on bootstrap to prevent blocking CLI usage
+      }
+    }
+  }
 };
 
 export const getPromptContent = async (fileName: string): Promise<string> => {
@@ -100,9 +112,40 @@ export const getIgnorePatterns = async (): Promise<string[]> => {
 };
 
 export const getProviders = async (): Promise<ProvidersConfig> => {
-  const configPath = path.join(HOME_DIR, "providers.json");
-  if (!(await fs.pathExists(configPath))) {
-    throw new Error(`Providers config not found at ${configPath}.`);
+  const env = await getEnv();
+  const disableFree = env.SPEKTA_DISABLE_FREE_MODELS === "true";
+
+  let userProviders: Provider[] = [];
+  let freeProviders: Provider[] = [];
+
+  if (await fs.pathExists(HOME_PROVIDERS_USER)) {
+    const data = await fs.readJSON(HOME_PROVIDERS_USER);
+    userProviders = data.providers || [];
   }
-  return fs.readJSON(configPath);
+
+  if (!disableFree && (await fs.pathExists(HOME_PROVIDERS_FREE))) {
+    const data = await fs.readJSON(HOME_PROVIDERS_FREE);
+    freeProviders = data.providers || [];
+  }
+
+  // Merge: User providers take precedence over free providers by ID
+  const merged = [...userProviders];
+  const userModelIds = new Set(userProviders.map((p) => p.model));
+
+  for (const free of freeProviders) {
+    if (!userModelIds.has(free.model)) {
+      merged.push(free);
+    }
+  }
+
+  return { providers: merged };
+};
+
+export const syncFreeModels = async (apiKey: string) => {
+  const models = await fetchFreeModels(apiKey);
+  const providers: Provider[] = models.map((m) => ({
+    name: `[Free] ${m.name}`,
+    model: m.id,
+  }));
+  await fs.writeJSON(HOME_PROVIDERS_FREE, { providers }, { spaces: 2 });
 };
