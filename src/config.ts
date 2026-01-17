@@ -59,6 +59,7 @@ export const bootstrap = async () => {
       "mix.lock",
     ].join("\n");
     await fs.writeFile(HOME_IGNORE, defaultIgnores);
+    console.log("Created default .spektaignore file");
   }
 
   if (!(await fs.pathExists(HOME_PROVIDERS_FREE))) {
@@ -66,9 +67,15 @@ export const bootstrap = async () => {
     if (env.OPENROUTER_API_KEY) {
       try {
         await syncFreeModels(env.OPENROUTER_API_KEY);
-      } catch (e) {
+        console.log("Fetched free models from OpenRouter");
+      } catch (e: any) {
+        console.warn("Failed to fetch free models:", e.message);
         // Silent fail on bootstrap to prevent blocking CLI usage
       }
+    } else {
+      console.warn(
+        "Warning: OPENROUTER_API_KEY not found. Free models won't be fetched."
+      );
     }
   }
 };
@@ -115,36 +122,56 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   const env = await getEnv();
   const disableFree = env.SPEKTA_DISABLE_FREE_MODELS === "true";
 
-  let userProviders: Provider[] = [];
-  let freeProviders: Provider[] = [];
+  const [userRes, freeRes] = await Promise.allSettled([
+    fs.readJSON(HOME_PROVIDERS_USER).catch((err) => {
+      console.warn(
+        `Warning: Failed to read user providers file: ${err.message}`
+      );
+      return { providers: [] };
+    }),
+    !disableFree
+      ? fs.readJSON(HOME_PROVIDERS_FREE).catch((err) => {
+          console.warn(
+            `Warning: Failed to read free providers file: ${err.message}`
+          );
+          return { providers: [] };
+        })
+      : Promise.resolve({ providers: [] }),
+  ]);
 
-  if (await fs.pathExists(HOME_PROVIDERS_USER)) {
-    const data = await fs.readJSON(HOME_PROVIDERS_USER);
-    userProviders = data.providers || [];
-  }
+  const userProviders: Provider[] =
+    userRes.status === "fulfilled" ? userRes.value.providers : [];
+  const freeProviders: Provider[] =
+    freeRes.status === "fulfilled" ? freeRes.value.providers : [];
 
-  if (!disableFree && (await fs.pathExists(HOME_PROVIDERS_FREE))) {
-    const data = await fs.readJSON(HOME_PROVIDERS_FREE);
-    freeProviders = data.providers || [];
-  }
+  const mergedMap = new Map<string, Provider>();
 
-  // Merge: User providers take precedence over free providers by ID
-  const merged = [...userProviders];
-  const userModelIds = new Set(userProviders.map((p) => p.model));
-
-  for (const free of freeProviders) {
-    if (!userModelIds.has(free.model)) {
-      merged.push(free);
+  // Free providers added first
+  freeProviders.forEach((p) => {
+    if (p.model) {
+      mergedMap.set(p.model, p);
+    } else {
+      console.warn("Warning: Skipping provider without model ID:", p);
     }
-  }
+  });
 
-  if (merged.length === 0) {
+  // User providers overwrite free providers
+  userProviders.forEach((p) => {
+    if (p.model) {
+      mergedMap.set(p.model, p);
+    } else {
+      console.warn("Warning: Skipping provider without model ID:", p);
+    }
+  });
+
+  const providers = Array.from(mergedMap.values());
+  if (providers.length === 0) {
     console.warn(
-      "No providers found. Please run 'sync' or add providers to providers.json."
+      "Notice: No providers configured. Run 'spekta sync' to fetch free models."
     );
   }
 
-  return { providers: merged };
+  return { providers };
 };
 
 export const syncFreeModels = async (apiKey: string) => {
