@@ -138,6 +138,12 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
     }
   }
 
+  if (merged.length === 0) {
+    console.warn(
+      "No providers found. Please run 'sync' or add providers to providers.json."
+    );
+  }
+
   return { providers: merged };
 };
 
