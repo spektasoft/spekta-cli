@@ -70,10 +70,10 @@ export const bootstrap = async () => {
     if (env.OPENROUTER_API_KEY) {
       try {
         await syncFreeModels(env.OPENROUTER_API_KEY);
-        console.log("Fetched free models from OpenRouter");
       } catch (e: any) {
-        console.warn("Failed to fetch free models:", e.message);
-        // Silent fail on bootstrap to prevent blocking CLI usage
+        console.warn(
+          "Notice: Initial model sync skipped (OpenRouter unreachable).",
+        );
       }
     } else {
       console.warn(
