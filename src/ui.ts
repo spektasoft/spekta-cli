@@ -13,7 +13,7 @@ export interface ProviderSelection {
 export async function promptProviderSelection(
   prompt: string,
   providers: Provider[],
-  contextMessage: string = "Select provider:"
+  contextMessage: string = "Select provider:",
 ): Promise<ProviderSelection> {
   const tokenCount =
     prompt.length < 1000000
@@ -22,22 +22,27 @@ export async function promptProviderSelection(
 
   console.log(`\nEstimated Prompt Tokens: ${tokenCount}`);
 
+  const choices = [
+    {
+      name: "Only Prompt (Save to file)",
+      value: { isOnlyPrompt: true, provider: undefined },
+    },
+    ...providers.map((p) => ({
+      name: p.name,
+      value: { isOnlyPrompt: false, provider: p },
+      description: p.model,
+    })),
+  ];
+
   return await autocomplete<ProviderSelection>({
     message: contextMessage,
     source: async (input) => {
-      const choices = [
-        { name: "Only Prompt (Save to file)", value: { isOnlyPrompt: true } },
-        ...providers.map((p) => ({
-          name: p.name,
-          value: { isOnlyPrompt: false, provider: p },
-          description: p.model, // Show model ID as description
-        })),
-      ];
-
       if (!input) return choices;
-
-      return choices.filter((c) =>
-        c.name.toLowerCase().includes(input.toLowerCase())
+      const term = input.toLowerCase();
+      return choices.filter(
+        (c) =>
+          c.name.toLowerCase().includes(term) ||
+          c.value.provider?.model.toLowerCase().includes(term),
       );
     },
   });
