@@ -26,7 +26,13 @@ export async function runPlan() {
 
     const editor = env.SPEKTA_EDITOR;
     if (editor) {
-      await execa(editor, [filePath], { stdio: "inherit" });
+      try {
+        await execa(editor, [filePath], { stdio: "inherit" });
+      } catch (editorError: any) {
+        console.warn(`\nWarning: Failed to open editor "${editor}".`);
+        console.warn(`Detail: ${editorError.message}`);
+        console.log(`You can manually open the plan at: ${filePath}`);
+      }
     } else {
       console.log(
         "Tip: Set SPEKTA_EDITOR in your .env to open this automatically."
