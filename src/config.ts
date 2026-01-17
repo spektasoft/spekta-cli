@@ -125,20 +125,22 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   const env = await getEnv();
   const disableFree = env.SPEKTA_DISABLE_FREE_MODELS === "true";
 
-  const [userRes, freeRes] = await Promise.allSettled([
-    fs.readJSON(HOME_PROVIDERS_USER).catch((err) => {
+  const safeRead = async (filePath: string) => {
+    if (!(await fs.pathExists(filePath))) return { providers: [] };
+    try {
+      return await fs.readJSON(filePath);
+    } catch (err: any) {
       console.warn(
-        `Warning: Failed to read user providers file: ${err.message}`,
+        `Warning: Failed to parse ${path.basename(filePath)}: ${err.message}`,
       );
       return { providers: [] };
-    }),
+    }
+  };
+
+  const [userRes, freeRes] = await Promise.allSettled([
+    safeRead(HOME_PROVIDERS_USER),
     !disableFree
-      ? fs.readJSON(HOME_PROVIDERS_FREE).catch((err) => {
-          console.warn(
-            `Warning: Failed to read free providers file: ${err.message}`,
-          );
-          return { providers: [] };
-        })
+      ? safeRead(HOME_PROVIDERS_FREE)
       : Promise.resolve({ providers: [] }),
   ]);
 
@@ -149,23 +151,8 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
 
   const mergedMap = new Map<string, Provider>();
 
-  // Free providers added first
-  freeProviders.forEach((p) => {
-    if (p.model) {
-      mergedMap.set(p.model, p);
-    } else {
-      console.warn("Warning: Skipping provider without model ID:", p);
-    }
-  });
-
-  // User providers overwrite free providers
-  userProviders.forEach((p) => {
-    if (p.model) {
-      mergedMap.set(p.model, p);
-    } else {
-      console.warn("Warning: Skipping provider without model ID:", p);
-    }
-  });
+  freeProviders.forEach((p) => p.model && mergedMap.set(p.model, p));
+  userProviders.forEach((p) => p.model && mergedMap.set(p.model, p));
 
   const providers = Array.from(mergedMap.values());
   if (providers.length === 0) {
