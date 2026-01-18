@@ -12,6 +12,7 @@ import {
   getNextReviewMetadata,
   listReviewFolders,
   getHashesFromReviewFile,
+  getSafeMetadata,
 } from "../fs-manager";
 import { input, confirm, select } from "@inquirer/prompts";
 import { execa } from "execa";
@@ -53,10 +54,7 @@ export async function runReview() {
         choices: folders.map((f) => ({ name: f, value: f })),
       });
       dirInfo = await getReviewDir(false, folderId); // Use selected folder
-      const metadata = (await getNextReviewMetadata(dirInfo.dir)) || {
-        nextNum: 1,
-        lastFile: null,
-      };
+      const metadata = await getSafeMetadata(dirInfo.dir);
       if (metadata.lastFile) {
         const extracted = getHashesFromReviewFile(metadata.lastFile);
         if (extracted) suggestedStart = await resolveHash(extracted.end);
@@ -71,10 +69,7 @@ export async function runReview() {
     // Fetch metadata once at the start of the logic if continuing,
     // or after directory resolution if initial.
     dirInfo = await getReviewDir(isInitial, folderId);
-    const metadata = (await getNextReviewMetadata(dirInfo.dir)) || {
-      nextNum: 1,
-      lastFile: null,
-    };
+    const metadata = await getSafeMetadata(dirInfo.dir);
 
     if (!isInitial && metadata.lastFile) {
       const extracted = getHashesFromReviewFile(metadata.lastFile);
