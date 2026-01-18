@@ -189,3 +189,17 @@ describe("collectSupplementalContext", () => {
     expect(isDuplicate).toBe(false);
   });
 });
+
+describe("Cumulative line count tracking", () => {
+  it("should correctly sum line counts", () => {
+    const files = [
+      { path: "a.ts", content: "", lineCount: 100 },
+      { path: "b.ts", content: "", lineCount: 250 },
+      { path: "c.ts", content: "", lineCount: 400 },
+    ];
+
+    const total = files.reduce((sum, f) => sum + f.lineCount, 0);
+
+    expect(total).toBe(750);
+  });
+});
