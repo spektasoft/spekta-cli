@@ -6,11 +6,12 @@ vi.mock("execa", () => ({
   execa: vi.fn(),
 }));
 
-describe("getGitDiff", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+// Global cleanup to prevent mock leakage between describe blocks
+beforeEach(() => {
+  vi.resetAllMocks();
+});
 
+describe("getGitDiff", () => {
   it("throws error for invalid hash format", async () => {
     await expect(getGitDiff("invalid-hash", "abc1234")).rejects.toThrow(
       "Invalid commit hash format. Use 7-40 hex characters.",
@@ -91,6 +92,11 @@ describe("Git Hash Validation", () => {
   });
 
   it("should fail resolution for non-existent commits", async () => {
+    // Explicitly mock a rejection for this specific test
+    vi.mocked(execa).mockRejectedValue(
+      new Error("fatal: Not a valid object name"),
+    );
+
     await expect(resolveHash("deadbeef")).rejects.toThrow(
       "does not resolve to a valid commit",
     );
