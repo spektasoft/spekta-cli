@@ -98,7 +98,7 @@ async function collectSupplementalContext(): Promise<string> {
     return pathContext ? contextContent + pathContext : "";
   }
 
-  return ""; // Placeholder for next step
+  return "";
 }
 
 export async function runReview() {
@@ -115,6 +115,12 @@ export async function runReview() {
         { name: "Continue from a previous review", value: false },
       ],
     });
+
+    // NEW: Gather supplemental context only for initial reviews
+    let supplementalContext = "";
+    if (isInitial) {
+      supplementalContext = await collectSupplementalContext();
+    }
 
     let folderId: string | undefined;
     let suggestedStart = "";
@@ -162,6 +168,11 @@ export async function runReview() {
       : "review-validation.md";
 
     let finalPrompt = (await getPromptContent(templateName)) + "\n\n---\n";
+
+    // Inject supplemental context if present
+    if (supplementalContext) {
+      finalPrompt += supplementalContext + "\n---\n";
+    }
 
     if (!isInitial && metadata.lastFile) {
       const prevReviewContent = await fs.readFile(
