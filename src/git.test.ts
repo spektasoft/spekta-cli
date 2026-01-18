@@ -102,3 +102,11 @@ describe("Git Hash Validation", () => {
     );
   });
 });
+
+describe("getGitDiff Edge Cases", () => {
+  it("should handle empty diff responses gracefully", async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
+    const result = await getGitDiff("abc1234", "abc1234");
+    expect(result).toBe("");
+  });
+});
