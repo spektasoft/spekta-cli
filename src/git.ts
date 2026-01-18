@@ -1,6 +1,6 @@
 import { execa } from "execa";
 
-const isValidHash = (hash: string): boolean => {
+export const isValidHash = (hash: string): boolean => {
   return /^[0-9a-f]{7,40}$/i.test(hash);
 };
 
@@ -14,7 +14,7 @@ const isValidHash = (hash: string): boolean => {
 export const getGitDiff = async (
   start: string,
   end: string,
-  ignorePatterns: string[] = []
+  ignorePatterns: string[] = [],
 ): Promise<string> => {
   if (!isValidHash(start) || !isValidHash(end)) {
     throw new Error("Invalid commit hash format. Use 7-40 hex characters.");
@@ -90,7 +90,7 @@ export const getInitialCommit = async (): Promise<string> => {
  * @returns A promise that resolves to the diff string.
  */
 export const getStagedDiff = async (
-  ignorePatterns: string[] = []
+  ignorePatterns: string[] = [],
 ): Promise<string> => {
   const pathspecs = ignorePatterns.map((p) => `:!${p}`);
   const args = ["diff", "--staged", "--", ".", ...pathspecs];
@@ -116,7 +116,7 @@ export const getStagedDiff = async (
  */
 export const getCommitMessages = async (
   start: string,
-  end: string
+  end: string,
 ): Promise<string> => {
   const args = ["log", "--format=%B%n---", "--reverse", `${start}..${end}`];
 
