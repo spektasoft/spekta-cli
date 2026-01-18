@@ -1,4 +1,4 @@
-import { input, confirm } from "@inquirer/prompts";
+import { input, select } from "@inquirer/prompts";
 import { resolveHash } from "./git";
 
 export interface HashRange {
@@ -11,14 +11,17 @@ export interface HashRange {
  */
 export async function promptHashRange(
   suggestedStart: string,
-  suggestedEnd: string
+  suggestedEnd: string,
 ): Promise<HashRange> {
-  const useSuggested = await confirm({
+  const useSuggested = await select({
     message: `Use suggested range ${suggestedStart.slice(
       0,
-      7
+      7,
     )}..${suggestedEnd.slice(0, 7)}?`,
-    default: true,
+    choices: [
+      { name: "Yes", value: true },
+      { name: "No", value: false },
+    ],
   });
 
   if (useSuggested) {
