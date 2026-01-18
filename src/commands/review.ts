@@ -57,6 +57,47 @@ async function collectSupplementalContext(): Promise<string> {
     return contextContent;
   }
 
+  if (contextType === "path") {
+    let pathContext = "";
+    while (true) {
+      const filePath = await input({
+        message: "Enter file path to include (or press Enter to finish):",
+      });
+
+      if (!filePath.trim()) break;
+
+      const absolutePath = path.resolve(process.cwd(), filePath.trim());
+
+      if (!(await fs.pathExists(absolutePath))) {
+        console.error(`File not found: ${filePath}`);
+        continue;
+      }
+
+      const stats = await fs.stat(absolutePath);
+      if (stats.isDirectory()) {
+        console.error(
+          "Directories are not supported. Please provide a file path.",
+        );
+        continue;
+      }
+
+      const content = await fs.readFile(absolutePath, "utf-8");
+      const lineCount = content.split("\n").length;
+
+      if (lineCount > 300) {
+        const proceed = await confirm({
+          message: `Warning: ${filePath} is ${lineCount} lines long. Large files may degrade LLM performance. Include anyway?`,
+          default: false,
+        });
+        if (!proceed) continue;
+      }
+
+      pathContext += `#### REFERENCE FILE: ${filePath}\n\n\`\`\`\n${content}\n\`\`\`\n\n`;
+    }
+
+    return pathContext ? contextContent + pathContext : "";
+  }
+
   return ""; // Placeholder for next step
 }
 
