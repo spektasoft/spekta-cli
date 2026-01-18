@@ -134,7 +134,7 @@ describe("runReview", () => {
   });
 });
 
-describe("collectSupplementalContext structure", () => {
+describe("collectSupplementalContext", () => {
   it("should have proper type definitions", () => {
     // This test verifies compilation only
     interface SelectedFile {
@@ -155,5 +155,15 @@ describe("collectSupplementalContext structure", () => {
 
     expect(testFile.path).toBe("test.ts");
     expect(testAction).toBe("finalize");
+  });
+
+  it("should filter already-selected plans", () => {
+    const allPlans = ["plan1.md", "plan2.md", "plan3.md"];
+    const selectedPlans = ["plan1.md", "plan3.md"];
+
+    const availablePlans = allPlans.filter((f) => !selectedPlans.includes(f));
+
+    expect(availablePlans).toEqual(["plan2.md"]);
+    expect(availablePlans.length).toBe(1);
   });
 });
