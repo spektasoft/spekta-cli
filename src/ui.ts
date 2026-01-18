@@ -8,6 +8,36 @@ export interface ProviderSelection {
 }
 
 /**
+ * Generic choice structure for searchable selection
+ */
+export interface SearchChoice<T> {
+  name: string;
+  value: T;
+  description?: string;
+}
+
+/**
+ * Reusable searchable select prompt
+ */
+export async function searchableSelect<T>(
+  message: string,
+  choices: SearchChoice<T>[],
+): Promise<T> {
+  return await autocomplete<T>({
+    message,
+    source: async (input) => {
+      if (!input) return choices;
+      const term = input.toLowerCase();
+      return choices.filter(
+        (c) =>
+          c.name.toLowerCase().includes(term) ||
+          (c.description && c.description.toLowerCase().includes(term)),
+      );
+    },
+  });
+}
+
+/**
  * Calculates token count and prompts the user to select a provider.
  */
 export async function promptProviderSelection(
@@ -22,7 +52,7 @@ export async function promptProviderSelection(
 
   console.log(`\nEstimated Prompt Tokens: ${tokenCount}`);
 
-  const choices = [
+  const choices: SearchChoice<ProviderSelection>[] = [
     {
       name: "Only Prompt (Save to file)",
       value: { isOnlyPrompt: true, provider: undefined },
@@ -34,16 +64,5 @@ export async function promptProviderSelection(
     })),
   ];
 
-  return await autocomplete<ProviderSelection>({
-    message: contextMessage,
-    source: async (input) => {
-      if (!input) return choices;
-      const term = input.toLowerCase();
-      return choices.filter(
-        (c) =>
-          c.name.toLowerCase().includes(term) ||
-          c.value.provider?.model.toLowerCase().includes(term),
-      );
-    },
-  });
+  return await searchableSelect<ProviderSelection>(contextMessage, choices);
 }
