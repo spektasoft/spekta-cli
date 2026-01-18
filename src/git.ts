@@ -41,11 +41,18 @@ export const getGitDiff = async (
  * Resolves a git reference (like HEAD or a short hash) to a full 40-character hash.
  */
 export const resolveHash = async (ref: string): Promise<string> => {
+  if (!isValidHash(ref)) {
+    throw new Error(`Invalid hash format: ${ref}`);
+  }
   try {
-    const { stdout } = await execa("git", ["rev-parse", ref]);
+    const { stdout } = await execa("git", [
+      "rev-parse",
+      "--verify",
+      `${ref}^{commit}`,
+    ]);
     return stdout.trim();
   } catch (error: any) {
-    throw new Error(`Failed to resolve hash for ${ref}: ${error.message}`);
+    throw new Error(`Hash ${ref} does not resolve to a valid commit.`);
   }
 };
 
