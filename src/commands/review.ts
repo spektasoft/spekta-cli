@@ -9,7 +9,6 @@ import {
 } from "../git";
 import {
   getReviewDir,
-  getNextReviewMetadata,
   listReviewFolders,
   getHashesFromReviewFile,
   getSafeMetadata,
@@ -53,8 +52,13 @@ export async function runReview() {
         message: "Select review folder:",
         choices: folders.map((f) => ({ name: f, value: f })),
       });
-      dirInfo = await getReviewDir(false, folderId); // Use selected folder
-      const metadata = await getSafeMetadata(dirInfo.dir);
+      dirInfo = await getReviewDir(false, folderId);
+    }
+
+    // Fetch metadata ONCE after directory has been resolved
+    const metadata = await getSafeMetadata(dirInfo.dir);
+
+    if (!isInitial) {
       if (metadata.lastFile) {
         const extracted = getHashesFromReviewFile(metadata.lastFile);
         if (extracted) suggestedStart = await resolveHash(extracted.end);
@@ -64,16 +68,6 @@ export async function runReview() {
           await input({ message: "Older commit hash:" }),
         );
       }
-    }
-
-    // Fetch metadata once at the start of the logic if continuing,
-    // or after directory resolution if initial.
-    dirInfo = await getReviewDir(isInitial, folderId);
-    const metadata = await getSafeMetadata(dirInfo.dir);
-
-    if (!isInitial && metadata.lastFile) {
-      const extracted = getHashesFromReviewFile(metadata.lastFile);
-      if (extracted) suggestedStart = await resolveHash(extracted.end);
     }
 
     const { start, end } = await promptHashRange(suggestedStart, suggestedEnd);
