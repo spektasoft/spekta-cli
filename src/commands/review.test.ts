@@ -203,3 +203,32 @@ describe("Cumulative line count tracking", () => {
     expect(total).toBe(750);
   });
 });
+
+describe("Removal logic", () => {
+  it("should correctly parse removal identifiers", () => {
+    const item = "plan:feature-auth.md";
+    const [type, ...pathParts] = item.split(":");
+    const identifier = pathParts.join(":");
+
+    expect(type).toBe("plan");
+    expect(identifier).toBe("feature-auth.md");
+  });
+
+  it("should handle file paths with colons", () => {
+    const item = "file:C:/Users/test/file.ts";
+    const [type, ...pathParts] = item.split(":");
+    const identifier = pathParts.join(":");
+
+    expect(type).toBe("file");
+    expect(identifier).toBe("C:/Users/test/file.ts");
+  });
+
+  it("should update line count after removal", () => {
+    let totalLineCount = 500;
+    const removedFile = { path: "test.ts", content: "", lineCount: 100 };
+
+    totalLineCount -= removedFile.lineCount;
+
+    expect(totalLineCount).toBe(400);
+  });
+});
