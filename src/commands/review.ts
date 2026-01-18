@@ -54,7 +54,9 @@ async function collectSupplementalContext(): Promise<string> {
       path.join(plansDir, selectedPlan),
       "utf-8",
     );
-    contextContent += `#### REFERENCE IMPLEMENTATION PLAN: ${selectedPlan}\n\n${content}\n`;
+
+    // Use quadruple backticks and markdown tag
+    contextContent += `#### REFERENCE IMPLEMENTATION PLAN: ${selectedPlan}\n\n\`\`\`\`markdown\n${content}\n\`\`\`\`\n`;
     return contextContent;
   }
 
@@ -93,7 +95,8 @@ async function collectSupplementalContext(): Promise<string> {
         if (!proceed) continue;
       }
 
-      pathContext += `#### REFERENCE FILE: ${filePath}\n\n\`\`\`\n${content}\n\`\`\`\n\n`;
+      // Update to use quadruple backticks and markdown tag for consistency
+      pathContext += `#### REFERENCE FILE: ${filePath}\n\n\`\`\`\`markdown\n${content}\n\`\`\`\`\n\n`;
     }
 
     return pathContext ? contextContent + pathContext : "";
