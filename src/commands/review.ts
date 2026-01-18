@@ -15,6 +15,7 @@ import {
   getPlansDir,
 } from "../fs-manager";
 import { input, confirm, select } from "@inquirer/prompts";
+import { searchableSelect } from "../ui";
 import { execa } from "execa";
 import { promptHashRange } from "../git-ui";
 
@@ -44,10 +45,10 @@ async function collectSupplementalContext(): Promise<string> {
       return "";
     }
 
-    const selectedPlan = await select({
-      message: "Select an implementation plan:",
-      choices: mdFiles.map((f) => ({ name: f, value: f })),
-    });
+    const selectedPlan = await searchableSelect<string>(
+      "Select an implementation plan:",
+      mdFiles.map((f) => ({ name: f, value: f })),
+    );
 
     const content = await fs.readFile(
       path.join(plansDir, selectedPlan),
