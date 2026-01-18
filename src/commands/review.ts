@@ -85,9 +85,11 @@ async function collectSupplementalContext(): Promise<string> {
 
       // Filter out already-selected plans
       const selectedPlanNames = selectedItems
-        .filter(item => item.type === "plan")
-        .map(item => item.identifier);
-      const availablePlans = mdFiles.filter((f) => !selectedPlanNames.includes(f));
+        .filter((item) => item.type === "plan")
+        .map((item) => item.identifier);
+      const availablePlans = mdFiles.filter(
+        (f) => !selectedPlanNames.includes(f),
+      );
 
       if (availablePlans.length === 0) {
         console.log("All available plans have already been selected.");
@@ -144,7 +146,11 @@ async function collectSupplementalContext(): Promise<string> {
       const absolutePath = path.resolve(process.cwd(), trimmedPath);
 
       // Check for duplicate
-      if (selectedItems.some((item) => item.type === "file" && item.identifier === trimmedPath)) {
+      if (
+        selectedItems.some(
+          (item) => item.type === "file" && item.identifier === trimmedPath,
+        )
+      ) {
         console.warn(`File already selected: ${trimmedPath}`);
         continue;
       }
@@ -211,12 +217,14 @@ async function collectSupplementalContext(): Promise<string> {
       }
 
       // Process removals in reverse order to maintain indices
-      toRemoveIndices.sort((a, b) => b - a).forEach((index) => {
-        const removed = selectedItems.splice(index, 1)[0];
-        totalLineCount -= removed.lineCount;
-        const typeLabel = removed.type === "plan" ? "plan" : "file";
-        console.log(`✗ Removed ${typeLabel}: ${removed.identifier}`);
-      });
+      toRemoveIndices
+        .sort((a, b) => b - a)
+        .forEach((index) => {
+          const removed = selectedItems.splice(index, 1)[0];
+          totalLineCount -= removed.lineCount;
+          const typeLabel = removed.type === "plan" ? "plan" : "file";
+          console.log(`Removed ${typeLabel}: ${removed.identifier}`);
+        });
     }
   }
 
@@ -229,11 +237,11 @@ async function collectSupplementalContext(): Promise<string> {
 
   // Add all selected items
   for (const item of selectedItems) {
-    if (item.type === "plan") {
-      contextContent += `#### REFERENCE IMPLEMENTATION PLAN: ${item.identifier}\n\n\`\`\`\`markdown\n${item.content}\n\`\`\`\`\n\n`;
-    } else if (item.type === "file") {
-      contextContent += `#### REFERENCE FILE: ${item.identifier}\n\n\`\`\`\`markdown\n${item.content}\n\`\`\`\`\n\n`;
-    }
+    const header =
+      item.type === "plan"
+        ? `#### REFERENCE IMPLEMENTATION PLAN: ${item.identifier}`
+        : `#### REFERENCE FILE: ${item.identifier}`;
+    contextContent += `${header}\n\n\`\`\`\`markdown\n${item.content}\n\`\`\`\`\n\n`;
   }
 
   return contextContent;
