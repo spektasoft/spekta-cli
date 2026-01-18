@@ -94,6 +94,14 @@ export async function collectSupplementalContext(): Promise<string> {
       const content = await fs.readFile(planPath, "utf-8");
       const tokenCount = encode(content).length;
 
+      // Check for quadruple backticks
+      if (content.includes("````")) {
+        console.warn(
+          "Warning: Content contains quadruple backticks. This may break Markdown formatting.",
+        );
+        continue;
+      }
+
       // Individual plan size warning
       if (tokenCount > 1000) {
         const proceed = await confirm({
@@ -166,6 +174,14 @@ export async function collectSupplementalContext(): Promise<string> {
 
       const content = await fs.readFile(absolutePath, "utf-8");
       const tokenCount = encode(content).length;
+
+      // Check for quadruple backticks
+      if (content.includes("````")) {
+        console.warn(
+          "Warning: Content contains quadruple backticks. This may break Markdown formatting.",
+        );
+        continue;
+      }
 
       // Individual file size warning
       if (tokenCount > 1000) {
