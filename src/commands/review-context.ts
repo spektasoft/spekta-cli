@@ -97,7 +97,7 @@ export async function collectSupplementalContext(): Promise<string> {
       // Check for quadruple backticks
       if (content.includes("````")) {
         console.warn(
-          "Warning: Content contains quadruple backticks. This may break Markdown formatting.",
+          `Warning: File [${planPath}] contains quadruple backticks and has been excluded to prevent formatting errors.`,
         );
         continue;
       }
@@ -178,7 +178,7 @@ export async function collectSupplementalContext(): Promise<string> {
       // Check for quadruple backticks
       if (content.includes("````")) {
         console.warn(
-          "Warning: Content contains quadruple backticks. This may break Markdown formatting.",
+          `Warning: File [${filePath}] contains quadruple backticks and has been excluded to prevent formatting errors.`,
         );
         continue;
       }
