@@ -3,20 +3,21 @@ import fs from "fs-extra";
 import { input, confirm, select, checkbox } from "@inquirer/prompts";
 import { searchableSelect } from "../ui";
 import { getPlansDir } from "../fs-manager";
+import { encode } from "gpt-tokenizer";
 
 export interface SelectedItem {
   type: "plan" | "file";
   identifier: string; // filename for plan, path for file
   content: string;
-  lineCount: number;
+  tokenCount: number;
 }
 
 export type MenuAction = "plan" | "file" | "remove" | "finalize";
 
 export async function collectSupplementalContext(): Promise<string> {
   const selectedItems: SelectedItem[] = [];
-  let totalLineCount = 0;
-  const LINE_THRESHOLD = 1500;
+  let totalTokenCount = 0;
+  const TOKEN_THRESHOLD = 5000;
 
   while (true) {
     // Display current selections
@@ -24,9 +25,11 @@ export async function collectSupplementalContext(): Promise<string> {
       console.log("\n=== Current Selections ===");
       selectedItems.forEach((item) => {
         const label = item.type === "plan" ? "[Plan]" : "[File]";
-        console.log(`  ${label} ${item.identifier} (${item.lineCount} lines)`);
+        console.log(
+          `  ${label} ${item.identifier} (${item.tokenCount} tokens)`,
+        );
       });
-      console.log(`  Total lines: ${totalLineCount}`);
+      console.log(`  Total tokens: ${totalTokenCount}`);
       console.log("==========================\n");
     }
 
@@ -88,22 +91,22 @@ export async function collectSupplementalContext(): Promise<string> {
 
       const planPath = path.join(plansDir, selectedPlan);
       const content = await fs.readFile(planPath, "utf-8");
-      const lineCount = content.split("\n").length;
+      const tokenCount = encode(content).length;
 
       // Individual plan size warning
-      if (lineCount > 300) {
+      if (tokenCount > 1000) {
         const proceed = await confirm({
-          message: `Warning: ${selectedPlan} is ${lineCount} lines long. Large files may degrade LLM performance. Include anyway?`,
+          message: `Warning: ${selectedPlan} is ~${tokenCount} tokens. Large context can degrade performance. Continue?`,
           default: false,
         });
         if (!proceed) continue;
       }
 
       // Check cumulative size threshold
-      const newTotal = totalLineCount + lineCount;
-      if (newTotal > LINE_THRESHOLD) {
+      const newTotal = totalTokenCount + tokenCount;
+      if (newTotal > TOKEN_THRESHOLD) {
         const proceed = await confirm({
-          message: `Warning: Total context will be ${newTotal} lines (threshold: ${LINE_THRESHOLD}). This may degrade LLM performance. Continue?`,
+          message: `Warning: Total context will be ~${newTotal} tokens (threshold: ${TOKEN_THRESHOLD}). This may degrade LLM performance. Continue?`,
           default: false,
         });
         if (!proceed) continue;
@@ -113,10 +116,10 @@ export async function collectSupplementalContext(): Promise<string> {
         type: "plan",
         identifier: selectedPlan,
         content,
-        lineCount,
+        tokenCount,
       });
-      totalLineCount += lineCount;
-      console.log(`Added plan: ${selectedPlan} (${lineCount} lines)`);
+      totalTokenCount += tokenCount;
+      console.log(`Added plan: ${selectedPlan} (${tokenCount} tokens)`);
     } else if (action === "file") {
       const filePath = await input({
         message: "Enter file path to include:",
@@ -154,22 +157,22 @@ export async function collectSupplementalContext(): Promise<string> {
       }
 
       const content = await fs.readFile(absolutePath, "utf-8");
-      const lineCount = content.split("\n").length;
+      const tokenCount = encode(content).length;
 
       // Individual file size warning
-      if (lineCount > 300) {
+      if (tokenCount > 1000) {
         const proceed = await confirm({
-          message: `Warning: ${trimmedPath} is ${lineCount} lines long. Large files may degrade LLM performance. Include anyway?`,
+          message: `Warning: ${trimmedPath} is ~${tokenCount} tokens. Large context can degrade performance. Continue?`,
           default: false,
         });
         if (!proceed) continue;
       }
 
       // Check cumulative size threshold
-      const newTotal = totalLineCount + lineCount;
-      if (newTotal > LINE_THRESHOLD) {
+      const newTotal = totalTokenCount + tokenCount;
+      if (newTotal > TOKEN_THRESHOLD) {
         const proceed = await confirm({
-          message: `Warning: Total context will be ${newTotal} lines (threshold: ${LINE_THRESHOLD}). This may degrade LLM performance. Continue?`,
+          message: `Warning: Total context will be ~${newTotal} tokens (threshold: ${TOKEN_THRESHOLD}). This may degrade LLM performance. Continue?`,
           default: false,
         });
         if (!proceed) continue;
@@ -179,14 +182,14 @@ export async function collectSupplementalContext(): Promise<string> {
         type: "file",
         identifier: trimmedPath,
         content,
-        lineCount,
+        tokenCount,
       });
-      totalLineCount += lineCount;
-      console.log(`Added file: ${trimmedPath} (${lineCount} lines)`);
+      totalTokenCount += tokenCount;
+      console.log(`Added file: ${trimmedPath} (${tokenCount} tokens)`);
     } else if (action === "remove") {
       // Build checkbox choices
       const removalChoices = selectedItems.map((item, index) => ({
-        name: `[${item.type === "plan" ? "Plan" : "File"}] ${item.identifier} (${item.lineCount} lines)`,
+        name: `[${item.type === "plan" ? "Plan" : "File"}] ${item.identifier} (${item.tokenCount} tokens)`,
         value: index,
         checked: false,
       }));
@@ -206,7 +209,7 @@ export async function collectSupplementalContext(): Promise<string> {
         .sort((a, b) => b - a)
         .forEach((index) => {
           const removed = selectedItems.splice(index, 1)[0];
-          totalLineCount -= removed.lineCount;
+          totalTokenCount -= removed.tokenCount;
           const typeLabel = removed.type === "plan" ? "plan" : "file";
           console.log(`Removed ${typeLabel}: ${removed.identifier}`);
         });
