@@ -17,12 +17,15 @@ import { input, confirm, select } from "@inquirer/prompts";
 import { execa } from "execa";
 
 async function getHashRange(suggestedStart: string, suggestedEnd: string) {
-  const useSuggested = await confirm({
+  const useSuggested = await select({
     message: `Use suggested range ${suggestedStart.slice(
       0,
-      7
+      7,
     )}..${suggestedEnd.slice(0, 7)}?`,
-    default: true,
+    choices: [
+      { name: "Yes", value: true },
+      { name: "No", value: false },
+    ],
   });
 
   if (useSuggested) return { start: suggestedStart, end: suggestedEnd };
@@ -75,7 +78,7 @@ export async function runReview() {
       }
       if (!suggestedStart) {
         suggestedStart = await resolveHash(
-          await input({ message: "Older commit hash:" })
+          await input({ message: "Older commit hash:" }),
         );
       }
     }
@@ -95,7 +98,7 @@ export async function runReview() {
     if (!isInitial && metadata.lastFile) {
       const prevReviewContent = await fs.readFile(
         path.join(dirInfo.dir, metadata.lastFile),
-        "utf-8"
+        "utf-8",
       );
       finalPrompt += `PREVIOUS REVIEW:\n\`\`\`\`markdown\n${prevReviewContent}\n\`\`\`\`\n\n---\n`;
     }
@@ -103,7 +106,7 @@ export async function runReview() {
 
     const fileName = `r-${String(metadata.nextNum).padStart(
       3,
-      "0"
+      "0",
     )}-${start.slice(0, 7)}..${end.slice(0, 7)}.md`;
     const filePath = path.join(dirInfo.dir, fileName);
 
@@ -124,7 +127,7 @@ export async function runReview() {
       console.log("\n--- Action Required ---");
       console.log(`Review prompt generated at: ${filePath}`);
       console.log(
-        "Tip: Set SPEKTA_EDITOR in your .env to open this automatically."
+        "Tip: Set SPEKTA_EDITOR in your .env to open this automatically.",
       );
     }
   } catch (error: any) {
