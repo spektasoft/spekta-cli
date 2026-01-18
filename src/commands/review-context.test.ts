@@ -65,6 +65,25 @@ describe("collectSupplementalContext", () => {
     expect(formatted).toContain("REFERENCE IMPLEMENTATION PLAN");
     expect(formatted).toContain(planName);
   });
+
+  it("should escape quadruple backticks in content", async () => {
+    // Simulate adding a file then finalizing
+    vi.mocked(prompts.select)
+      .mockResolvedValueOnce("file") // Select add file
+      .mockResolvedValueOnce("finalize"); // Then finalize
+
+    vi.mocked(prompts.input).mockResolvedValue("src/test.ts");
+    // @ts-ignore
+    vi.mocked(fs.pathExists).mockResolvedValue(true);
+    vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => false } as any);
+    // @ts-ignore
+    vi.mocked(fs.readFile).mockResolvedValue("console.log('test');");
+
+    // Verify that the helper uses quadruple backticks for the container
+    // to allow triple backticks in the source code context.
+    const result = await collectSupplementalContext();
+    expect(result).toContain("````markdown");
+  });
 });
 
 describe("Cumulative line count tracking (Logic)", () => {
