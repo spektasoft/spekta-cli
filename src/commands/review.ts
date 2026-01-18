@@ -106,6 +106,7 @@ export async function runReview() {
         console.warn(`\nWarning: Failed to open editor "${editor}".`);
         console.warn(`Detail: ${editorError.message}`);
         console.log(`You can manually open the review at: ${filePath}`);
+        process.exitCode = 1;
       }
     } else {
       console.log("\n--- Action Required ---");

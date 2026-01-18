@@ -80,14 +80,19 @@ describe("runReview", () => {
   });
 
   it("handles editor execution failure without crashing", async () => {
-    vi.mocked(execa).mockRejectedValue(new Error("Editor not found") as any);
+    const mockError = new Error("Editor not found");
+    vi.mocked(execa).mockRejectedValue(mockError as never);
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    await runReview(); // runReview catches error and sets process.exitCode
+    // Reset exit code before test
+    process.exitCode = 0;
+
+    await runReview();
 
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('Warning: Failed to open editor "code"'),
     );
+    expect(process.exitCode).toBe(1);
   });
 
   it("includes previous review content in validation reviews", async () => {
