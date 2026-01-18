@@ -142,10 +142,12 @@ export async function runReview() {
         console.error("No previous reviews found.");
         return;
       }
-      folderId = await select({
-        message: "Select review folder:",
-        choices: folders.map((f) => ({ name: f, value: f })),
-      });
+
+      folderId = await searchableSelect<string>(
+        "Select review folder:",
+        folders.map((f) => ({ name: f, value: f })),
+      );
+
       dirInfo = await getReviewDir(false, folderId);
     }
 
