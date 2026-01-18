@@ -12,10 +12,53 @@ import {
   listReviewFolders,
   getHashesFromReviewFile,
   getSafeMetadata,
+  getPlansDir,
 } from "../fs-manager";
 import { input, confirm, select } from "@inquirer/prompts";
 import { execa } from "execa";
 import { promptHashRange } from "../git-ui";
+
+async function collectSupplementalContext(): Promise<string> {
+  const contextType = await select({
+    message: "Add additional context for this initial review?",
+    choices: [
+      { name: "None", value: "none" },
+      { name: "Include Implementation Plan", value: "plan" },
+      { name: "Include specific files by path", value: "path" },
+    ],
+  });
+
+  if (contextType === "none") return "";
+
+  let contextContent = "\n\n### SUPPLEMENTAL CONTEXT\n\n";
+
+  if (contextType === "plan") {
+    const plansDir = await getPlansDir();
+    const files = await fs.readdir(plansDir);
+    const mdFiles = files.filter((f) => f.endsWith(".md"));
+
+    if (mdFiles.length === 0) {
+      console.warn(
+        "No implementation plans found in spekta/docs/implementations.",
+      );
+      return "";
+    }
+
+    const selectedPlan = await select({
+      message: "Select an implementation plan:",
+      choices: mdFiles.map((f) => ({ name: f, value: f })),
+    });
+
+    const content = await fs.readFile(
+      path.join(plansDir, selectedPlan),
+      "utf-8",
+    );
+    contextContent += `#### REFERENCE IMPLEMENTATION PLAN: ${selectedPlan}\n\n${content}\n`;
+    return contextContent;
+  }
+
+  return ""; // Placeholder for next step
+}
 
 export async function runReview() {
   try {
