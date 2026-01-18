@@ -14,7 +14,7 @@ import {
   getSafeMetadata,
   getPlansDir,
 } from "../fs-manager";
-import { input, confirm, select } from "@inquirer/prompts";
+import { input, confirm, select, checkbox } from "@inquirer/prompts";
 import { searchableSelect } from "../ui";
 import { execa } from "execa";
 import { promptHashRange } from "../git-ui";
@@ -159,7 +159,50 @@ async function collectSupplementalContext(): Promise<string> {
       totalLineCount += lineCount;
       console.log(`Added file: ${trimmedPath} (${lineCount} lines)`);
     } else if (action === "remove") {
-      // TODO: Implement removal
+      // Build checkbox choices
+      const removalChoices = [
+        ...selectedPlans.map((plan) => ({
+          name: `[Plan] ${plan}`,
+          value: `plan:${plan}`,
+          checked: false,
+        })),
+        ...selectedFiles.map((file) => ({
+          name: `[File] ${file.path} (${file.lineCount} lines)`,
+          value: `file:${file.path}`,
+          checked: false,
+        })),
+      ];
+
+      const toRemove = await checkbox({
+        message: "Select items to remove (Space to toggle, Enter to confirm):",
+        choices: removalChoices,
+      });
+
+      if (toRemove.length === 0) {
+        console.log("No items selected for removal.");
+        continue;
+      }
+
+      // Process removals
+      toRemove.forEach((item) => {
+        const [type, ...pathParts] = item.split(":");
+        const identifier = pathParts.join(":"); // Handle paths with colons
+
+        if (type === "plan") {
+          const index = selectedPlans.indexOf(identifier);
+          if (index > -1) {
+            selectedPlans.splice(index, 1);
+            console.log(`✗ Removed plan: ${identifier}`);
+          }
+        } else if (type === "file") {
+          const index = selectedFiles.findIndex((f) => f.path === identifier);
+          if (index > -1) {
+            const removed = selectedFiles.splice(index, 1)[0];
+            totalLineCount -= removed.lineCount;
+            console.log(`✗ Removed file: ${identifier}`);
+          }
+        }
+      });
     }
   }
 
