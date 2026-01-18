@@ -194,43 +194,28 @@ async function collectSupplementalContext(): Promise<string> {
       console.log(`Added file: ${trimmedPath} (${lineCount} lines)`);
     } else if (action === "remove") {
       // Build checkbox choices
-      const removalChoices = [
-        ...selectedItems.map((item) => {
-          const label = item.type === "plan" ? "[Plan]" : "[File]";
-          return {
-            name: `${label} ${item.identifier} (${item.lineCount} lines)`,
-            value: `${item.type}:${item.identifier}`,
-            checked: false,
-          };
-        }),
-      ];
+      const removalChoices = selectedItems.map((item, index) => ({
+        name: `[${item.type === "plan" ? "Plan" : "File"}] ${item.identifier} (${item.lineCount} lines)`,
+        value: index,
+        checked: false,
+      }));
 
-      const toRemove = await checkbox({
+      const toRemoveIndices = await checkbox({
         message: "Select items to remove (Space to toggle, Enter to confirm):",
         choices: removalChoices,
       });
 
-      if (toRemove.length === 0) {
+      if (toRemoveIndices.length === 0) {
         console.log("No items selected for removal.");
         continue;
       }
 
-      // Process removals
-      toRemove.forEach((item) => {
-        const [type, ...pathParts] = item.split(":");
-        const identifier = pathParts.join(":"); // Handle paths with colons
-
-        const index = selectedItems.findIndex(
-          selectedItem => selectedItem.type === type && selectedItem.identifier === identifier
-        );
-
-        if (index > -1) {
-          const removed = selectedItems.splice(index, 1)[0];
-          if (removed.type === "file") {
-            totalLineCount -= removed.lineCount;
-          }
-          console.log(`✗ Removed ${type}: ${identifier}`);
-        }
+      // Process removals in reverse order to maintain indices
+      toRemoveIndices.sort((a, b) => b - a).forEach((index) => {
+        const removed = selectedItems.splice(index, 1)[0];
+        totalLineCount -= removed.lineCount;
+        const typeLabel = removed.type === "plan" ? "plan" : "file";
+        console.log(`✗ Removed ${typeLabel}: ${removed.identifier}`);
       });
     }
   }
