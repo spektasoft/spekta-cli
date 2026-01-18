@@ -19,8 +19,9 @@ import { searchableSelect } from "../ui";
 import { execa } from "execa";
 import { promptHashRange } from "../git-ui";
 
-interface SelectedFile {
-  path: string;
+interface SelectedItem {
+  type: "plan" | "file";
+  identifier: string; // filename for plan, path for file
   content: string;
   lineCount: number;
 }
@@ -28,18 +29,18 @@ interface SelectedFile {
 type MenuAction = "plan" | "file" | "remove" | "finalize";
 
 async function collectSupplementalContext(): Promise<string> {
-  const selectedPlans: string[] = [];
-  const selectedFiles: SelectedFile[] = [];
+  const selectedItems: SelectedItem[] = [];
   let totalLineCount = 0;
   const LINE_THRESHOLD = 1500;
 
   while (true) {
     // Display current selections
-    const totalSelections = selectedPlans.length + selectedFiles.length;
-    if (totalSelections > 0) {
+    if (selectedItems.length > 0) {
       console.log("\n=== Current Selections ===");
-      selectedPlans.forEach((plan) => console.log(`  [Plan] ${plan}`));
-      selectedFiles.forEach((file) => console.log(`  [File] ${file.path}`));
+      selectedItems.forEach((item) => {
+        const label = item.type === "plan" ? "[Plan]" : "[File]";
+        console.log(`  ${label} ${item.identifier} (${item.lineCount} lines)`);
+      });
       console.log(`  Total lines: ${totalLineCount}`);
       console.log("==========================\n");
     }
@@ -51,13 +52,13 @@ async function collectSupplementalContext(): Promise<string> {
     ];
 
     // Only show remove option if there are selections
-    if (totalSelections > 0) {
+    if (selectedItems.length > 0) {
       choices.push({ name: "Remove Selected Items", value: "remove" });
     }
 
     // Dynamic finalize label
     choices.push({
-      name: totalSelections === 0 ? "None" : "Finalize Selection",
+      name: selectedItems.length === 0 ? "None" : "Finalize Selection",
       value: "finalize",
     });
 
@@ -83,7 +84,10 @@ async function collectSupplementalContext(): Promise<string> {
       }
 
       // Filter out already-selected plans
-      const availablePlans = mdFiles.filter((f) => !selectedPlans.includes(f));
+      const selectedPlanNames = selectedItems
+        .filter(item => item.type === "plan")
+        .map(item => item.identifier);
+      const availablePlans = mdFiles.filter((f) => !selectedPlanNames.includes(f));
 
       if (availablePlans.length === 0) {
         console.log("All available plans have already been selected.");
@@ -95,7 +99,16 @@ async function collectSupplementalContext(): Promise<string> {
         availablePlans.map((f) => ({ name: f, value: f })),
       );
 
-      selectedPlans.push(selectedPlan);
+      const planPath = path.join(plansDir, selectedPlan);
+      const content = await fs.readFile(planPath, "utf-8");
+      const lineCount = content.split("\n").length;
+
+      selectedItems.push({
+        type: "plan",
+        identifier: selectedPlan,
+        content,
+        lineCount,
+      });
       console.log(`Added plan: ${selectedPlan}`);
     } else if (action === "file") {
       const filePath = await input({
@@ -111,8 +124,8 @@ async function collectSupplementalContext(): Promise<string> {
       const absolutePath = path.resolve(process.cwd(), trimmedPath);
 
       // Check for duplicate
-      if (selectedFiles.some((f) => f.path === trimmedPath)) {
-        console.warn(`⚠ File already selected: ${trimmedPath}`);
+      if (selectedItems.some((item) => item.type === "file" && item.identifier === trimmedPath)) {
+        console.warn(`File already selected: ${trimmedPath}`);
         continue;
       }
 
@@ -151,8 +164,9 @@ async function collectSupplementalContext(): Promise<string> {
         if (!proceed) continue;
       }
 
-      selectedFiles.push({
-        path: trimmedPath,
+      selectedItems.push({
+        type: "file",
+        identifier: trimmedPath,
         content,
         lineCount,
       });
@@ -161,16 +175,14 @@ async function collectSupplementalContext(): Promise<string> {
     } else if (action === "remove") {
       // Build checkbox choices
       const removalChoices = [
-        ...selectedPlans.map((plan) => ({
-          name: `[Plan] ${plan}`,
-          value: `plan:${plan}`,
-          checked: false,
-        })),
-        ...selectedFiles.map((file) => ({
-          name: `[File] ${file.path} (${file.lineCount} lines)`,
-          value: `file:${file.path}`,
-          checked: false,
-        })),
+        ...selectedItems.map((item) => {
+          const label = item.type === "plan" ? "[Plan]" : "[File]";
+          return {
+            name: `${label} ${item.identifier} (${item.lineCount} lines)`,
+            value: `${item.type}:${item.identifier}`,
+            checked: false,
+          };
+        }),
       ];
 
       const toRemove = await checkbox({
@@ -188,41 +200,35 @@ async function collectSupplementalContext(): Promise<string> {
         const [type, ...pathParts] = item.split(":");
         const identifier = pathParts.join(":"); // Handle paths with colons
 
-        if (type === "plan") {
-          const index = selectedPlans.indexOf(identifier);
-          if (index > -1) {
-            selectedPlans.splice(index, 1);
-            console.log(`✗ Removed plan: ${identifier}`);
-          }
-        } else if (type === "file") {
-          const index = selectedFiles.findIndex((f) => f.path === identifier);
-          if (index > -1) {
-            const removed = selectedFiles.splice(index, 1)[0];
+        const index = selectedItems.findIndex(
+          selectedItem => selectedItem.type === type && selectedItem.identifier === identifier
+        );
+
+        if (index > -1) {
+          const removed = selectedItems.splice(index, 1)[0];
+          if (removed.type === "file") {
             totalLineCount -= removed.lineCount;
-            console.log(`✗ Removed file: ${identifier}`);
           }
+          console.log(`✗ Removed ${type}: ${identifier}`);
         }
       });
     }
   }
 
   // Build final context string
-  if (selectedPlans.length === 0 && selectedFiles.length === 0) {
+  if (selectedItems.length === 0) {
     return "";
   }
 
   let contextContent = "\n\n### SUPPLEMENTAL CONTEXT\n\n";
 
-  // Add all selected plans
-  for (const planName of selectedPlans) {
-    const plansDir = await getPlansDir();
-    const content = await fs.readFile(path.join(plansDir, planName), "utf-8");
-    contextContent += `#### REFERENCE IMPLEMENTATION PLAN: ${planName}\n\n\`\`\`\`markdown\n${content}\n\`\`\`\`\n\n`;
-  }
-
-  // Add all selected files
-  for (const file of selectedFiles) {
-    contextContent += `#### REFERENCE FILE: ${file.path}\n\n\`\`\`\`markdown\n${file.content}\n\`\`\`\`\n\n`;
+  // Add all selected items
+  for (const item of selectedItems) {
+    if (item.type === "plan") {
+      contextContent += `#### REFERENCE IMPLEMENTATION PLAN: ${item.identifier}\n\n\`\`\`\`markdown\n${item.content}\n\`\`\`\`\n\n`;
+    } else if (item.type === "file") {
+      contextContent += `#### REFERENCE FILE: ${item.identifier}\n\n\`\`\`\`markdown\n${item.content}\n\`\`\`\`\n\n`;
+    }
   }
 
   return contextContent;
