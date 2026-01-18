@@ -103,13 +103,33 @@ async function collectSupplementalContext(): Promise<string> {
       const content = await fs.readFile(planPath, "utf-8");
       const lineCount = content.split("\n").length;
 
+      // Individual plan size warning
+      if (lineCount > 300) {
+        const proceed = await confirm({
+          message: `Warning: ${selectedPlan} is ${lineCount} lines long. Large files may degrade LLM performance. Include anyway?`,
+          default: false,
+        });
+        if (!proceed) continue;
+      }
+
+      // Check cumulative size threshold
+      const newTotal = totalLineCount + lineCount;
+      if (newTotal > LINE_THRESHOLD) {
+        const proceed = await confirm({
+          message: `Warning: Total context will be ${newTotal} lines (threshold: ${LINE_THRESHOLD}). This may degrade LLM performance. Continue?`,
+          default: false,
+        });
+        if (!proceed) continue;
+      }
+
       selectedItems.push({
         type: "plan",
         identifier: selectedPlan,
         content,
         lineCount,
       });
-      console.log(`Added plan: ${selectedPlan}`);
+      totalLineCount += lineCount;
+      console.log(`Added plan: ${selectedPlan} (${lineCount} lines)`);
     } else if (action === "file") {
       const filePath = await input({
         message: "Enter file path to include:",
