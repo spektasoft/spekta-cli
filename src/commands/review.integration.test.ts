@@ -1,4 +1,6 @@
+import { randomUUID } from "crypto";
 import fs from "fs-extra";
+import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -36,7 +38,7 @@ function mockAllPrompts(
 }
 
 describe("collectSupplementalContext integration", () => {
-  const testDir = path.join(process.cwd(), "test-temp-1"); // Use unique temp dir per suite to be safe
+  const testDir = path.join(os.tmpdir(), `spekta-test-${randomUUID()}`);
   const testPlansDir = path.join(testDir, "plans");
   const testFilesDir = path.join(testDir, "files");
 
@@ -163,6 +165,30 @@ describe("collectSupplementalContext integration", () => {
     expect(result).toContain("### SUPPLEMENTAL CONTEXT");
     expect(result).toContain(`#### REFERENCE FILE: ${testFilePath}`);
     expect(result).toContain("const test = 'content';");
+  });
+
+  it("should skip files containing quadruple backticks", async () => {
+    const badFilePath = path.join(testFilesDir, "bad.ts");
+    await fs.writeFile(badFilePath, "const x = ````;");
+
+    mockAllPrompts({
+      select: ["file", "finalize"],
+      input: [badFilePath],
+    });
+
+    vi.doMock("../ui", () => ({
+      searchableSelect: vi.fn(),
+    }));
+
+    const { collectSupplementalContext: mockedCollect } =
+      await import("./review-context");
+
+    const result = await mockedCollect();
+
+    // The file should not be included in the result
+    expect(result).not.toContain("bad.ts");
+    expect(result).not.toContain("const x = ````;");
+    expect(result).toBe("");
   });
 });
 
