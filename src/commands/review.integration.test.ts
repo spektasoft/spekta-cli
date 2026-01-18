@@ -193,7 +193,7 @@ describe("collectSupplementalContext integration", () => {
 });
 
 describe("review command prompt integrity", () => {
-  const testDir = path.join(process.cwd(), "test-temp-2"); // Unique temp dir
+  const testDir = path.join(os.tmpdir(), `spekta-prompt-test-${randomUUID()}`);
 
   beforeEach(async () => {
     await fs.ensureDir(testDir);
