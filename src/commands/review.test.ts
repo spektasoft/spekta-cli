@@ -166,4 +166,26 @@ describe("collectSupplementalContext", () => {
     expect(availablePlans).toEqual(["plan2.md"]);
     expect(availablePlans.length).toBe(1);
   });
+
+  it("should detect duplicate file paths", () => {
+    const selectedFiles = [
+      { path: "src/test.ts", content: "test", lineCount: 10 },
+    ];
+
+    const newPath = "src/test.ts";
+    const isDuplicate = selectedFiles.some((f) => f.path === newPath);
+
+    expect(isDuplicate).toBe(true);
+  });
+
+  it("should allow different file paths", () => {
+    const selectedFiles = [
+      { path: "src/test.ts", content: "test", lineCount: 10 },
+    ];
+
+    const newPath = "src/other.ts";
+    const isDuplicate = selectedFiles.some((f) => f.path === newPath);
+
+    expect(isDuplicate).toBe(false);
+  });
 });
