@@ -19,90 +19,74 @@ import { searchableSelect } from "../ui";
 import { execa } from "execa";
 import { promptHashRange } from "../git-ui";
 
+interface SelectedFile {
+  path: string;
+  content: string;
+  lineCount: number;
+}
+
+type MenuAction = "plan" | "file" | "remove" | "finalize";
+
 async function collectSupplementalContext(): Promise<string> {
-  const contextType = await select({
-    message: "Add additional context for this initial review?",
-    choices: [
-      { name: "None", value: "none" },
-      { name: "Include Implementation Plan", value: "plan" },
-      { name: "Include specific files by path", value: "path" },
-    ],
-  });
+  const selectedPlans: string[] = [];
+  const selectedFiles: SelectedFile[] = [];
+  let totalLineCount = 0;
+  const LINE_THRESHOLD = 1500;
 
-  if (contextType === "none") return "";
-
-  let contextContent = "\n\n### SUPPLEMENTAL CONTEXT\n\n";
-
-  if (contextType === "plan") {
-    const plansDir = await getPlansDir();
-    const files = await fs.readdir(plansDir);
-    const mdFiles = files.filter((f) => f.endsWith(".md"));
-
-    if (mdFiles.length === 0) {
-      console.warn(
-        "No implementation plans found in spekta/docs/implementations.",
-      );
-      return "";
+  while (true) {
+    // Display current selections
+    const totalSelections = selectedPlans.length + selectedFiles.length;
+    if (totalSelections > 0) {
+      console.log("\n=== Current Selections ===");
+      selectedPlans.forEach((plan) => console.log(`  [Plan] ${plan}`));
+      selectedFiles.forEach((file) => console.log(`  [File] ${file.path}`));
+      console.log(`  Total lines: ${totalLineCount}`);
+      console.log("==========================\n");
     }
 
-    const selectedPlan = await searchableSelect<string>(
-      "Select an implementation plan:",
-      mdFiles.map((f) => ({ name: f, value: f })),
-    );
+    // Build dynamic menu choices
+    const choices: Array<{ name: string; value: MenuAction }> = [
+      { name: "Add Implementation Plan", value: "plan" },
+      { name: "Add File by Path", value: "file" },
+    ];
 
-    const content = await fs.readFile(
-      path.join(plansDir, selectedPlan),
-      "utf-8",
-    );
-
-    // Use quadruple backticks and markdown tag
-    contextContent += `#### REFERENCE IMPLEMENTATION PLAN: ${selectedPlan}\n\n\`\`\`\`markdown\n${content}\n\`\`\`\`\n`;
-    return contextContent;
-  }
-
-  if (contextType === "path") {
-    let pathContext = "";
-    while (true) {
-      const filePath = await input({
-        message: "Enter file path to include (or press Enter to finish):",
-      });
-
-      if (!filePath.trim()) break;
-
-      const absolutePath = path.resolve(process.cwd(), filePath.trim());
-
-      if (!(await fs.pathExists(absolutePath))) {
-        console.error(`File not found: ${filePath}`);
-        continue;
-      }
-
-      const stats = await fs.stat(absolutePath);
-      if (stats.isDirectory()) {
-        console.error(
-          "Directories are not supported. Please provide a file path.",
-        );
-        continue;
-      }
-
-      const content = await fs.readFile(absolutePath, "utf-8");
-      const lineCount = content.split("\n").length;
-
-      if (lineCount > 300) {
-        const proceed = await confirm({
-          message: `Warning: ${filePath} is ${lineCount} lines long. Large files may degrade LLM performance. Include anyway?`,
-          default: false,
-        });
-        if (!proceed) continue;
-      }
-
-      // Update to use quadruple backticks and markdown tag for consistency
-      pathContext += `#### REFERENCE FILE: ${filePath}\n\n\`\`\`\`markdown\n${content}\n\`\`\`\`\n\n`;
+    // Only show remove option if there are selections
+    if (totalSelections > 0) {
+      choices.push({ name: "Remove Selected Items", value: "remove" });
     }
 
-    return pathContext ? contextContent + pathContext : "";
+    // Dynamic finalize label
+    choices.push({
+      name: totalSelections === 0 ? "None" : "Finalize Selection",
+      value: "finalize",
+    });
+
+    const action = await select<MenuAction>({
+      message: "Add additional context for this initial review?",
+      choices,
+    });
+
+    if (action === "finalize") {
+      break;
+    }
+
+    // Handle actions (to be implemented in next steps)
+    if (action === "plan") {
+      // TODO: Implement plan selection
+    } else if (action === "file") {
+      // TODO: Implement file selection
+    } else if (action === "remove") {
+      // TODO: Implement removal
+    }
   }
 
-  return "";
+  // Build final context string (to be implemented in later step)
+  if (selectedPlans.length === 0 && selectedFiles.length === 0) {
+    return "";
+  }
+
+  // Placeholder return
+  return "\n\n### SUPPLEMENTAL CONTEXT\n\n";
 }
 
 export async function runReview() {
