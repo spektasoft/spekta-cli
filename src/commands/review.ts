@@ -98,7 +98,66 @@ async function collectSupplementalContext(): Promise<string> {
       selectedPlans.push(selectedPlan);
       console.log(`Added plan: ${selectedPlan}`);
     } else if (action === "file") {
-      // TODO: Implement file selection
+      const filePath = await input({
+        message: "Enter file path to include:",
+      });
+
+      if (!filePath.trim()) {
+        console.log("No path entered. Returning to menu.");
+        continue;
+      }
+
+      const trimmedPath = filePath.trim();
+      const absolutePath = path.resolve(process.cwd(), trimmedPath);
+
+      // Check for duplicate
+      if (selectedFiles.some((f) => f.path === trimmedPath)) {
+        console.warn(`⚠ File already selected: ${trimmedPath}`);
+        continue;
+      }
+
+      if (!(await fs.pathExists(absolutePath))) {
+        console.error(`File not found: ${trimmedPath}`);
+        continue;
+      }
+
+      const stats = await fs.stat(absolutePath);
+      if (stats.isDirectory()) {
+        console.error(
+          "Directories are not supported. Please provide a file path.",
+        );
+        continue;
+      }
+
+      const content = await fs.readFile(absolutePath, "utf-8");
+      const lineCount = content.split("\n").length;
+
+      // Individual file size warning
+      if (lineCount > 300) {
+        const proceed = await confirm({
+          message: `Warning: ${trimmedPath} is ${lineCount} lines long. Large files may degrade LLM performance. Include anyway?`,
+          default: false,
+        });
+        if (!proceed) continue;
+      }
+
+      // Check cumulative size threshold
+      const newTotal = totalLineCount + lineCount;
+      if (newTotal > LINE_THRESHOLD) {
+        const proceed = await confirm({
+          message: `Warning: Total context will be ${newTotal} lines (threshold: ${LINE_THRESHOLD}). This may degrade LLM performance. Continue?`,
+          default: false,
+        });
+        if (!proceed) continue;
+      }
+
+      selectedFiles.push({
+        path: trimmedPath,
+        content,
+        lineCount,
+      });
+      totalLineCount += lineCount;
+      console.log(`Added file: ${trimmedPath} (${lineCount} lines)`);
     } else if (action === "remove") {
       // TODO: Implement removal
     }
