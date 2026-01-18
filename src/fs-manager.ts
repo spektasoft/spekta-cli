@@ -77,6 +77,12 @@ export const getHashesFromReviewFile = (fileName: string) => {
   return match ? { start: match[1], end: match[2] } : null;
 };
 
+const DEFAULT_METADATA = { nextNum: 1, lastFile: null };
+
+export const getSafeMetadata = async (dir: string) => {
+  return (await getNextReviewMetadata(dir)) || DEFAULT_METADATA;
+};
+
 export const getNextReviewMetadata = async (dir: string) => {
   const files = await fs.readdir(dir);
   const sequenceRegex = /^r-(\d+)-[0-9a-f]+\.\.[0-9a-f]+\.md$/i;
@@ -87,7 +93,7 @@ export const getNextReviewMetadata = async (dir: string) => {
     })
     .filter((item): item is { name: string; num: number } => item !== null);
 
-  if (validFiles.length === 0) return { nextNum: 1, lastFile: null };
+  if (validFiles.length === 0) return DEFAULT_METADATA;
   const lastEntry = validFiles.reduce((p, c) => (p.num > c.num ? p : c));
   return { nextNum: lastEntry.num + 1, lastFile: lastEntry.name };
 };

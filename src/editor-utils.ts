@@ -9,7 +9,7 @@ import { getEnv } from "./config";
  */
 export async function saveToTempFile(
   content: string,
-  prefix: string
+  prefix: string,
 ): Promise<string> {
   const tempFileName = `${prefix}-${Date.now()}.md`;
   const tempFilePath = path.join(os.tmpdir(), tempFileName);
@@ -22,13 +22,15 @@ export async function saveToTempFile(
  */
 export async function openEditor(
   editorCommand: string,
-  filePath: string
+  filePath: string,
 ): Promise<void> {
   try {
-    await execa(editorCommand, [filePath], { stdio: "inherit" });
+    await execa(editorCommand, [filePath], {
+      stdio: "inherit",
+    });
   } catch (error: any) {
     throw new Error(
-      `Failed to open editor "${editorCommand}": ${error.message}`
+      `Failed to open editor "${editorCommand}": ${error.message}`,
     );
   }
 }
@@ -36,7 +38,7 @@ export async function openEditor(
 export async function finalizeOutput(
   content: string,
   prefix: string,
-  successMessage: string
+  successMessage: string,
 ): Promise<void> {
   const filePath = await saveToTempFile(content, prefix);
   console.log(`${successMessage}: ${filePath}`);

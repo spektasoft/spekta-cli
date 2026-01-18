@@ -9,28 +9,13 @@ import {
 } from "../git";
 import {
   getReviewDir,
-  getNextReviewMetadata,
   listReviewFolders,
   getHashesFromReviewFile,
+  getSafeMetadata,
 } from "../fs-manager";
 import { input, confirm, select } from "@inquirer/prompts";
 import { execa } from "execa";
-
-async function getHashRange(suggestedStart: string, suggestedEnd: string) {
-  const useSuggested = await confirm({
-    message: `Use suggested range ${suggestedStart.slice(
-      0,
-      7
-    )}..${suggestedEnd.slice(0, 7)}?`,
-    default: true,
-  });
-
-  if (useSuggested) return { start: suggestedStart, end: suggestedEnd };
-
-  const start = await input({ message: "Older commit hash:" });
-  const end = await input({ message: "Newer commit hash:" });
-  return { start: await resolveHash(start), end: await resolveHash(end) };
-}
+import { promptHashRange } from "../git-ui";
 
 export async function runReview() {
   try {
@@ -67,24 +52,26 @@ export async function runReview() {
         message: "Select review folder:",
         choices: folders.map((f) => ({ name: f, value: f })),
       });
-      dirInfo = await getReviewDir(false, folderId); // Use selected folder
-      const metadata = await getNextReviewMetadata(dirInfo.dir);
+      dirInfo = await getReviewDir(false, folderId);
+    }
+
+    // Fetch metadata ONCE after directory has been resolved
+    const metadata = await getSafeMetadata(dirInfo.dir);
+
+    if (!isInitial) {
       if (metadata.lastFile) {
         const extracted = getHashesFromReviewFile(metadata.lastFile);
         if (extracted) suggestedStart = await resolveHash(extracted.end);
       }
       if (!suggestedStart) {
         suggestedStart = await resolveHash(
-          await input({ message: "Older commit hash:" })
+          await input({ message: "Older commit hash:" }),
         );
       }
     }
 
-    const { start, end } = await getHashRange(suggestedStart, suggestedEnd);
-    const [metadata, diff] = await Promise.all([
-      getNextReviewMetadata(dirInfo.dir),
-      getGitDiff(start, end, ignorePatterns),
-    ]);
+    const { start, end } = await promptHashRange(suggestedStart, suggestedEnd);
+    const diff = await getGitDiff(start, end, ignorePatterns);
 
     const templateName = isInitial
       ? "review-initial.md"
@@ -95,7 +82,7 @@ export async function runReview() {
     if (!isInitial && metadata.lastFile) {
       const prevReviewContent = await fs.readFile(
         path.join(dirInfo.dir, metadata.lastFile),
-        "utf-8"
+        "utf-8",
       );
       finalPrompt += `PREVIOUS REVIEW:\n\`\`\`\`markdown\n${prevReviewContent}\n\`\`\`\`\n\n---\n`;
     }
@@ -103,7 +90,7 @@ export async function runReview() {
 
     const fileName = `r-${String(metadata.nextNum).padStart(
       3,
-      "0"
+      "0",
     )}-${start.slice(0, 7)}..${end.slice(0, 7)}.md`;
     const filePath = path.join(dirInfo.dir, fileName);
 
@@ -119,12 +106,13 @@ export async function runReview() {
         console.warn(`\nWarning: Failed to open editor "${editor}".`);
         console.warn(`Detail: ${editorError.message}`);
         console.log(`You can manually open the review at: ${filePath}`);
+        process.exitCode = 1;
       }
     } else {
       console.log("\n--- Action Required ---");
       console.log(`Review prompt generated at: ${filePath}`);
       console.log(
-        "Tip: Set SPEKTA_EDITOR in your .env to open this automatically."
+        "Tip: Set SPEKTA_EDITOR in your .env to open this automatically.",
       );
     }
   } catch (error: any) {

@@ -1,25 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getGitDiff, getStagedDiff } from "./git";
+import { getGitDiff, getStagedDiff, isValidHash, resolveHash } from "./git";
 import { execa } from "execa";
 
 vi.mock("execa", () => ({
   execa: vi.fn(),
 }));
 
-describe("getGitDiff", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
+// Global cleanup to prevent mock leakage between describe blocks
+beforeEach(() => {
+  vi.resetAllMocks();
+});
 
+describe("getGitDiff", () => {
   it("throws error for invalid hash format", async () => {
     await expect(getGitDiff("invalid-hash", "abc1234")).rejects.toThrow(
-      "Invalid commit hash format. Use 7-40 hex characters."
+      "Invalid commit hash format. Use 7-40 hex characters.",
     );
   });
 
   it("throws error for injection attempts", async () => {
     await expect(getGitDiff("abc1234; rm -rf /", "def5678")).rejects.toThrow(
-      "Invalid commit hash format. Use 7-40 hex characters."
+      "Invalid commit hash format. Use 7-40 hex characters.",
     );
   });
 
@@ -38,7 +39,7 @@ describe("getGitDiff", () => {
     expect(mockExeca).toHaveBeenCalledWith(
       "git",
       ["diff", "abc1234..def5678", "--", ".", ":!node_modules"],
-      expect.objectContaining({ maxBuffer: 10485760 })
+      expect.objectContaining({ maxBuffer: 10485760 }),
     );
     expect(result).toBe("diff content");
   });
@@ -50,7 +51,7 @@ describe("getGitDiff", () => {
     });
 
     await expect(getGitDiff("abc1234", "def5678")).rejects.toThrow(
-      "Git diff failed: fatal: not a git repository"
+      "Git diff failed: fatal: not a git repository",
     );
   });
 });
@@ -66,7 +67,7 @@ describe("getStagedDiff", () => {
     expect(mockExeca).toHaveBeenCalledWith(
       "git",
       ["diff", "--staged", "--", ".", ":!*.log", ":!dist/"],
-      expect.any(Object)
+      expect.any(Object),
     );
   });
 
@@ -79,7 +80,33 @@ describe("getStagedDiff", () => {
     expect(mockExeca).toHaveBeenCalledWith(
       "git",
       ["diff", "--staged", "--", "."],
-      expect.any(Object)
+      expect.any(Object),
     );
+  });
+});
+
+describe("Git Hash Validation", () => {
+  it("should validate 7-40 character hex strings", () => {
+    expect(isValidHash("abc1234")).toBe(true);
+    expect(isValidHash("notahash")).toBe(false);
+  });
+
+  it("should fail resolution for non-existent commits", async () => {
+    // Explicitly mock a rejection for this specific test
+    vi.mocked(execa).mockRejectedValue(
+      new Error("fatal: Not a valid object name"),
+    );
+
+    await expect(resolveHash("deadbeef")).rejects.toThrow(
+      "does not resolve to a valid commit",
+    );
+  });
+});
+
+describe("getGitDiff Edge Cases", () => {
+  it("should handle empty diff responses gracefully", async () => {
+    vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
+    const result = await getGitDiff("abc1234", "abc1234");
+    expect(result).toBe("");
   });
 });
