@@ -15,25 +15,7 @@ import {
 } from "../fs-manager";
 import { input, confirm, select } from "@inquirer/prompts";
 import { execa } from "execa";
-
-async function getHashRange(suggestedStart: string, suggestedEnd: string) {
-  const useSuggested = await select({
-    message: `Use suggested range ${suggestedStart.slice(
-      0,
-      7,
-    )}..${suggestedEnd.slice(0, 7)}?`,
-    choices: [
-      { name: "Yes", value: true },
-      { name: "No", value: false },
-    ],
-  });
-
-  if (useSuggested) return { start: suggestedStart, end: suggestedEnd };
-
-  const start = await input({ message: "Older commit hash:" });
-  const end = await input({ message: "Newer commit hash:" });
-  return { start: await resolveHash(start), end: await resolveHash(end) };
-}
+import { promptHashRange } from "../git-ui";
 
 export async function runReview() {
   try {
@@ -83,11 +65,18 @@ export async function runReview() {
       }
     }
 
-    const { start, end } = await getHashRange(suggestedStart, suggestedEnd);
-    const [metadata, diff] = await Promise.all([
-      getNextReviewMetadata(dirInfo.dir),
-      getGitDiff(start, end, ignorePatterns),
-    ]);
+    // Fetch metadata once at the start of the logic if continuing,
+    // or after directory resolution if initial.
+    dirInfo = await getReviewDir(isInitial, folderId);
+    const metadata = await getNextReviewMetadata(dirInfo.dir);
+
+    if (!isInitial && metadata.lastFile) {
+      const extracted = getHashesFromReviewFile(metadata.lastFile);
+      if (extracted) suggestedStart = await resolveHash(extracted.end);
+    }
+
+    const { start, end } = await promptHashRange(suggestedStart, suggestedEnd);
+    const diff = await getGitDiff(start, end, ignorePatterns);
 
     const templateName = isInitial
       ? "review-initial.md"
