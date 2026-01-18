@@ -206,13 +206,26 @@ async function collectSupplementalContext(): Promise<string> {
     }
   }
 
-  // Build final context string (to be implemented in later step)
+  // Build final context string
   if (selectedPlans.length === 0 && selectedFiles.length === 0) {
     return "";
   }
 
-  // Placeholder return
-  return "\n\n### SUPPLEMENTAL CONTEXT\n\n";
+  let contextContent = "\n\n### SUPPLEMENTAL CONTEXT\n\n";
+
+  // Add all selected plans
+  for (const planName of selectedPlans) {
+    const plansDir = await getPlansDir();
+    const content = await fs.readFile(path.join(plansDir, planName), "utf-8");
+    contextContent += `#### REFERENCE IMPLEMENTATION PLAN: ${planName}\n\n\`\`\`\`markdown\n${content}\n\`\`\`\`\n\n`;
+  }
+
+  // Add all selected files
+  for (const file of selectedFiles) {
+    contextContent += `#### REFERENCE FILE: ${file.path}\n\n\`\`\`\`markdown\n${file.content}\n\`\`\`\`\n\n`;
+  }
+
+  return contextContent;
 }
 
 export async function runReview() {
