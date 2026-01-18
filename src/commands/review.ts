@@ -70,9 +70,33 @@ async function collectSupplementalContext(): Promise<string> {
       break;
     }
 
-    // Handle actions (to be implemented in next steps)
     if (action === "plan") {
-      // TODO: Implement plan selection
+      const plansDir = await getPlansDir();
+      const files = await fs.readdir(plansDir);
+      const mdFiles = files.filter((f) => f.endsWith(".md"));
+
+      if (mdFiles.length === 0) {
+        console.warn(
+          "No implementation plans found in spekta/docs/implementations.",
+        );
+        continue;
+      }
+
+      // Filter out already-selected plans
+      const availablePlans = mdFiles.filter((f) => !selectedPlans.includes(f));
+
+      if (availablePlans.length === 0) {
+        console.log("All available plans have already been selected.");
+        continue;
+      }
+
+      const selectedPlan = await searchableSelect<string>(
+        "Select an implementation plan:",
+        availablePlans.map((f) => ({ name: f, value: f })),
+      );
+
+      selectedPlans.push(selectedPlan);
+      console.log(`Added plan: ${selectedPlan}`);
     } else if (action === "file") {
       // TODO: Implement file selection
     } else if (action === "remove") {
