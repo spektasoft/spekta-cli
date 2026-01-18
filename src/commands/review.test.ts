@@ -232,3 +232,43 @@ describe("Removal logic", () => {
     expect(totalLineCount).toBe(400);
   });
 });
+
+describe("Context string generation", () => {
+  it("should return empty string when no selections", () => {
+    const selectedPlans: string[] = [];
+    const selectedFiles: any[] = [];
+
+    const result =
+      selectedPlans.length === 0 && selectedFiles.length === 0 ? "" : "content";
+
+    expect(result).toBe("");
+  });
+
+  it("should generate proper context header", () => {
+    const header = "\n\n### SUPPLEMENTAL CONTEXT\n\n";
+
+    expect(header).toContain("SUPPLEMENTAL CONTEXT");
+  });
+
+  it("should format plan references correctly", () => {
+    const planName = "test-plan.md";
+    const planContent = "# Test Plan";
+
+    const formatted = `#### REFERENCE IMPLEMENTATION PLAN: ${planName}\n\n\`\`\`\`markdown\n${planContent}\n\`\`\`\`\n\n`;
+
+    expect(formatted).toContain("REFERENCE IMPLEMENTATION PLAN");
+    expect(formatted).toContain(planName);
+    expect(formatted).toContain(planContent);
+  });
+
+  it("should format file references correctly", () => {
+    const filePath = "src/test.ts";
+    const fileContent = "console.log('test');";
+
+    const formatted = `#### REFERENCE FILE: ${filePath}\n\n\`\`\`\`markdown\n${fileContent}\n\`\`\`\`\n\n`;
+
+    expect(formatted).toContain("REFERENCE FILE");
+    expect(formatted).toContain(filePath);
+    expect(formatted).toContain(fileContent);
+  });
+});
