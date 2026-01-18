@@ -1,9 +1,10 @@
-import path from "path";
+import { checkbox, confirm, input, select } from "@inquirer/prompts";
 import fs from "fs-extra";
-import { input, confirm, select, checkbox } from "@inquirer/prompts";
-import { searchableSelect } from "../ui";
-import { getPlansDir } from "../fs-manager";
 import { encode } from "gpt-tokenizer";
+import isBinaryPath from "is-binary-path";
+import path from "path";
+import { getPlansDir } from "../fs-manager";
+import { searchableSelect } from "../ui";
 
 export interface SelectedItem {
   type: "plan" | "file";
@@ -152,6 +153,13 @@ export async function collectSupplementalContext(): Promise<string> {
       if (stats.isDirectory()) {
         console.error(
           "Directories are not supported. Please provide a file path.",
+        );
+        continue;
+      }
+
+      if (isBinaryPath(absolutePath)) {
+        console.error(
+          "Error: Binary files are not supported for supplemental context.",
         );
         continue;
       }

@@ -17,6 +17,7 @@
         "fs-extra": "^11.3.3",
         "gpt-tokenizer": "^3.4.0",
         "inquirer-autocomplete-standalone": "^0.8.1",
+        "is-binary-path": "^3.0.0",
         "openai": "^6.16.0",
         "ora": "^9.0.0"
     },
