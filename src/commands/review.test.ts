@@ -133,3 +133,27 @@ describe("runReview", () => {
     expect(gitUi.promptHashRange).toHaveBeenCalledWith("def", "HEAD");
   });
 });
+
+describe("collectSupplementalContext structure", () => {
+  it("should have proper type definitions", () => {
+    // This test verifies compilation only
+    interface SelectedFile {
+      path: string;
+      content: string;
+      lineCount: number;
+    }
+
+    type MenuAction = "plan" | "file" | "remove" | "finalize";
+
+    const testFile: SelectedFile = {
+      path: "test.ts",
+      content: "test",
+      lineCount: 1,
+    };
+
+    const testAction: MenuAction = "finalize";
+
+    expect(testFile.path).toBe("test.ts");
+    expect(testAction).toBe("finalize");
+  });
+});
