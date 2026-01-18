@@ -25,8 +25,7 @@ export async function openEditor(
   filePath: string,
 ): Promise<void> {
   try {
-    const editor = process.env.SPEKTA_EDITOR || process.env.EDITOR || "vim";
-    await execa(editor, [filePath], {
+    await execa(editorCommand, [filePath], {
       stdio: "inherit",
     });
   } catch (error: any) {
