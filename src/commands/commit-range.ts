@@ -18,43 +18,45 @@ export async function runCommitRange() {
   try {
     const args = process.argv.slice(3); // Skip 'node', 'script', 'commit-range'
 
-    let hash1: string;
-    let hash2: string;
+    let hash1Raw: string;
+    let hash2Raw: string;
 
     // Check if hashes provided as CLI arguments
     if (args.length >= 2) {
-      hash1 = args[0];
-      hash2 = args[1];
-      console.log(`Using provided hashes: ${hash1}..${hash2}`);
+      hash1Raw = args[0];
+      hash2Raw = args[1];
+      console.log(`Using provided hashes: ${hash1Raw}..${hash2Raw}`);
     } else {
-      // Interactive prompts
-      hash1 = await promptCommitHash(
-        "Enter first commit hash (older):",
+      // Interactive prompts - allow symbolic references
+      hash1Raw = await promptCommitHash(
+        "Enter first commit (older, supports symbolic refs like HEAD~1, branch names, etc.):",
         (value) => {
           if (!value || value.trim().length === 0) {
-            return "Commit hash is required";
+            return "Commit reference is required";
           }
           return true;
         },
       );
 
-      hash2 = await promptCommitHash(
-        "Enter second commit hash (newer):",
+      hash2Raw = await promptCommitHash(
+        "Enter second commit (newer, supports symbolic refs like HEAD, branch names, etc.):",
         (value) => {
           if (!value || value.trim().length === 0) {
-            return "Commit hash is required";
+            return "Commit reference is required";
           }
           return true;
         },
       );
     }
 
-    // Resolve hashes to full commit references
-    const resolvedHash1 = await resolveHash(hash1.trim());
-    const resolvedHash2 = await resolveHash(hash2.trim());
+    // Resolve symbolic references to actual hashes
+    const resolvedHash1 = await resolveHash(hash1Raw.trim());
+    const resolvedHash2 = await resolveHash(hash2Raw.trim());
 
+    console.log(`\nResolved: ${hash1Raw} -> ${resolvedHash1.substring(0, 7)}`);
+    console.log(`Resolved: ${hash2Raw} -> ${resolvedHash2.substring(0, 7)}`);
     console.log(
-      `\nResolved range: ${resolvedHash1.substring(0, 7)}..${resolvedHash2.substring(0, 7)}`,
+      `\nProcessing range: ${resolvedHash1.substring(0, 7)}..${resolvedHash2.substring(0, 7)}`,
     );
 
     // Fetch commit messages
