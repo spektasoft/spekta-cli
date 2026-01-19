@@ -1,8 +1,7 @@
-import os from "os";
-import path from "path";
-import fs from "fs-extra";
 import { execa } from "execa";
+import fs from "fs-extra";
 import { getEnv } from "./config";
+import { getTempPath } from "./utils/fs-utils";
 
 /**
  * Opens a file in the specified editor and waits for the process to exit.
@@ -27,8 +26,7 @@ export async function processOutput(
   prefix: string,
   silent: boolean = false,
 ): Promise<string> {
-  const tempFileName = `${prefix}-${Date.now()}.md`;
-  const filePath = path.normalize(path.join(os.tmpdir(), tempFileName));
+  const filePath = getTempPath(prefix);
   await fs.writeFile(filePath, content, "utf-8");
 
   const env = await getEnv();
