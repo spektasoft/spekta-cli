@@ -1,5 +1,7 @@
+import { getEnv, getPromptContent, getProviders } from "../config";
+import { processOutput } from "../editor-utils";
 import { getCommitMessages, resolveHash } from "../git";
-import { promptCommitHash } from "../ui";
+import { promptCommitHash, promptProviderSelection } from "../ui";
 
 export async function runCommitRange() {
   try {
@@ -60,8 +62,35 @@ export async function runCommitRange() {
 
     console.log(`Found commits in range.`);
 
+    // Load system prompt and build user context
+    const systemPrompt = await getPromptContent("commit-range.md");
+    const userContext = `### COMMIT MESSAGES\n\`\`\`\n${commitMessages}\n\`\`\``;
+
+    // Get providers and prompt for selection
+    const [providersData, env] = await Promise.all([getProviders(), getEnv()]);
+
+    const selection = await promptProviderSelection(
+      systemPrompt + "\n" + userContext,
+      providersData.providers,
+      "Select provider for commit message generation:",
+    );
+
+    // Handle "Only Prompt" option
+    if (selection.isOnlyPrompt) {
+      await processOutput(
+        systemPrompt + "\n" + userContext,
+        "spekta-commit-range-prompt",
+      );
+      console.log("Prompt saved. No LLM call made.");
+      return;
+    }
+
+    if (!selection.provider) {
+      throw new Error("No AI provider selected for commit range generation.");
+    }
+
     // Placeholder
-    console.log("Preparing prompt...");
+    console.log(`Selected provider: ${selection.provider.name}`);
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;
