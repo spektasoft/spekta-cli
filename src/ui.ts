@@ -1,3 +1,4 @@
+import { select } from "@inquirer/prompts";
 import { encode } from "gpt-tokenizer";
 import autocomplete from "inquirer-autocomplete-standalone";
 import { Provider } from "./config";
@@ -65,4 +66,16 @@ export async function promptProviderSelection(
   ];
 
   return await searchableSelect<ProviderSelection>(contextMessage, choices);
+}
+
+export async function confirmCommit(): Promise<boolean> {
+  const response = await select({
+    message: "Commit the staged changes with this message?",
+    choices: [
+      { name: "Yes", value: true },
+      { name: "No", value: false },
+    ],
+  });
+
+  return response === true;
 }
