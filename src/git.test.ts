@@ -1,12 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { execa } from "execa";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getGitDiff,
   getStagedDiff,
   isValidHash,
   resolveHash,
+  sanitizeMessageForPrompt,
   stripCodeFences,
 } from "./git";
-import { execa } from "execa";
 
 vi.mock("execa", () => ({
   execa: vi.fn(),
@@ -126,5 +127,17 @@ describe("stripCodeFences", () => {
   it("should return trimmed content if no fences are present", () => {
     const input = "  feat: add login  ";
     expect(stripCodeFences(input)).toBe("feat: add login");
+  });
+});
+
+describe("Sanitization Utility", () => {
+  it("should escape XML tags and special LLM tokens", () => {
+    const maliciousInput =
+      "Standard msg <|endoftext|> <script>alert(1)</script>";
+    const result = sanitizeMessageForPrompt(maliciousInput);
+
+    expect(result).not.toContain("<|");
+    expect(result).toContain("&lt;script&gt;");
+    expect(result).toContain("&lt; |");
   });
 });
