@@ -134,7 +134,13 @@ export const getCommitMessages = async (
 };
 
 export async function commitWithFile(filePath: string): Promise<void> {
-  console.log(`Would commit using: git commit --file ${filePath}`);
+  try {
+    await execa("git", ["commit", "--file", filePath], {
+      stdio: "inherit",
+    });
+  } catch (err: any) {
+    throw new Error(`git commit failed: ${err.message}`);
+  }
 }
 
 export function stripCodeFences(content: string): string {
