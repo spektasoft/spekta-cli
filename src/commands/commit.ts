@@ -5,11 +5,7 @@ import {
   getPromptContent,
   getProviders,
 } from "../config";
-import {
-  finalizeOutput,
-  prepareTempMessageFile,
-  saveToTempFile,
-} from "../editor-utils";
+import { finalizeOutput, prepareTempMessageFile } from "../editor-utils";
 import {
   commitWithFile,
   formatCommitMessage,
@@ -20,6 +16,8 @@ import { executeAiAction } from "../orchestrator";
 import { confirmCommit, promptProviderSelection } from "../ui";
 
 export async function runCommit() {
+  let tempFilePath: string | undefined;
+
   try {
     const [providersData, env, ignorePatterns] = await Promise.all([
       getProviders(),
@@ -67,44 +65,26 @@ export async function runCommit() {
       spinnerTitle: "Generating commit message...",
     });
 
-    // Clean & format
+    // 1. Process in-memory
     const cleaned = stripCodeFences(result);
+    const formatted = await formatCommitMessage(cleaned);
 
-    // Write initial version
-    const filePath = await saveToTempFile(cleaned, "spekta-commit-raw");
+    // 2. Single I/O operation
+    tempFilePath = await prepareTempMessageFile(formatted, "spekta-commit");
 
-    // Format commit message
-    await formatCommitMessage(filePath);
-
-    // Prepare (show/print + editor if set)
-    const finalFilePath = await prepareTempMessageFile(
-      (await fs.readFile(filePath, "utf-8")).trim(),
-      "spekta-commit",
-    );
-
-    // Only offer commit in normal flow (not isOnlyPrompt)
-    if (selection.isOnlyPrompt) {
-      console.log("Prompt-only mode – no commit offered.");
-      await fs.remove(finalFilePath);
-      return;
-    }
-
-    const shouldCommit = await confirmCommit();
-
-    if (shouldCommit) {
-      await commitWithFile(finalFilePath);
+    if (await confirmCommit()) {
+      await commitWithFile(tempFilePath);
       console.log("Commit created successfully.");
     } else {
       console.log("Commit aborted.");
     }
-
-    // Cleanup in all cases
-    await fs.remove(finalFilePath);
-    if (filePath !== finalFilePath) {
-      await fs.remove(filePath);
-    }
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;
+  } finally {
+    // 3. Guaranteed cleanup
+    if (tempFilePath && (await fs.pathExists(tempFilePath))) {
+      await fs.remove(tempFilePath);
+    }
   }
 }

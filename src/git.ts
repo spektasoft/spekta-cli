@@ -165,7 +165,6 @@ export async function formatCommitMessage(content: string): Promise<string> {
     // We use the markdown parser for commit messages
     return await prettier.format(content, {
       parser: "markdown",
-      proseWrap: "always",
     });
   } catch (err: any) {
     console.warn(
