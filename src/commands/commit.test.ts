@@ -1,11 +1,11 @@
-import { describe, it, expect, vi, beforeEach, afterEach, Mock } from "vitest";
-import path from "path";
-import { runCommit } from "./commit";
 import fs from "fs-extra";
+import { afterEach, beforeEach, describe, expect, it, Mock, vi } from "vitest";
 import * as config from "../config";
 import * as git from "../git";
-import * as ui from "../ui";
 import * as orchestrator from "../orchestrator";
+import * as ui from "../ui";
+import * as fsUtils from "../utils/fs-utils";
+import { runCommit } from "./commit";
 
 // Mock external modules
 vi.mock("fs-extra");
@@ -21,6 +21,8 @@ vi.mock("../ui");
 vi.mock("../orchestrator");
 
 describe("Command: runCommit", () => {
+  vi.mock("../utils/fs-utils");
+
   // Spies for console and process
   const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -44,9 +46,12 @@ describe("Command: runCommit", () => {
     });
     (config.getIgnorePatterns as Mock).mockResolvedValue([]);
     (config.getPromptContent as Mock).mockResolvedValue(
-      "Commit Template: {{diff}}"
+      "Commit Template: {{diff}}",
     );
     (fs.writeFile as unknown as Mock).mockResolvedValue(undefined);
+    (vi.mocked(fsUtils.getTempPath) as Mock).mockImplementation((prefix) => {
+      return `/mock-tmp/${prefix}-12345.md`;
+    });
   });
 
   afterEach(() => {
@@ -78,58 +83,58 @@ describe("Command: runCommit", () => {
 
     // Assert
     expect(consoleWarnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Warning: Staged diff is large")
+      expect.stringContaining("Warning: Staged diff is large"),
     );
   });
 
-  it("should generate commit message via AI and save to file", async () => {
+  it("should generate commit message via AI and save to temp file", async () => {
     // Arrange
-    const mockDiff = "diff content";
-    const mockAiResult = "feat: added login";
-    const mockProvider = { name: "test-provider", model: "gpt-4" };
+    const mockDiff = "diff --git a/file.txt b/file.txt\n+new content";
+    const mockRawAi =
+      "```text\nfeat: add login endpoint\n\nBREAKING CHANGE: requires auth header\n```";
 
     (git.getStagedDiff as Mock).mockResolvedValue(mockDiff);
     (ui.promptProviderSelection as Mock).mockResolvedValue({
       isOnlyPrompt: false,
-      provider: mockProvider,
+      provider: { name: "test-provider", model: "gpt-4" },
     });
-    (orchestrator.executeAiAction as Mock).mockResolvedValue(mockAiResult);
+    (orchestrator.executeAiAction as Mock).mockResolvedValue(mockRawAi);
 
     // Act
     await runCommit();
 
     // Assert
-    // 1. Check AI execution with messages array
-    expect(orchestrator.executeAiAction).toHaveBeenCalledWith({
-      apiKey: "sk-test",
-      provider: mockProvider,
-      messages: [
-        { role: "system", content: "Commit Template: {{diff}}" },
-        {
-          role: "user",
-          content: expect.stringContaining("### GIT STAGED DIFF"),
-        },
-      ],
-      spinnerTitle: "Generating commit message...",
-    });
-
-    // 2. Check File Save (via finalizeOutput)
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.stringContaining(path.join("/tmp/mock-dir", "spekta-commit-")),
-      mockAiResult,
-      "utf-8"
+    expect(orchestrator.executeAiAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        apiKey: "sk-test",
+        provider: expect.objectContaining({ model: "gpt-4" }),
+        messages: [
+          { role: "system", content: expect.stringContaining("{{diff}}") }, // real prompt from disk
+          { role: "user", content: expect.stringContaining(mockDiff) },
+        ],
+        spinnerTitle: "Generating commit message...",
+      }),
     );
 
-    // 3. Check Success Log
-    expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Commit message generated")
+    expect(git.stripCodeFences).toHaveBeenCalledWith(mockRawAi);
+
+    expect(fsUtils.getTempPath).toHaveBeenCalledWith("spekta-commit");
+
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Output saved to: /mock-tmp/spekta-commit-12345.md",
+      ),
     );
   });
 
-  it("should save prompt to file without calling AI when isOnlyPrompt is selected", async () => {
+  it("should save full prompt + diff to temp file without calling AI when isOnlyPrompt is selected", async () => {
     // Arrange
-    const mockDiff = "diff content";
+    const mockDiff = "diff --git a/file.txt b/file.txt\n+new content";
+    const realSystemPrompt =
+      "You are a helpful commit message generator.\nUse conventional commits.\n{{diff}}";
+
     (git.getStagedDiff as Mock).mockResolvedValue(mockDiff);
+    (config.getPromptContent as Mock).mockResolvedValue(realSystemPrompt);
     (ui.promptProviderSelection as Mock).mockResolvedValue({
       isOnlyPrompt: true,
     });
@@ -140,16 +145,19 @@ describe("Command: runCommit", () => {
     // Assert
     expect(orchestrator.executeAiAction).not.toHaveBeenCalled();
 
-    // The prompt now includes both system prompt and user context
-    const expectedPromptContent = expect.stringContaining("Commit Template:");
+    const expectedContent = `${realSystemPrompt}\n### GIT STAGED DIFF\n\`\`\`markdown\n${mockDiff}\n\`\`\``;
+
+    expect(fsUtils.getTempPath).toHaveBeenCalledWith("spekta-prompt");
     expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.stringContaining(path.join("/tmp/mock-dir", "spekta-prompt-")),
-      expectedPromptContent,
-      "utf-8"
+      "/mock-tmp/spekta-prompt-12345.md",
+      expectedContent,
+      "utf-8",
     );
 
-    expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Prompt saved")
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "Output saved to: /mock-tmp/spekta-prompt-12345.md",
+      ),
     );
   });
 
