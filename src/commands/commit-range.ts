@@ -72,6 +72,7 @@ export async function runCommitRange() {
       console.error(
         "Note: Ensure the first commit is an ancestor of the second.",
       );
+      process.exitCode = 1; // Explicitly signal failure
       return;
     }
 
