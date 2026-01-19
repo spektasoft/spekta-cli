@@ -1,13 +1,23 @@
+import fs from "fs-extra";
 import {
   getEnv,
-  getProviders,
   getIgnorePatterns,
   getPromptContent,
+  getProviders,
 } from "../config";
-import { getStagedDiff } from "../git";
-import { promptProviderSelection } from "../ui";
+import {
+  finalizeOutput,
+  prepareTempMessageFile,
+  saveToTempFile,
+} from "../editor-utils";
+import {
+  commitWithFile,
+  formatWithPrettier,
+  getStagedDiff,
+  stripCodeFences,
+} from "../git";
 import { executeAiAction } from "../orchestrator";
-import { finalizeOutput } from "../editor-utils";
+import { confirmCommit, promptProviderSelection } from "../ui";
 
 export async function runCommit() {
   try {
@@ -26,7 +36,7 @@ export async function runCommit() {
     const DIFF_WARNING_THRESHOLD = 30000;
     if (diff.length > DIFF_WARNING_THRESHOLD) {
       console.warn(
-        `Warning: Staged diff is large (${diff.length} characters).`
+        `Warning: Staged diff is large (${diff.length} characters).`,
       );
     }
 
@@ -35,14 +45,14 @@ export async function runCommit() {
 
     const selection = await promptProviderSelection(
       systemPrompt + "\n" + userContext,
-      providersData.providers
+      providersData.providers,
     );
 
     if (selection.isOnlyPrompt) {
       await finalizeOutput(
         systemPrompt + "\n" + userContext,
         "spekta-prompt",
-        "Prompt saved"
+        "Prompt saved",
       );
       return;
     }
@@ -57,7 +67,42 @@ export async function runCommit() {
       spinnerTitle: "Generating commit message...",
     });
 
-    await finalizeOutput(result, "spekta-commit", "Commit message generated");
+    // Clean & format
+    const cleaned = stripCodeFences(result);
+
+    // Write initial version
+    const filePath = await saveToTempFile(cleaned, "spekta-commit-raw");
+
+    // Format with Prettier
+    await formatWithPrettier(filePath);
+
+    // Prepare (show/print + editor if set)
+    const finalFilePath = await prepareTempMessageFile(
+      (await fs.readFile(filePath, "utf-8")).trim(),
+      "spekta-commit",
+    );
+
+    // Only offer commit in normal flow (not isOnlyPrompt)
+    if (selection.isOnlyPrompt) {
+      console.log("Prompt-only mode – no commit offered.");
+      await fs.remove(finalFilePath);
+      return;
+    }
+
+    const shouldCommit = await confirmCommit();
+
+    if (shouldCommit) {
+      await commitWithFile(finalFilePath);
+      console.log("Commit created successfully.");
+    } else {
+      console.log("Commit aborted.");
+    }
+
+    // Cleanup in all cases
+    await fs.remove(finalFilePath);
+    if (filePath !== finalFilePath) {
+      await fs.remove(filePath);
+    }
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;
