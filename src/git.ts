@@ -132,3 +132,36 @@ export const getCommitMessages = async (
     throw new Error(`Failed to get commit messages: ${message}`);
   }
 };
+
+export async function commitWithFile(filePath: string): Promise<void> {
+  console.log(`Would commit using: git commit --file ${filePath}`);
+}
+
+export function stripCodeFences(content: string): string {
+  // Remove common outer markdown code fences
+  const trimmed = content.trim();
+
+  // Matches ```lang ... ``` or ``` ... ```
+  const fenceRegex = /^```(?:\w+)?\s*([\s\S]*?)\s*```$/;
+  const match = trimmed.match(fenceRegex);
+
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+
+  // Fallback: just trim if no clear fence
+  return trimmed;
+}
+
+export async function formatWithPrettier(filePath: string): Promise<void> {
+  try {
+    await execa("npx", ["prettier", "--write", filePath], {
+      stdio: "ignore", // suppress prettier output
+    });
+  } catch (err: any) {
+    console.warn(
+      `Prettier formatting failed: ${err.message}. Continuing with unformatted message.`,
+    );
+    // Do not throw – better partial success than abort
+  }
+}
