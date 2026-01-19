@@ -67,11 +67,12 @@ export async function runCommitRange() {
     );
 
     // Validate non-empty range
-    if (!commitMessages || commitMessages.trim().length === 0) {
-      throw new Error(
-        `No commits found in range ${resolvedHash1.substring(0, 7)}..${resolvedHash2.substring(0, 7)}. ` +
-          `Ensure hash1 is older than hash2.`,
+    if (!commitMessages || commitMessages.trim() === "") {
+      console.error("\nError: No commits found in the specified range.");
+      console.error(
+        "Note: Ensure the first commit is an ancestor of the second.",
       );
+      return;
     }
 
     console.log(`Found commits in range.`);
