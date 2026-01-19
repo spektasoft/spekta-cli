@@ -92,3 +92,26 @@ export async function promptCommitHash(
     validate: validate || (() => true),
   });
 }
+
+/**
+ * Prompts user to confirm if they want to proceed with a large token count.
+ */
+export async function confirmLargePayload(
+  tokenCount: number,
+): Promise<boolean> {
+  const choice = await select({
+    message: `The prompt is large (${tokenCount} tokens). Do you want to proceed?`,
+    choices: [
+      { name: "Yes, proceed with AI generation", value: true },
+      { name: "No, cancel or save prompt only", value: false },
+    ],
+  });
+  return choice;
+}
+
+/**
+ * Calculates token count for a given string.
+ */
+export function getTokenCount(text: string): number {
+  return encode(text).length;
+}
