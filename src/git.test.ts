@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getGitDiff, getStagedDiff, isValidHash, resolveHash } from "./git";
+import {
+  getGitDiff,
+  getStagedDiff,
+  isValidHash,
+  resolveHash,
+  stripCodeFences,
+} from "./git";
 import { execa } from "execa";
 
 vi.mock("execa", () => ({
@@ -108,5 +114,17 @@ describe("getGitDiff Edge Cases", () => {
     vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
     const result = await getGitDiff("abc1234", "abc1234");
     expect(result).toBe("");
+  });
+});
+
+describe("stripCodeFences", () => {
+  it("should extract content from a single code block", () => {
+    const input = "Here is the commit:\n```\nfeat: add login\n```";
+    expect(stripCodeFences(input)).toBe("feat: add login");
+  });
+
+  it("should return trimmed content if no fences are present", () => {
+    const input = "  feat: add login  ";
+    expect(stripCodeFences(input)).toBe("feat: add login");
   });
 });
