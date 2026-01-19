@@ -68,6 +68,17 @@ export async function runCommitRange() {
 
     console.log(`Found commits in range.`);
 
+    // Warn for large commit ranges
+    const COMMIT_WARNING_THRESHOLD = 20000; // characters
+    if (commitMessages.length > COMMIT_WARNING_THRESHOLD) {
+      console.warn(
+        `\nWarning: Commit range is large (${commitMessages.length} characters).`,
+      );
+      console.warn(
+        `This may consume significant tokens and take longer to process.\n`,
+      );
+    }
+
     // Load system prompt and build user context
     const systemPrompt = await getPromptContent("commit-range.md");
     const userContext = `### COMMIT MESSAGES\n\`\`\`\n${commitMessages}\n\`\`\``;
