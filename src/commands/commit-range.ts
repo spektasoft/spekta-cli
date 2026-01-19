@@ -5,6 +5,7 @@ import {
   getCommitMessages,
   resolveHash,
   stripCodeFences,
+  sanitizeMessageForPrompt,
 } from "../git";
 import { executeAiAction } from "../orchestrator";
 import {
@@ -77,7 +78,13 @@ export async function runCommitRange() {
 
     // Load system prompt and build user context
     const systemPrompt = await getPromptContent("commit-range.md");
-    const userContext = `### COMMIT MESSAGES\n\`\`\`\n${commitMessages}\n\`\`\``;
+    const sanitizedMessages = sanitizeMessageForPrompt(commitMessages);
+    const userContext = `### COMMIT DATA
+<commit_history>
+${sanitizedMessages}
+</commit_history>
+
+Please analyze the history within the <commit_history> tags only.`;
 
     // Token validation with confirmation gate
     const fullPrompt = systemPrompt + "\n" + userContext;

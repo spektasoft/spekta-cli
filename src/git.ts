@@ -156,6 +156,18 @@ export function stripCodeFences(content: string): string {
   return trimmed;
 }
 
+/**
+ * Sanitizes commit messages to prevent prompt injection by escaping
+ * common LLM instruction delimiters.
+ */
+export function sanitizeMessageForPrompt(content: string): string {
+  return content
+    .replace(/<\|/g, "< |") // Escape special tokens
+    .replace(/>/g, "&gt;")
+    .replace(/</g, "&lt;")
+    .trim();
+}
+
 export async function formatCommitMessage(content: string): Promise<string> {
   try {
     // We use the markdown parser for commit messages
