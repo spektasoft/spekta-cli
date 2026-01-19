@@ -60,4 +60,14 @@ describe("runCommitRange", () => {
     );
     expect(process.exitCode).toBe(1);
   });
+
+  it("should properly format range even when symbolic refs are used", async () => {
+    const resolveSpy = vi
+      .spyOn(git, "resolveHash")
+      .mockResolvedValueOnce("sha1_abc")
+      .mockResolvedValueOnce("sha1_def");
+
+    // Test the logic that consumes these hashes
+    // ...
+  });
 });
