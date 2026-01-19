@@ -54,3 +54,31 @@ export async function finalizeOutput(
     }
   }
 }
+
+export async function prepareTempMessageFile(
+  content: string,
+  prefix: string = "spekta",
+): Promise<string> {
+  const filePath = await saveToTempFile(content, prefix);
+
+  const env = await getEnv();
+  const editor = env.SPEKTA_EDITOR;
+
+  if (editor) {
+    try {
+      await openEditor(editor, filePath);
+    } catch (error: any) {
+      console.warn(`Could not open editor: ${error.message}`);
+    }
+  } else {
+    // Show full content when no editor
+    console.log("\nGenerated commit message:\n");
+    console.log("─".repeat(60));
+    console.log(content);
+    console.log("─".repeat(60));
+    console.log("");
+  }
+
+  console.log(`Message saved at: ${filePath}`);
+  return filePath;
+}
