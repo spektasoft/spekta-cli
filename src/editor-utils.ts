@@ -28,7 +28,7 @@ export async function processOutput(
   silent: boolean = false,
 ): Promise<string> {
   const tempFileName = `${prefix}-${Date.now()}.md`;
-  const filePath = path.join(os.tmpdir(), tempFileName);
+  const filePath = path.normalize(path.join(os.tmpdir(), tempFileName));
   await fs.writeFile(filePath, content, "utf-8");
 
   const env = await getEnv();
