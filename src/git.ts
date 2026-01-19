@@ -148,15 +148,14 @@ export function stripCodeFences(content: string): string {
   // Remove common outer markdown code fences
   const trimmed = content.trim();
 
-  // Matches ```lang ... ``` or ``` ... ```
-  const fenceRegex = /^```(?:\w+)?\s*([\s\S]*?)\s*```$/;
+  // Lenient match: looks for the first code block if the AI adds prefix/suffix text
+  const fenceRegex = /```(?:\w+)?\s*([\s\S]*?)\s*```/;
   const match = trimmed.match(fenceRegex);
 
   if (match && match[1]) {
     return match[1].trim();
   }
 
-  // Fallback: just trim if no clear fence
   return trimmed;
 }
 
