@@ -1,6 +1,12 @@
 import { getEnv, getPromptContent, getProviders } from "../config";
 import { processOutput } from "../editor-utils";
-import { getCommitMessages, resolveHash } from "../git";
+import {
+  formatCommitMessage,
+  getCommitMessages,
+  resolveHash,
+  stripCodeFences,
+} from "../git";
+import { executeAiAction } from "../orchestrator";
 import { promptCommitHash, promptProviderSelection } from "../ui";
 
 export async function runCommitRange() {
@@ -89,8 +95,27 @@ export async function runCommitRange() {
       throw new Error("No AI provider selected for commit range generation.");
     }
 
-    // Placeholder
     console.log(`Selected provider: ${selection.provider.name}`);
+
+    // Execute LLM call
+    const result = await executeAiAction({
+      apiKey: env.OPENROUTER_API_KEY,
+      provider: selection.provider,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userContext },
+      ],
+      spinnerTitle: "Generating consolidated commit message...",
+    });
+
+    // Process result
+    const cleaned = stripCodeFences(result);
+    const formatted = await formatCommitMessage(cleaned);
+
+    // Save to file and optionally open in editor
+    const outputPath = await processOutput(formatted, "spekta-commit-range");
+
+    console.log("\nConsolidated commit message generated successfully.");
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;
