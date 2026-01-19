@@ -56,7 +56,9 @@ describe("runCommitRange", () => {
     await runCommitRange();
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("No commits found in range"),
+      expect.stringContaining(
+        "Ensure the first commit is an ancestor of the second",
+      ),
     );
     expect(process.exitCode).toBe(1);
   });
@@ -67,7 +69,19 @@ describe("runCommitRange", () => {
       .mockResolvedValueOnce("sha1_abc")
       .mockResolvedValueOnce("sha1_def");
 
-    // Test the logic that consumes these hashes
-    // ...
+    const messagesSpy = vi
+      .spyOn(git, "getCommitMessages")
+      .mockResolvedValue("feat: mock");
+
+    process.argv = ["node", "spekta", "commit-range", "HEAD~1", "main"];
+
+    await runCommitRange();
+
+    // Verify resolution was called with symbolic names
+    expect(resolveSpy).toHaveBeenCalledWith("HEAD~1");
+    expect(resolveSpy).toHaveBeenCalledWith("main");
+
+    // Verify message retrieval used the resolved hashes, not the symbols
+    expect(messagesSpy).toHaveBeenCalledWith("sha1_abc", "sha1_def");
   });
 });
