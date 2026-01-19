@@ -1,4 +1,5 @@
 import fs from "fs-extra";
+import { registerCleanup } from "../utils/process";
 import {
   getEnv,
   getIgnorePatterns,
@@ -25,10 +26,7 @@ export async function runCommit() {
     }
   };
 
-  process.on("SIGINT", async () => {
-    await cleanup();
-    process.exit(130);
-  });
+  const unregister = registerCleanup(cleanup);
 
   try {
     const [providersData, env, ignorePatterns] = await Promise.all([
@@ -92,6 +90,6 @@ export async function runCommit() {
   } finally {
     // 3. Guaranteed cleanup
     await cleanup();
-    process.removeAllListeners("SIGINT");
+    unregister();
   }
 }
