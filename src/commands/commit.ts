@@ -1,15 +1,33 @@
+import fs from "fs-extra";
+import { registerCleanup } from "../utils/process";
 import {
   getEnv,
-  getProviders,
   getIgnorePatterns,
   getPromptContent,
+  getProviders,
 } from "../config";
-import { getStagedDiff } from "../git";
-import { promptProviderSelection } from "../ui";
+import { processOutput } from "../editor-utils";
+import {
+  commitWithFile,
+  formatCommitMessage,
+  getStagedDiff,
+  stripCodeFences,
+} from "../git";
 import { executeAiAction } from "../orchestrator";
-import { finalizeOutput } from "../editor-utils";
+import { confirmCommit, promptProviderSelection } from "../ui";
 
 export async function runCommit() {
+  let tempFilePath: string | undefined;
+
+  // Cleanup handler for manual escapes
+  const cleanup = async () => {
+    if (tempFilePath && (await fs.pathExists(tempFilePath))) {
+      await fs.remove(tempFilePath);
+    }
+  };
+
+  const unregister = registerCleanup(cleanup);
+
   try {
     const [providersData, env, ignorePatterns] = await Promise.all([
       getProviders(),
@@ -26,7 +44,7 @@ export async function runCommit() {
     const DIFF_WARNING_THRESHOLD = 30000;
     if (diff.length > DIFF_WARNING_THRESHOLD) {
       console.warn(
-        `Warning: Staged diff is large (${diff.length} characters).`
+        `Warning: Staged diff is large (${diff.length} characters).`,
       );
     }
 
@@ -35,21 +53,21 @@ export async function runCommit() {
 
     const selection = await promptProviderSelection(
       systemPrompt + "\n" + userContext,
-      providersData.providers
+      providersData.providers,
     );
 
     if (selection.isOnlyPrompt) {
-      await finalizeOutput(
-        systemPrompt + "\n" + userContext,
-        "spekta-prompt",
-        "Prompt saved"
-      );
+      await processOutput(systemPrompt + "\n" + userContext, "spekta-prompt");
       return;
+    }
+
+    if (!selection.provider) {
+      throw new Error("No AI provider selected for commit generation.");
     }
 
     const result = await executeAiAction({
       apiKey: env.OPENROUTER_API_KEY,
-      provider: selection.provider!,
+      provider: selection.provider,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userContext },
@@ -57,9 +75,25 @@ export async function runCommit() {
       spinnerTitle: "Generating commit message...",
     });
 
-    await finalizeOutput(result, "spekta-commit", "Commit message generated");
+    // 1. Process in-memory
+    const cleaned = stripCodeFences(result);
+    const formatted = await formatCommitMessage(cleaned);
+
+    // 2. Single I/O operation
+    tempFilePath = await processOutput(formatted, "spekta-commit");
+
+    if (await confirmCommit()) {
+      await commitWithFile(tempFilePath);
+      console.log("Commit created successfully.");
+    } else {
+      console.log("Commit aborted.");
+    }
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;
+  } finally {
+    // 3. Guaranteed cleanup
+    await cleanup();
+    unregister();
   }
 }

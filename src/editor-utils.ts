@@ -1,21 +1,7 @@
-import os from "os";
-import path from "path";
-import fs from "fs-extra";
 import { execa } from "execa";
+import fs from "fs-extra";
 import { getEnv } from "./config";
-
-/**
- * Saves content to a temporary markdown file.
- */
-export async function saveToTempFile(
-  content: string,
-  prefix: string,
-): Promise<string> {
-  const tempFileName = `${prefix}-${Date.now()}.md`;
-  const tempFilePath = path.join(os.tmpdir(), tempFileName);
-  await fs.writeFile(tempFilePath, content, "utf-8");
-  return tempFilePath;
-}
+import { getTempPath } from "./utils/fs-utils";
 
 /**
  * Opens a file in the specified editor and waits for the process to exit.
@@ -35,13 +21,13 @@ export async function openEditor(
   }
 }
 
-export async function finalizeOutput(
+export async function processOutput(
   content: string,
   prefix: string,
-  successMessage: string,
-): Promise<void> {
-  const filePath = await saveToTempFile(content, prefix);
-  console.log(`${successMessage}: ${filePath}`);
+  silent: boolean = false,
+): Promise<string> {
+  const filePath = getTempPath(prefix);
+  await fs.writeFile(filePath, content, "utf-8");
 
   const env = await getEnv();
   const editor = env.SPEKTA_EDITOR;
@@ -52,5 +38,14 @@ export async function finalizeOutput(
     } catch (error: any) {
       console.warn(`Warning: Could not open editor: ${error.message}`);
     }
+  } else if (!silent) {
+    console.log(`\nGenerated Content (${prefix}):\n`);
+    console.log("─".repeat(60));
+    console.log(content);
+    console.log("─".repeat(60));
+    console.log("");
   }
+
+  console.log(`Output saved to: ${filePath}`);
+  return filePath;
 }
