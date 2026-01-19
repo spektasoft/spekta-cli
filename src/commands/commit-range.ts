@@ -1,4 +1,4 @@
-import { resolveHash } from "../git";
+import { getCommitMessages, resolveHash } from "../git";
 import { promptCommitHash } from "../ui";
 
 export async function runCommitRange() {
@@ -44,8 +44,24 @@ export async function runCommitRange() {
       `\nResolved range: ${resolvedHash1.substring(0, 7)}..${resolvedHash2.substring(0, 7)}`,
     );
 
+    // Fetch commit messages
+    const commitMessages = await getCommitMessages(
+      resolvedHash1,
+      resolvedHash2,
+    );
+
+    // Validate non-empty range
+    if (!commitMessages || commitMessages.trim().length === 0) {
+      throw new Error(
+        `No commits found in range ${resolvedHash1.substring(0, 7)}..${resolvedHash2.substring(0, 7)}. ` +
+          `Ensure hash1 is older than hash2.`,
+      );
+    }
+
+    console.log(`Found commits in range.`);
+
     // Placeholder
-    console.log("Fetching commit messages...");
+    console.log("Preparing prompt...");
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;
