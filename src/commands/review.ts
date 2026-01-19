@@ -13,9 +13,11 @@ import {
   getHashesFromReviewFile,
   getSafeMetadata,
 } from "../fs-manager";
-import { input, confirm, select } from "@inquirer/prompts";
+import { input, select } from "@inquirer/prompts";
+import { searchableSelect } from "../ui";
 import { execa } from "execa";
 import { promptHashRange } from "../git-ui";
+import { collectSupplementalContext } from "./review-context";
 
 export async function runReview() {
   try {
@@ -31,6 +33,12 @@ export async function runReview() {
         { name: "Continue from a previous review", value: false },
       ],
     });
+
+    // NEW: Gather supplemental context only for initial reviews
+    let supplementalContext = "";
+    if (isInitial) {
+      supplementalContext = await collectSupplementalContext();
+    }
 
     let folderId: string | undefined;
     let suggestedStart = "";
@@ -48,10 +56,12 @@ export async function runReview() {
         console.error("No previous reviews found.");
         return;
       }
-      folderId = await select({
-        message: "Select review folder:",
-        choices: folders.map((f) => ({ name: f, value: f })),
-      });
+
+      folderId = await searchableSelect<string>(
+        "Select review folder:",
+        folders.map((f) => ({ name: f, value: f })),
+      );
+
       dirInfo = await getReviewDir(false, folderId);
     }
 
@@ -78,6 +88,11 @@ export async function runReview() {
       : "review-validation.md";
 
     let finalPrompt = (await getPromptContent(templateName)) + "\n\n---\n";
+
+    // Inject supplemental context if present
+    if (supplementalContext) {
+      finalPrompt += supplementalContext + "\n---\n";
+    }
 
     if (!isInitial && metadata.lastFile) {
       const prevReviewContent = await fs.readFile(
