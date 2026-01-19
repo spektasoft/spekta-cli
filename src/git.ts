@@ -145,17 +145,14 @@ export async function commitWithFile(filePath: string): Promise<void> {
 }
 
 export function stripCodeFences(content: string): string {
-  // Remove common outer markdown code fences
   const trimmed = content.trim();
-
-  // Lenient match: looks for the first code block if the AI adds prefix/suffix text
-  const fenceRegex = /```(?:\w+)?\s*([\s\S]*?)\s*```/;
+  // Match the content within the first code block found
+  const fenceRegex = /```(?:\w+)?\n([\s\S]*?)```/;
   const match = trimmed.match(fenceRegex);
 
   if (match && match[1]) {
     return match[1].trim();
   }
-
   return trimmed;
 }
 
