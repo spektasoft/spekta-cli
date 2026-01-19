@@ -1,4 +1,4 @@
-import { select } from "@inquirer/prompts";
+import { input, select } from "@inquirer/prompts";
 import { encode } from "gpt-tokenizer";
 import autocomplete from "inquirer-autocomplete-standalone";
 import { Provider } from "./config";
@@ -78,4 +78,17 @@ export async function confirmCommit(): Promise<boolean> {
   });
 
   return response === true;
+}
+
+/**
+ * Prompts user for a git commit hash with validation.
+ */
+export async function promptCommitHash(
+  message: string,
+  validate?: (value: string) => boolean | string | Promise<boolean | string>,
+): Promise<string> {
+  return await input({
+    message,
+    validate: validate || (() => true),
+  });
 }
