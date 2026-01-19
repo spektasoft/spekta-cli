@@ -7,7 +7,12 @@ import {
   stripCodeFences,
 } from "../git";
 import { executeAiAction } from "../orchestrator";
-import { promptCommitHash, promptProviderSelection } from "../ui";
+import {
+  confirmLargePayload,
+  getTokenCount,
+  promptCommitHash,
+  promptProviderSelection,
+} from "../ui";
 
 export async function runCommitRange() {
   try {
@@ -68,20 +73,27 @@ export async function runCommitRange() {
 
     console.log(`Found commits in range.`);
 
-    // Warn for large commit ranges
-    const COMMIT_WARNING_THRESHOLD = 20000; // characters
-    if (commitMessages.length > COMMIT_WARNING_THRESHOLD) {
-      console.warn(
-        `\nWarning: Commit range is large (${commitMessages.length} characters).`,
-      );
-      console.warn(
-        `This may consume significant tokens and take longer to process.\n`,
-      );
-    }
-
     // Load system prompt and build user context
     const systemPrompt = await getPromptContent("commit-range.md");
     const userContext = `### COMMIT MESSAGES\n\`\`\`\n${commitMessages}\n\`\`\``;
+
+    // Token validation with confirmation gate
+    const fullPrompt = systemPrompt + "\n" + userContext;
+    const tokenCount = getTokenCount(fullPrompt);
+    const TOKEN_WARNING_THRESHOLD = 5000;
+
+    if (tokenCount > TOKEN_WARNING_THRESHOLD) {
+      const shouldProceed = await confirmLargePayload(tokenCount);
+      if (!shouldProceed) {
+        console.log("Operation cancelled by user due to payload size.");
+        // Optionally offer to save prompt only
+        const saveOnly = await processOutput(
+          fullPrompt,
+          "spekta-commit-range-large",
+        );
+        return;
+      }
+    }
 
     // Get providers and prompt for selection
     const [providersData, env] = await Promise.all([getProviders(), getEnv()]);
