@@ -61,9 +61,13 @@ export async function runCommit() {
       return;
     }
 
+    if (!selection.provider) {
+      throw new Error("No AI provider selected for commit generation.");
+    }
+
     const result = await executeAiAction({
       apiKey: env.OPENROUTER_API_KEY,
-      provider: selection.provider!,
+      provider: selection.provider,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userContext },
