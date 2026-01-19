@@ -4,11 +4,13 @@ import {
   getInitialCommit,
   resolveHash,
   getCommitMessages,
+  stripCodeFences,
+  formatCommitMessage,
 } from "../git";
 import { promptHashRange } from "../git-ui";
 import { promptProviderSelection } from "../ui";
 import { executeAiAction } from "../orchestrator";
-import { finalizeOutput } from "../editor-utils";
+import { processOutput } from "../editor-utils";
 
 export async function runPr() {
   const [env, providersData] = await Promise.all([getEnv(), getProviders()]);
@@ -26,15 +28,11 @@ export async function runPr() {
   const selection = await promptProviderSelection(
     systemPrompt + "\n" + userContext,
     providersData.providers,
-    "Select provider for PR message:"
+    "Select provider for PR message:",
   );
 
   if (selection.isOnlyPrompt) {
-    await finalizeOutput(
-      systemPrompt + "\n" + userContext,
-      "spekta-pr-prompt",
-      "Prompt saved"
-    );
+    await processOutput(systemPrompt + "\n" + userContext, "spekta-pr-prompt");
     return;
   }
 
@@ -48,5 +46,9 @@ export async function runPr() {
     spinnerTitle: "Generating PR message...",
   });
 
-  await finalizeOutput(result, "spekta-pr", "PR message generated");
+  // Use the new standardized pipeline
+  const cleaned = stripCodeFences(result);
+  const formatted = await formatCommitMessage(cleaned);
+
+  await processOutput(formatted, "spekta-pr");
 }
