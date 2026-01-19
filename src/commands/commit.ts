@@ -5,7 +5,7 @@ import {
   getPromptContent,
   getProviders,
 } from "../config";
-import { finalizeOutput, prepareTempMessageFile } from "../editor-utils";
+import { processOutput } from "../editor-utils";
 import {
   commitWithFile,
   formatCommitMessage,
@@ -17,6 +17,18 @@ import { confirmCommit, promptProviderSelection } from "../ui";
 
 export async function runCommit() {
   let tempFilePath: string | undefined;
+
+  // Cleanup handler for manual escapes
+  const cleanup = async () => {
+    if (tempFilePath && (await fs.pathExists(tempFilePath))) {
+      await fs.remove(tempFilePath);
+    }
+  };
+
+  process.on("SIGINT", async () => {
+    await cleanup();
+    process.exit(130);
+  });
 
   try {
     const [providersData, env, ignorePatterns] = await Promise.all([
@@ -47,11 +59,7 @@ export async function runCommit() {
     );
 
     if (selection.isOnlyPrompt) {
-      await finalizeOutput(
-        systemPrompt + "\n" + userContext,
-        "spekta-prompt",
-        "Prompt saved",
-      );
+      await processOutput(systemPrompt + "\n" + userContext, "spekta-prompt");
       return;
     }
 
@@ -70,7 +78,7 @@ export async function runCommit() {
     const formatted = await formatCommitMessage(cleaned);
 
     // 2. Single I/O operation
-    tempFilePath = await prepareTempMessageFile(formatted, "spekta-commit");
+    tempFilePath = await processOutput(formatted, "spekta-commit");
 
     if (await confirmCommit()) {
       await commitWithFile(tempFilePath);
@@ -83,8 +91,7 @@ export async function runCommit() {
     process.exitCode = 1;
   } finally {
     // 3. Guaranteed cleanup
-    if (tempFilePath && (await fs.pathExists(tempFilePath))) {
-      await fs.remove(tempFilePath);
-    }
+    await cleanup();
+    process.removeAllListeners("SIGINT");
   }
 }
