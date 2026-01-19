@@ -12,7 +12,7 @@ import {
 } from "../editor-utils";
 import {
   commitWithFile,
-  formatWithPrettier,
+  formatCommitMessage,
   getStagedDiff,
   stripCodeFences,
 } from "../git";
@@ -73,8 +73,8 @@ export async function runCommit() {
     // Write initial version
     const filePath = await saveToTempFile(cleaned, "spekta-commit-raw");
 
-    // Format with Prettier
-    await formatWithPrettier(filePath);
+    // Format commit message
+    await formatCommitMessage(filePath);
 
     // Prepare (show/print + editor if set)
     const finalFilePath = await prepareTempMessageFile(

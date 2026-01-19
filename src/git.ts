@@ -1,4 +1,5 @@
 import { execa } from "execa";
+import prettier from "prettier";
 
 export const isValidHash = (hash: string): boolean => {
   return /^[0-9a-f]{7,40}$/i.test(hash);
@@ -159,15 +160,17 @@ export function stripCodeFences(content: string): string {
   return trimmed;
 }
 
-export async function formatWithPrettier(filePath: string): Promise<void> {
+export async function formatCommitMessage(content: string): Promise<string> {
   try {
-    await execa("npx", ["prettier", "--write", filePath], {
-      stdio: "ignore", // suppress prettier output
+    // We use the markdown parser for commit messages
+    return await prettier.format(content, {
+      parser: "markdown",
+      proseWrap: "always",
     });
   } catch (err: any) {
     console.warn(
-      `Prettier formatting failed: ${err.message}. Continuing with unformatted message.`,
+      `Prettier formatting failed: ${err.message}. Returning original content.`,
     );
-    // Do not throw – better partial success than abort
+    return content;
   }
 }
