@@ -11,7 +11,9 @@ export async function openEditor(
   filePath: string,
 ): Promise<void> {
   try {
-    await execa(editorCommand, [filePath], {
+    // Split by space to separate binary from flags
+    const [bin, ...args] = editorCommand.split(" ");
+    await execa(bin, [...args, filePath], {
       stdio: "inherit",
     });
   } catch (error: any) {
