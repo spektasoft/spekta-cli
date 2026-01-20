@@ -4,6 +4,7 @@ import { runCommitRange } from "./commands/commit-range";
 import { runPlan } from "./commands/plan";
 import { runPr } from "./commands/pr";
 import { runReview } from "./commands/review";
+import { runSummarize } from "./commands/summarize";
 import { runSync } from "./commands/sync";
 import { bootstrap } from "./config";
 
@@ -32,6 +33,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
   "commit-range": {
     name: "Generate Commit Message from Range",
     run: runCommitRange,
+  },
+  summarize: {
+    name: "Generate State Snapshot from Commit Range",
+    run: runSummarize,
   },
   sync: {
     name: "Sync Free Models",
