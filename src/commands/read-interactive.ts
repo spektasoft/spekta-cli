@@ -1,4 +1,4 @@
-import { confirm, input, select } from "@inquirer/prompts";
+import { checkbox, input, select } from "@inquirer/prompts";
 import { execa } from "execa";
 import autocomplete from "inquirer-autocomplete-standalone";
 import { FileRequest, parseRange } from "../utils/read-utils";
@@ -17,9 +17,9 @@ export async function runReadInteractive() {
   while (true) {
     if (selectedRequests.length > 0) {
       console.log("\nSelected Files:");
-      selectedRequests.forEach((r) =>
+      selectedRequests.forEach((r, idx) =>
         console.log(
-          ` - ${r.path}${r.range ? ` [${r.range.start},${r.range.end}]` : ""}`,
+          ` [${idx}] ${r.path}${r.range ? ` [${r.range.start},${r.range.end}]` : ""}`,
         ),
       );
     }
@@ -28,6 +28,12 @@ export async function runReadInteractive() {
       message: "Read File Menu:",
       choices: [
         { name: "Add File", value: "add" },
+        {
+          name: "Remove File",
+          value: "remove",
+          disabled:
+            selectedRequests.length === 0 ? "(No files to remove)" : false,
+        },
         { name: "Finalize and Read", value: "done" },
         { name: "Cancel", value: "cancel" },
       ],
@@ -36,42 +42,54 @@ export async function runReadInteractive() {
     if (action === "cancel") return;
     if (action === "done") break;
 
-    const filePath = await autocomplete({
-      message: "Select a file:",
-      source: async (input) => {
-        const term = input?.toLowerCase() || "";
-        return files
-          .filter((f) => f.toLowerCase().includes(term))
-          .map((f) => ({ value: f, name: f }));
-      },
-    });
+    if (action === "add") {
+      const filePath = await autocomplete({
+        message: "Select a file:",
+        source: async (input) => {
+          const term = input?.toLowerCase() || "";
+          return files
+            .filter((f) => f.toLowerCase().includes(term))
+            .map((f) => ({ value: f, name: f }));
+        },
+      });
 
-    const rangeStr = await input({
-      message: "Enter range (e.g., 1,100) or leave blank for full/overview:",
-      default: "",
-    });
+      const rangeStr = await input({
+        message: "Enter range (e.g., 1,100) or leave blank for full/overview:",
+        default: "",
+      });
 
-    selectedRequests.push({
-      path: filePath,
-      range: rangeStr ? parseRange(rangeStr) : undefined,
-    });
+      selectedRequests.push({
+        path: filePath,
+        range: rangeStr ? parseRange(rangeStr) : undefined,
+      });
+    }
 
-    const addMore = await confirm({
-      message: "Add another file?",
-      default: false,
-    });
-    if (!addMore) break;
+    if (action === "remove") {
+      const removalChoices = selectedRequests.map((req, index) => ({
+        name: `${req.path}${req.range ? ` [${req.range.start},${req.range.end}]` : ""}`,
+        value: index,
+      }));
+
+      const toRemoveIndices = await checkbox({
+        message: "Select files to remove:",
+        choices: removalChoices,
+      });
+
+      if (toRemoveIndices.length > 0) {
+        // Sort indices in descending order to avoid splice offset issues
+        toRemoveIndices
+          .sort((a, b) => b - a)
+          .forEach((index) => {
+            selectedRequests.splice(index, 1);
+          });
+        console.log(`Removed ${toRemoveIndices.length} items.`);
+      }
+      continue;
+    }
   }
 
-  if (selectedRequests.length === 0) return;
-
-  const mode = await select({
-    message: "Output destination:",
-    choices: [
-      { name: "Terminal", value: "stdout" },
-      { name: "Open in Editor", value: "save" },
-    ],
-  });
-
-  await runRead(selectedRequests, { save: mode === "save" });
+  // Final execution logic will be updated in Step 3.
+  if (selectedRequests.length > 0) {
+    await runRead(selectedRequests, { save: true });
+  }
 }
