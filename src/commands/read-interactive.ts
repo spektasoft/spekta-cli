@@ -1,6 +1,7 @@
-import { input, select } from "@inquirer/prompts";
+import { confirm, input, select } from "@inquirer/prompts";
 import { execa } from "execa";
 import autocomplete from "inquirer-autocomplete-standalone";
+import { FileRequest, parseRange } from "../utils/read-utils";
 import { runRead } from "./read";
 
 export async function runReadInteractive() {
@@ -11,21 +12,58 @@ export async function runReadInteractive() {
     "--exclude-standard",
   ]);
   const files = stdout.split("\n").filter((f) => f.trim() !== "");
+  const selectedRequests: FileRequest[] = [];
 
-  const filePath = await autocomplete({
-    message: "Select a file to read:",
-    source: async (input) => {
-      const term = input?.toLowerCase() || "";
-      return files
-        .filter((f) => f.toLowerCase().includes(term))
-        .map((f) => ({ value: f, name: f }));
-    },
-  });
+  while (true) {
+    if (selectedRequests.length > 0) {
+      console.log("\nSelected Files:");
+      selectedRequests.forEach((r) =>
+        console.log(
+          ` - ${r.path}${r.range ? ` [${r.range.start},${r.range.end}]` : ""}`,
+        ),
+      );
+    }
 
-  const rangeStr = await input({
-    message: "Enter range (e.g., 1,100) or leave blank for full/overview:",
-    default: "",
-  });
+    const action = await select({
+      message: "Read File Menu:",
+      choices: [
+        { name: "Add File", value: "add" },
+        { name: "Finalize and Read", value: "done" },
+        { name: "Cancel", value: "cancel" },
+      ],
+    });
+
+    if (action === "cancel") return;
+    if (action === "done") break;
+
+    const filePath = await autocomplete({
+      message: "Select a file:",
+      source: async (input) => {
+        const term = input?.toLowerCase() || "";
+        return files
+          .filter((f) => f.toLowerCase().includes(term))
+          .map((f) => ({ value: f, name: f }));
+      },
+    });
+
+    const rangeStr = await input({
+      message: "Enter range (e.g., 1,100) or leave blank for full/overview:",
+      default: "",
+    });
+
+    selectedRequests.push({
+      path: filePath,
+      range: rangeStr ? parseRange(rangeStr) : undefined,
+    });
+
+    const addMore = await confirm({
+      message: "Add another file?",
+      default: false,
+    });
+    if (!addMore) break;
+  }
+
+  if (selectedRequests.length === 0) return;
 
   const mode = await select({
     message: "Output destination:",
@@ -35,7 +73,5 @@ export async function runReadInteractive() {
     ],
   });
 
-  await runRead(filePath, rangeStr === "" ? undefined : rangeStr, {
-    save: mode === "save",
-  });
+  await runRead(selectedRequests, { save: mode === "save" });
 }
