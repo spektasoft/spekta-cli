@@ -9,6 +9,7 @@ import { runSync } from "./commands/sync";
 import { runReadInteractive } from "./commands/read-interactive";
 import { runRead } from "./commands/read";
 import { bootstrap } from "./config";
+import { parseFilePathWithRange } from "./utils/read-utils";
 
 interface CommandDefinition {
   name: string;
@@ -58,10 +59,17 @@ async function main() {
 
   // 1. Check CLI Arguments
   if (commandArg === "read") {
-    const filePath = args[1];
-    const range = args[2] === "--save" ? undefined : args[2];
+    const fileArgs = args.slice(1).filter((arg) => arg !== "--save");
     const isSave = args.includes("--save");
-    await runRead(filePath, range, { save: isSave });
+
+    if (fileArgs.length === 0) {
+      // If no files provided, fall back to interactive
+      await runReadInteractive();
+      return;
+    }
+
+    const requests = fileArgs.map((arg) => parseFilePathWithRange(arg));
+    await runRead(requests, { save: isSave });
     return;
   }
 
