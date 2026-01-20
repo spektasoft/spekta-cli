@@ -30,7 +30,7 @@ const COMMANDS: Record<string, CommandDefinition> = {
     run: runReview,
   },
   read: {
-    name: "Read File (AI Tool)",
+    name: "Read Files",
     run: async (args?: string[]) => {
       if (args === undefined) {
         await runReadInteractive();
