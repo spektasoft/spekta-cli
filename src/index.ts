@@ -31,13 +31,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
   },
   read: {
     name: "Read Files",
-    run: async (args?: string[]) => {
-      if (args === undefined) {
-        await runReadInteractive();
-        return;
-      }
+    run: async (args: string[] = []) => {
       const fileArgs = args.filter((arg) => arg !== "--save");
       const isSave = args.includes("--save");
+
       if (fileArgs.length === 0) {
         await runReadInteractive();
       } else {
