@@ -88,8 +88,11 @@ export async function runReadInteractive() {
     }
   }
 
-  // Final execution logic will be updated in Step 3.
-  if (selectedRequests.length > 0) {
-    await runRead(selectedRequests, { save: true });
+  if (selectedRequests.length === 0) {
+    console.log("No files selected.");
+    return;
   }
+
+  // Logic to execute immediately after loop break
+  await runRead(selectedRequests, { save: true });
 }
