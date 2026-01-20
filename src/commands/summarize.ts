@@ -84,7 +84,7 @@ export async function runSummarize() {
 ${sanitizedMessages}
 </commit_history>
 
-Analyze ONLY the content within <commit_history> tags. Generate a structured state snapshot as defined in the system prompt.`;
+Analyze ONLY the content within <commit_history> tags. Generate a structured summary as defined in the system prompt.`;
 
     // Token validation with confirmation gate
     const fullPrompt = systemPrompt + "\n" + userContext;
@@ -109,7 +109,7 @@ Analyze ONLY the content within <commit_history> tags. Generate a structured sta
     const selection = await promptProviderSelection(
       systemPrompt + "\n" + userContext,
       providersData.providers,
-      "Select provider for state snapshot generation:",
+      "Select provider for summary generation:",
     );
 
     // Handle "Only Prompt" option
@@ -123,7 +123,7 @@ Analyze ONLY the content within <commit_history> tags. Generate a structured sta
     }
 
     if (!selection.provider) {
-      throw new Error("No AI provider selected for state snapshot generation.");
+      throw new Error("No AI provider selected for summary generation.");
     }
 
     console.log(`Selected provider: ${selection.provider.name}`);
@@ -136,13 +136,13 @@ Analyze ONLY the content within <commit_history> tags. Generate a structured sta
         { role: "system", content: systemPrompt },
         { role: "user", content: userContext },
       ],
-      spinnerTitle: "Generating state snapshot...",
+      spinnerTitle: "Generating summary...",
     });
 
     // Save to file and optionally open in editor (via SPEKTA_EDITOR)
     const outputPath = await processOutput(result, "spekta-summarize");
 
-    console.log("\nState snapshot generated successfully.");
+    console.log("\nSummary generated successfully.");
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;

@@ -35,7 +35,7 @@ const COMMANDS: Record<string, CommandDefinition> = {
     run: runCommitRange,
   },
   summarize: {
-    name: "Generate State Snapshot from Commit Range",
+    name: "Generate Summary from Commit Range",
     run: runSummarize,
   },
   sync: {
