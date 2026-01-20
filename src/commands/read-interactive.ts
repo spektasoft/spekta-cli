@@ -1,6 +1,8 @@
 import { checkbox, input, select } from "@inquirer/prompts";
 import { execa } from "execa";
+import ignore from "ignore";
 import autocomplete from "inquirer-autocomplete-standalone";
+import { getIgnorePatterns } from "../config";
 import { FileRequest, parseRange } from "../utils/read-utils";
 import { runRead } from "./read";
 
@@ -11,7 +13,12 @@ export async function runReadInteractive() {
     "--others",
     "--exclude-standard",
   ]);
-  const files = stdout.split("\n").filter((f) => f.trim() !== "");
+  const allFiles = stdout.split("\n").filter((f) => f.trim() !== "");
+
+  const spektaIgnores = await getIgnorePatterns();
+  const ig = ignore().add(spektaIgnores);
+  const files = allFiles.filter((f) => !ig.ignores(f));
+
   const selectedRequests: FileRequest[] = [];
 
   while (true) {
