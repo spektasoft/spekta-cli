@@ -20,7 +20,8 @@
         "is-binary-path": "^3.0.0",
         "openai": "^6.16.0",
         "ora": "^9.0.0",
-        "prettier": "^3.8.0"
+        "prettier": "^3.8.0",
+        "shlex": "^2.1.2"
     },
     "devDependencies": {
         "@types/fs-extra": "^11.0.4",
