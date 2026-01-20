@@ -3,9 +3,9 @@ import * as config from "../config";
 import * as editorUtils from "../editor-utils";
 import * as git from "../git";
 import * as ui from "../ui";
-import { runCommitRange } from "./commit-range";
+import { runSummarize } from "./summarize";
 
-// 1. Mock UI dependencies to handle direct imports
+// Mock UI dependencies to handle direct imports
 vi.mock("../ui", () => ({
   getTokenCount: vi.fn(),
   confirmLargePayload: vi.fn(),
@@ -13,34 +13,32 @@ vi.mock("../ui", () => ({
   promptCommitHash: vi.fn(),
 }));
 
-// 2. Mock Config dependencies to prevent file I/O issues
+// Mock Config dependencies to prevent file I/O issues
 vi.mock("../config", () => ({
   getPromptContent: vi.fn(),
   getProviders: vi.fn(),
   getEnv: vi.fn(),
 }));
 
-// 3. Mock Editor Utils to prevent file writing
+// Mock Editor Utils to prevent file writing
 vi.mock("../editor-utils", () => ({
   processOutput: vi.fn(),
 }));
 
-// 4. Mock Orchestrator to prevent actual LLM calls
+// Mock Orchestrator to prevent actual LLM calls
 vi.mock("../orchestrator", () => ({
   executeAiAction: vi.fn(),
 }));
 
-// 5. Mock Git module completely
+// Mock Git module with isAncestor
 vi.mock("../git", () => ({
   resolveHash: vi.fn(),
   getCommitMessages: vi.fn(),
   isAncestor: vi.fn(),
   sanitizeMessageForPrompt: vi.fn(),
-  formatCommitMessage: vi.fn(),
-  stripCodeFences: vi.fn(),
 }));
 
-describe("runCommitRange", () => {
+describe("runSummarize", () => {
   const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   const consoleErrorSpy = vi
     .spyOn(console, "error")
@@ -50,11 +48,9 @@ describe("runCommitRange", () => {
     vi.clearAllMocks();
     process.exitCode = 0;
 
-    // Default happy path mocks
+    // Default mocks for happy path
     vi.mocked(git.isAncestor).mockResolvedValue(true);
     vi.mocked(git.sanitizeMessageForPrompt).mockImplementation((msg) => msg);
-    vi.mocked(git.stripCodeFences).mockImplementation((msg) => msg);
-    vi.mocked(git.formatCommitMessage).mockImplementation(async (msg) => msg);
   });
 
   afterEach(() => {
@@ -63,7 +59,7 @@ describe("runCommitRange", () => {
 
   it("should handle valid commit range with CLI arguments", async () => {
     // Mock process.argv
-    process.argv = ["node", "spekta", "commit-range", "abc1234", "def5678"];
+    process.argv = ["node", "spekta", "summarize", "abc1234", "def5678"];
 
     // Mock git functions
     vi.mocked(git.resolveHash)
@@ -87,21 +83,21 @@ describe("runCommitRange", () => {
       provider: undefined,
     });
 
-    await runCommitRange();
+    await runSummarize();
 
     expect(git.resolveHash).toHaveBeenCalledTimes(2);
     expect(git.getCommitMessages).toHaveBeenCalled();
   });
 
   it("should error on empty commit range", async () => {
-    process.argv = ["node", "spekta", "commit-range", "abc1234", "abc1234"];
+    process.argv = ["node", "spekta", "summarize", "abc1234", "abc1234"];
 
     vi.mocked(git.resolveHash).mockResolvedValue(
       "abc1234567890abcdef1234567890abcdef1234",
     );
     vi.mocked(git.getCommitMessages).mockResolvedValue("");
 
-    await runCommitRange();
+    await runSummarize();
 
     expect(process.exitCode).toBe(1);
   });
@@ -116,9 +112,9 @@ describe("runCommitRange", () => {
       .mocked(git.getCommitMessages)
       .mockResolvedValue("feat: mock");
 
-    process.argv = ["node", "spekta", "commit-range", "HEAD~1", "main"];
+    process.argv = ["node", "spekta", "summarize", "HEAD~1", "main"];
 
-    await runCommitRange();
+    await runSummarize();
 
     // Verify resolution was called with symbolic names
     expect(resolveSpy).toHaveBeenCalledWith("HEAD~1");
@@ -133,9 +129,9 @@ describe("runCommitRange", () => {
     vi.mocked(git.resolveHash).mockResolvedValue("sha_mock");
     vi.mocked(git.getCommitMessages).mockResolvedValue(""); // Empty messages
 
-    process.argv = ["node", "spekta", "commit-range", "HEAD~1", "HEAD"];
+    process.argv = ["node", "spekta", "summarize", "HEAD~1", "HEAD"];
 
-    await runCommitRange();
+    await runSummarize();
     expect(process.exitCode).toBe(1);
   });
 
@@ -152,9 +148,9 @@ describe("runCommitRange", () => {
     // Mock token count to be safe (low value)
     vi.mocked(ui.getTokenCount).mockReturnValue(100);
 
-    process.argv = ["node", "spekta", "commit-range", "HEAD~1", "main"];
+    process.argv = ["node", "spekta", "summarize", "HEAD~1", "main"];
 
-    await runCommitRange();
+    await runSummarize();
 
     expect(resolveSpy).toHaveBeenCalledWith("HEAD~1");
     expect(resolveSpy).toHaveBeenCalledWith("main");
@@ -179,12 +175,58 @@ describe("runCommitRange", () => {
     vi.mocked(editorUtils.processOutput).mockResolvedValue("saved-file.txt");
 
     // 4. Execution
-    process.argv = ["node", "spekta", "commit-range", "HEAD~5", "HEAD"];
-    await runCommitRange();
+    process.argv = ["node", "spekta", "summarize", "HEAD~5", "HEAD"];
+    await runSummarize();
 
     // 5. Verification
     expect(ui.confirmLargePayload).toHaveBeenCalledWith(6000);
     // Ensure we did NOT proceed to provider selection
     expect(ui.promptProviderSelection).not.toHaveBeenCalled();
+  });
+
+  it("should error on invalid ancestry", async () => {
+    process.argv = ["node", "spekta", "summarize", "abc", "def"];
+    vi.mocked(git.resolveHash).mockResolvedValue("sha_mock");
+    vi.mocked(git.isAncestor).mockResolvedValue(false); // Force failure
+
+    await runSummarize();
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("should proceed when isAncestor is true", async () => {
+    process.argv = ["node", "spekta", "summarize", "abc1234", "def5678"];
+
+    // Mock git functions
+    vi.mocked(git.resolveHash)
+      .mockResolvedValueOnce("abc1234567890abcdef1234567890abcdef1234")
+      .mockResolvedValueOnce("def5678901234def5678901234def5678901234");
+
+    vi.mocked(git.isAncestor).mockResolvedValue(true);
+    vi.mocked(git.getCommitMessages).mockResolvedValue(
+      "feat: test\n---\nfix: another",
+    );
+
+    // Mock config
+    vi.mocked(config.getPromptContent).mockResolvedValue("System prompt");
+    vi.mocked(config.getProviders).mockResolvedValue({ providers: [] });
+    vi.mocked(config.getEnv).mockResolvedValue({
+      OPENROUTER_API_KEY: "test",
+    } as any);
+
+    // Mock UI - select "Only Prompt"
+    vi.mocked(ui.promptProviderSelection).mockResolvedValue({
+      isOnlyPrompt: true,
+      provider: undefined,
+    });
+
+    await runSummarize();
+
+    expect(git.isAncestor).toHaveBeenCalledWith(
+      "abc1234567890abcdef1234567890abcdef1234",
+      "def5678901234def5678901234def5678901234",
+    );
+    expect(git.getCommitMessages).toHaveBeenCalled();
+    expect(process.exitCode).toBe(0);
   });
 });

@@ -20,14 +20,15 @@
         "is-binary-path": "^3.0.0",
         "openai": "^6.16.0",
         "ora": "^9.0.0",
-        "prettier": "^3.8.0"
+        "prettier": "^3.8.0",
+        "shlex": "^3.0.0"
     },
     "devDependencies": {
         "@types/fs-extra": "^11.0.4",
-        "@types/node": "^25.0.6",
+        "@types/node": "^25.0.9",
         "typescript": "^5.9.3",
         "vite": "^7.3.1",
         "vite-plugin-static-copy": "^3.1.4",
-        "vitest": "^4.0.16"
+        "vitest": "^4.0.17"
     }
 }

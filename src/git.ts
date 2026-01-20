@@ -181,3 +181,15 @@ export async function formatCommitMessage(content: string): Promise<string> {
     return content;
   }
 }
+
+export const isAncestor = async (
+  ancestor: string,
+  descendent: string,
+): Promise<boolean> => {
+  try {
+    await execa("git", ["merge-base", "--is-ancestor", ancestor, descendent]);
+    return true;
+  } catch {
+    return false;
+  }
+};

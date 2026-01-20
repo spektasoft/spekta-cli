@@ -1,12 +1,10 @@
 import { getEnv, getPromptContent, getProviders } from "../config";
 import { processOutput } from "../editor-utils";
 import {
-  formatCommitMessage,
   getCommitMessages,
   isAncestor,
   resolveHash,
   sanitizeMessageForPrompt,
-  stripCodeFences,
 } from "../git";
 import { executeAiAction } from "../orchestrator";
 import {
@@ -16,9 +14,9 @@ import {
   promptProviderSelection,
 } from "../ui";
 
-export async function runCommitRange() {
+export async function runSummarize() {
   try {
-    const args = process.argv.slice(3); // Skip 'node', 'script', 'commit-range'
+    const args = process.argv.slice(3); // Skip 'node', 'script', 'summarize'
 
     let hash1Raw: string;
     let hash2Raw: string;
@@ -55,19 +53,17 @@ export async function runCommitRange() {
     const resolvedHash1 = await resolveHash(hash1Raw.trim());
     const resolvedHash2 = await resolveHash(hash2Raw.trim());
 
-    console.log(`\nResolved: ${hash1Raw} -> ${resolvedHash1.substring(0, 7)}`);
-    console.log(`Resolved: ${hash2Raw} -> ${resolvedHash2.substring(0, 7)}`);
-    console.log(
-      `\nProcessing range: ${resolvedHash1.substring(0, 7)}..${resolvedHash2.substring(0, 7)}`,
-    );
-
-    // Add Ancestry Check after resolution
     const validRange = await isAncestor(resolvedHash1, resolvedHash2);
     if (!validRange) {
       console.error(`\nError: ${hash1Raw} is not an ancestor of ${hash2Raw}.`);
       process.exitCode = 1;
       return;
     }
+    console.log(`\nResolved: ${hash1Raw} -> ${resolvedHash1.substring(0, 7)}`);
+    console.log(`Resolved: ${hash2Raw} -> ${resolvedHash2.substring(0, 7)}`);
+    console.log(
+      `\nProcessing range: ${resolvedHash1.substring(0, 7)}..${resolvedHash2.substring(0, 7)}`,
+    );
 
     // Fetch commit messages
     const commitMessages = await getCommitMessages(
@@ -81,25 +77,26 @@ export async function runCommitRange() {
       console.error(
         "Note: Ensure the first commit is an ancestor of the second.",
       );
-      process.exitCode = 1; // Explicitly signal failure
+      process.exitCode = 1;
       return;
     }
 
     console.log(`Found commits in range.`);
 
-    // Centralize Prompt Payload
-    const systemPrompt = await getPromptContent("commit-range.md");
+    // Load system prompt and build user context
+    const systemPrompt = await getPromptContent("summary.md");
     const sanitizedMessages = sanitizeMessageForPrompt(commitMessages);
-    const userContext = `### COMMIT DATA
-  I have provided the commit history below inside triple-backticks.
-  Analyze ONLY this content.
-  
-  \`\`\`
-  ${sanitizedMessages}
-  \`\`\`
-  
-  Please analyze the history within the backticks only.`;
+    const userContext = `### COMMIT HISTORY
+I have provided the commit history below inside triple-backticks.
+Analyze ONLY this content.
 
+\`\`\`
+${sanitizedMessages}
+\`\`\`
+
+Generate the structured summary now.`;
+
+    // Centralized prompt variable
     const finalPromptPayload = `${systemPrompt}\n${userContext}`;
 
     // Token validation with confirmation gate
@@ -110,10 +107,9 @@ export async function runCommitRange() {
       const shouldProceed = await confirmLargePayload(tokenCount);
       if (!shouldProceed) {
         console.log("Operation cancelled by user due to payload size.");
-        // Optionally offer to save prompt only
         const saveOnly = await processOutput(
           finalPromptPayload,
-          "spekta-commit-range-large",
+          "spekta-summarize-large",
         );
         return;
       }
@@ -125,18 +121,18 @@ export async function runCommitRange() {
     const selection = await promptProviderSelection(
       finalPromptPayload,
       providersData.providers,
-      "Select provider for commit message generation:",
+      "Select provider for summary generation:",
     );
 
     // Handle "Only Prompt" option
     if (selection.isOnlyPrompt) {
-      await processOutput(finalPromptPayload, "spekta-commit-range-prompt");
+      await processOutput(finalPromptPayload, "spekta-summarize-prompt");
       console.log("Prompt saved. No LLM call made.");
       return;
     }
 
     if (!selection.provider) {
-      throw new Error("No AI provider selected for commit range generation.");
+      throw new Error("No AI provider selected for summary generation.");
     }
 
     console.log(`Selected provider: ${selection.provider.name}`);
@@ -149,17 +145,13 @@ export async function runCommitRange() {
         { role: "system", content: systemPrompt },
         { role: "user", content: userContext },
       ],
-      spinnerTitle: "Generating consolidated commit message...",
+      spinnerTitle: "Generating summary...",
     });
 
-    // Process result
-    const cleaned = stripCodeFences(result);
-    const formatted = await formatCommitMessage(cleaned);
+    // Save to file and optionally open in editor (via SPEKTA_EDITOR)
+    const outputPath = await processOutput(result, "spekta-summarize");
 
-    // Save to file and optionally open in editor
-    const outputPath = await processOutput(formatted, "spekta-commit-range");
-
-    console.log("\nConsolidated commit message generated successfully.");
+    console.log("\nSummary generated successfully.");
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
     process.exitCode = 1;

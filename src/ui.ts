@@ -46,12 +46,13 @@ export async function promptProviderSelection(
   providers: Provider[],
   contextMessage: string = "Select provider:",
 ): Promise<ProviderSelection> {
-  const tokenCount =
+  const count = getTokenCount(prompt);
+  const displayCount =
     prompt.length < 1000000
-      ? encode(prompt).length
+      ? `${count} (OpenAI-compatible estimate)`
       : `~${Math.round(prompt.length / 4)} (Estimated)`;
 
-  console.log(`\nEstimated Prompt Tokens: ${tokenCount}`);
+  console.log(`\nEstimated Prompt Tokens: ${displayCount}`);
 
   const choices: SearchChoice<ProviderSelection>[] = [
     {

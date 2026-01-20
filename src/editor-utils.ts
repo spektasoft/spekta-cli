@@ -3,6 +3,12 @@ import fs from "fs-extra";
 import { getEnv } from "./config";
 import { getTempPath } from "./utils/fs-utils";
 
+// Use dynamic import for shlex to avoid requiring it during build time
+async function getShlex() {
+  const { split } = await import("shlex");
+  return { split };
+}
+
 /**
  * Opens a file in the specified editor and waits for the process to exit.
  */
@@ -11,7 +17,13 @@ export async function openEditor(
   filePath: string,
 ): Promise<void> {
   try {
-    await execa(editorCommand, [filePath], {
+    // Handle quotes and spaces correctly using shlex
+    const { split } = await getShlex();
+    const parts = split(editorCommand);
+    const bin = parts[0];
+    const args = [...parts.slice(1), filePath];
+
+    await execa(bin, args, {
       stdio: "inherit",
     });
   } catch (error: any) {
