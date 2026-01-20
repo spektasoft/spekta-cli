@@ -15,9 +15,11 @@ export const validatePathAccess = async (filePath: string): Promise<void> => {
     throw new Error(`Access Denied: ${fileName} is a restricted system file.`);
   }
 
-  // 2. Out-of-bounds Block (Optional security: prevent reading outside project root)
+  // 2. Out-of-bounds Block: Prevent reading outside project root
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-    // Logic for allowing/disallowing files outside current working directory
+    throw new Error(
+      `Access Denied: ${filePath} is outside the project directory.`,
+    );
   }
 
   // 3. Spektaignore Check
