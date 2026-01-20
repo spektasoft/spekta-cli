@@ -1,4 +1,4 @@
-import { select } from "@inquirer/prompts";
+import { input, select } from "@inquirer/prompts";
 import { encode } from "gpt-tokenizer";
 import autocomplete from "inquirer-autocomplete-standalone";
 import { Provider } from "./config";
@@ -78,4 +78,40 @@ export async function confirmCommit(): Promise<boolean> {
   });
 
   return response === true;
+}
+
+/**
+ * Prompts user for a git commit hash with validation.
+ */
+export async function promptCommitHash(
+  message: string,
+  validate?: (value: string) => boolean | string | Promise<boolean | string>,
+): Promise<string> {
+  return await input({
+    message,
+    validate: validate || (() => true),
+  });
+}
+
+/**
+ * Prompts user to confirm if they want to proceed with a large token count.
+ */
+export async function confirmLargePayload(
+  tokenCount: number,
+): Promise<boolean> {
+  const choice = await select({
+    message: `The prompt is large (${tokenCount} tokens). Do you want to proceed?`,
+    choices: [
+      { name: "Yes, proceed with AI generation", value: true },
+      { name: "No, cancel or save prompt only", value: false },
+    ],
+  });
+  return choice;
+}
+
+/**
+ * Calculates token count for a given string.
+ */
+export function getTokenCount(text: string): number {
+  return encode(text).length;
 }

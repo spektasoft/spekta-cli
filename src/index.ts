@@ -1,10 +1,11 @@
-import { bootstrap } from "./config";
-import { runReview } from "./commands/review";
-import { runCommit } from "./commands/commit";
 import { select } from "@inquirer/prompts";
-import { runPr } from "./commands/pr";
+import { runCommit } from "./commands/commit";
+import { runCommitRange } from "./commands/commit-range";
 import { runPlan } from "./commands/plan";
+import { runPr } from "./commands/pr";
+import { runReview } from "./commands/review";
 import { runSync } from "./commands/sync";
+import { bootstrap } from "./config";
 
 interface CommandDefinition {
   name: string;
@@ -27,6 +28,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
   pr: {
     name: "Generate PR Message",
     run: runPr,
+  },
+  "commit-range": {
+    name: "Generate Commit Message from Range",
+    run: runCommitRange,
   },
   sync: {
     name: "Sync Free Models",
