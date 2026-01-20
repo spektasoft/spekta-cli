@@ -37,7 +37,7 @@ export const generateOverview = (content: string): string => {
     ) {
       if (inBlock) {
         // Use language-agnostic line markers
-        result.push(`... // lines ${blockStart + 1}-${i}`);
+        result.push(`// lines ${blockStart + 1}-${i}`);
         inBlock = false;
       }
 
