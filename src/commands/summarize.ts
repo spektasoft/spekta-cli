@@ -93,9 +93,11 @@ ${sanitizedMessages}
 
 Analyze ONLY the content within <commit_history> tags. Generate a structured summary as defined in the system prompt.`;
 
+    // Centralized prompt variable
+    const finalPromptPayload = `${systemPrompt}\n${userContext}`;
+
     // Token validation with confirmation gate
-    const fullPrompt = systemPrompt + "\n" + userContext;
-    const tokenCount = getTokenCount(fullPrompt);
+    const tokenCount = getTokenCount(finalPromptPayload);
     const TOKEN_WARNING_THRESHOLD = 5000;
 
     if (tokenCount > TOKEN_WARNING_THRESHOLD) {
@@ -103,7 +105,7 @@ Analyze ONLY the content within <commit_history> tags. Generate a structured sum
       if (!shouldProceed) {
         console.log("Operation cancelled by user due to payload size.");
         const saveOnly = await processOutput(
-          fullPrompt,
+          finalPromptPayload,
           "spekta-summarize-large",
         );
         return;
@@ -114,17 +116,14 @@ Analyze ONLY the content within <commit_history> tags. Generate a structured sum
     const [providersData, env] = await Promise.all([getProviders(), getEnv()]);
 
     const selection = await promptProviderSelection(
-      systemPrompt + "\n" + userContext,
+      finalPromptPayload,
       providersData.providers,
       "Select provider for summary generation:",
     );
 
     // Handle "Only Prompt" option
     if (selection.isOnlyPrompt) {
-      await processOutput(
-        systemPrompt + "\n" + userContext,
-        "spekta-summarize-prompt",
-      );
+      await processOutput(finalPromptPayload, "spekta-summarize-prompt");
       console.log("Prompt saved. No LLM call made.");
       return;
     }
