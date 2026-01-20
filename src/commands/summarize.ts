@@ -87,11 +87,14 @@ export async function runSummarize() {
     const systemPrompt = await getPromptContent("summary.md");
     const sanitizedMessages = sanitizeMessageForPrompt(commitMessages);
     const userContext = `### COMMIT HISTORY
-<commit_history>
-${sanitizedMessages}
-</commit_history>
+I have provided the commit history below inside triple-backticks.
+Analyze ONLY this content.
 
-Analyze ONLY the content within <commit_history> tags. Generate a structured summary as defined in the system prompt.`;
+\`\`\`
+${sanitizedMessages}
+\`\`\`
+
+Generate the structured summary now.`;
 
     // Centralized prompt variable
     const finalPromptPayload = `${systemPrompt}\n${userContext}`;
