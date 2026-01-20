@@ -6,6 +6,11 @@ export interface LineRange {
   end: number | "$";
 }
 
+export interface FileRequest {
+  path: string;
+  range?: LineRange;
+}
+
 export const parseRange = (rangeStr: string | undefined): LineRange => {
   if (!rangeStr || rangeStr === "1,$") return { start: 1, end: "$" };
   const match = rangeStr.match(/^(\d+),(\d+|\$)$/);
@@ -18,6 +23,33 @@ export const parseRange = (rangeStr: string | undefined): LineRange => {
   const end = match[2] === "$" ? "$" : parseInt(match[2], 10);
 
   return { start, end };
+};
+
+/**
+ * Parses a path string like "file.ts[10,20]" into path and range.
+ */
+export const parseFilePathWithRange = (input: string): FileRequest => {
+  const match = input.match(/^(.*)\[(\d+|\$)?(?:,(\d+|\$))?\]$/);
+  if (!match) {
+    return { path: input };
+  }
+
+  const filePath = match[1];
+  const startRaw = match[2];
+  const endRaw = match[3];
+
+  const range: LineRange = {
+    start:
+      startRaw === undefined || startRaw === "" ? 1 : parseInt(startRaw, 10),
+    end:
+      endRaw === undefined || endRaw === ""
+        ? "$"
+        : endRaw === "$"
+          ? "$"
+          : parseInt(endRaw, 10),
+  };
+
+  return { path: filePath, range };
 };
 
 export const getFileLines = async (
