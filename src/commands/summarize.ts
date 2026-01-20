@@ -2,6 +2,7 @@ import { getEnv, getPromptContent, getProviders } from "../config";
 import { processOutput } from "../editor-utils";
 import {
   getCommitMessages,
+  isAncestor,
   resolveHash,
   sanitizeMessageForPrompt,
 } from "../git";
@@ -52,6 +53,12 @@ export async function runSummarize() {
     const resolvedHash1 = await resolveHash(hash1Raw.trim());
     const resolvedHash2 = await resolveHash(hash2Raw.trim());
 
+    const validRange = await isAncestor(resolvedHash1, resolvedHash2);
+    if (!validRange) {
+      console.error(`\nError: ${hash1Raw} is not an ancestor of ${hash2Raw}.`);
+      process.exitCode = 1;
+      return;
+    }
     console.log(`\nResolved: ${hash1Raw} -> ${resolvedHash1.substring(0, 7)}`);
     console.log(`Resolved: ${hash2Raw} -> ${resolvedHash2.substring(0, 7)}`);
     console.log(
