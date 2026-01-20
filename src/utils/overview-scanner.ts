@@ -4,26 +4,49 @@ export const generateOverview = (content: string): string => {
   let inBlock = false;
   let blockStart = 0;
 
-  // Pattern for top-level declarations
+  // Generalized pattern for declarations across TS, Go, Rust, Python, Ruby, C#, Java, etc.
+  // Supports: export, pub, private, async, static, public, protected, internal, final, etc.
   const declPattern =
-    /^(export\s+)?(class|interface|function|const|let|enum|type|async\s+function)\s+([a-zA-Z0-9_]+)/;
-  // Pattern for imports
-  const importPattern = /^import\s+/;
+    /^(export\s+|pub\s+|private\s+|protected\s+|public\s+|internal\s+|static\s+|final\s+|async\s+)?(class|interface|function|const|let|var|enum|type|def|func|fn|struct|trait|module|package|impl|alias|protocol|extension|record|namespace|service|controller|model|view|component)\s+([a-zA-Z0-9_]+)/;
+
+  // Patterns for various import/include styles across languages
+  const importPattern =
+    /^(import|from|require|use|include|extern|mod|crate|package|using|add|import\s+type|import\s+as|import)\s+/;
+
+  // Comment style detection
+  const singleLineCommentPattern = /^(\s*\/\/|\s*#|\s*--|\s*\/\*|\s*\*\/)/;
+  const blockCommentStartPattern = /^(\s*\/\*|\s*\/\*!)/;
+  const blockCommentEndPattern = /\*\/\s*$/;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const isDecl = declPattern.test(line);
-    const isImport = importPattern.test(line);
+    const trimmed = line.trim();
+    const isDecl = declPattern.test(trimmed);
+    const isImport = importPattern.test(trimmed);
+    const isSingleLineComment = singleLineCommentPattern.test(trimmed);
+    const isBlockCommentStart = blockCommentStartPattern.test(trimmed);
+    const isBlockCommentEnd = blockCommentEndPattern.test(trimmed);
 
-    if (isDecl || isImport || i < 5) {
-      // Always show first 5 lines
+    // Show first 5 lines (headers/shebangs), declarations, imports, and comments
+    if (
+      isDecl ||
+      isImport ||
+      isSingleLineComment ||
+      isBlockCommentStart ||
+      i < 5
+    ) {
       if (inBlock) {
-        result.push(`// lines ${blockStart + 1}-${i}`);
+        // Use language-agnostic line markers
+        result.push(`... // lines ${blockStart + 1}-${i}`);
         inBlock = false;
       }
-      // If it's a declaration block, we show the signature and stub the rest
-      if (isDecl && line.includes("{")) {
-        result.push(line.split("{")[0].trim() + " { ... };");
+
+      // Stub brackets for C-style languages, otherwise just show the line
+      if (isDecl && (line.includes("{") || line.includes(":"))) {
+        const stubbed = line.includes("{")
+          ? line.split("{")[0].trim() + " { ... }"
+          : line.split(":")[0].trim() + ": ...";
+        result.push(stubbed);
       } else {
         result.push(line);
       }
