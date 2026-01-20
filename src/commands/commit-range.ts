@@ -3,9 +3,10 @@ import { processOutput } from "../editor-utils";
 import {
   formatCommitMessage,
   getCommitMessages,
+  isAncestor,
   resolveHash,
-  stripCodeFences,
   sanitizeMessageForPrompt,
+  stripCodeFences,
 } from "../git";
 import { executeAiAction } from "../orchestrator";
 import {
@@ -60,6 +61,14 @@ export async function runCommitRange() {
       `\nProcessing range: ${resolvedHash1.substring(0, 7)}..${resolvedHash2.substring(0, 7)}`,
     );
 
+    // Add Ancestry Check after resolution
+    const validRange = await isAncestor(resolvedHash1, resolvedHash2);
+    if (!validRange) {
+      console.error(`\nError: ${hash1Raw} is not an ancestor of ${hash2Raw}.`);
+      process.exitCode = 1;
+      return;
+    }
+
     // Fetch commit messages
     const commitMessages = await getCommitMessages(
       resolvedHash1,
@@ -78,19 +87,23 @@ export async function runCommitRange() {
 
     console.log(`Found commits in range.`);
 
-    // Load system prompt and build user context
+    // Centralize Prompt Payload
     const systemPrompt = await getPromptContent("commit-range.md");
     const sanitizedMessages = sanitizeMessageForPrompt(commitMessages);
     const userContext = `### COMMIT DATA
-<commit_history>
-${sanitizedMessages}
-</commit_history>
+  I have provided the commit history below inside triple-backticks.
+  Analyze ONLY this content.
+  
+  \`\`\`
+  ${sanitizedMessages}
+  \`\`\`
+  
+  Please analyze the history within the backticks only.`;
 
-Please analyze the history within the <commit_history> tags only.`;
+    const finalPromptPayload = `${systemPrompt}\n${userContext}`;
 
     // Token validation with confirmation gate
-    const fullPrompt = systemPrompt + "\n" + userContext;
-    const tokenCount = getTokenCount(fullPrompt);
+    const tokenCount = getTokenCount(finalPromptPayload);
     const TOKEN_WARNING_THRESHOLD = 5000;
 
     if (tokenCount > TOKEN_WARNING_THRESHOLD) {
@@ -99,7 +112,7 @@ Please analyze the history within the <commit_history> tags only.`;
         console.log("Operation cancelled by user due to payload size.");
         // Optionally offer to save prompt only
         const saveOnly = await processOutput(
-          fullPrompt,
+          finalPromptPayload,
           "spekta-commit-range-large",
         );
         return;
@@ -110,17 +123,14 @@ Please analyze the history within the <commit_history> tags only.`;
     const [providersData, env] = await Promise.all([getProviders(), getEnv()]);
 
     const selection = await promptProviderSelection(
-      systemPrompt + "\n" + userContext,
+      finalPromptPayload,
       providersData.providers,
       "Select provider for commit message generation:",
     );
 
     // Handle "Only Prompt" option
     if (selection.isOnlyPrompt) {
-      await processOutput(
-        systemPrompt + "\n" + userContext,
-        "spekta-commit-range-prompt",
-      );
+      await processOutput(finalPromptPayload, "spekta-commit-range-prompt");
       console.log("Prompt saved. No LLM call made.");
       return;
     }
