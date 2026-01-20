@@ -98,11 +98,25 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
   throw new Error(`Prompt template not found: ${fileName}.`);
 };
 
+let envLoaded = false;
+
 export const getEnv = async () => {
+  if (envLoaded) return process.env;
+
   const workspaceEnv = path.join(process.cwd(), ".env");
   const homeEnv = path.join(HOME_DIR, ".env");
-  if (await fs.pathExists(workspaceEnv)) dotenv.config({ path: workspaceEnv });
-  else if (await fs.pathExists(homeEnv)) dotenv.config({ path: homeEnv });
+
+  const envPath = (await fs.pathExists(workspaceEnv))
+    ? workspaceEnv
+    : (await fs.pathExists(homeEnv))
+      ? homeEnv
+      : null;
+
+  if (envPath) {
+    dotenv.config({ path: envPath });
+  }
+
+  envLoaded = true;
   return process.env;
 };
 
