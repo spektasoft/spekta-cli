@@ -13,7 +13,7 @@ import { parseFilePathWithRange } from "./utils/read-utils";
 
 interface CommandDefinition {
   name: string;
-  run: (...args: any[]) => Promise<void>;
+  run: (args?: string[]) => Promise<void>;
 }
 
 const COMMANDS: Record<string, CommandDefinition> = {
@@ -31,7 +31,20 @@ const COMMANDS: Record<string, CommandDefinition> = {
   },
   read: {
     name: "Read File (AI Tool)",
-    run: runReadInteractive,
+    run: async (args?: string[]) => {
+      if (args === undefined) {
+        await runReadInteractive();
+        return;
+      }
+      const fileArgs = args.filter((arg) => arg !== "--save");
+      const isSave = args.includes("--save");
+      if (fileArgs.length === 0) {
+        await runReadInteractive();
+      } else {
+        const requests = fileArgs.map((arg) => parseFilePathWithRange(arg));
+        await runRead(requests, { save: isSave });
+      }
+    },
   },
   pr: {
     name: "Generate PR Message",
@@ -58,23 +71,8 @@ async function main() {
   const commandArg = args[0];
 
   // 1. Check CLI Arguments
-  if (commandArg === "read") {
-    const fileArgs = args.slice(1).filter((arg) => arg !== "--save");
-    const isSave = args.includes("--save");
-
-    if (fileArgs.length === 0) {
-      // If no files provided, fall back to interactive
-      await runReadInteractive();
-      return;
-    }
-
-    const requests = fileArgs.map((arg) => parseFilePathWithRange(arg));
-    await runRead(requests, { save: isSave });
-    return;
-  }
-
   if (commandArg && COMMANDS[commandArg]) {
-    await COMMANDS[commandArg].run();
+    await COMMANDS[commandArg].run(args.slice(1));
     return;
   }
 
