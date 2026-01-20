@@ -1,36 +1,39 @@
-// src/utils/security.ts
 import { execa } from "execa";
+import ignore from "ignore";
 import path from "path";
 import { getIgnorePatterns } from "../config";
 
 const RESTRICTED_FILES = [".env", ".gitignore", ".spektaignore"];
 
 export const validatePathAccess = async (filePath: string): Promise<void> => {
-  const fileName = path.basename(filePath);
-  const fullPath = path.resolve(filePath);
+  const absolutePath = path.resolve(filePath);
+  const fileName = path.basename(absolutePath);
+  const relativePath = path.relative(process.cwd(), absolutePath);
 
+  // 1. System File Block
   if (RESTRICTED_FILES.includes(fileName)) {
     throw new Error(`Access Denied: ${fileName} is a restricted system file.`);
   }
 
-  // Check .spektaignore
+  // 2. Out-of-bounds Block (Optional security: prevent reading outside project root)
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    // Logic for allowing/disallowing files outside current working directory
+  }
+
+  // 3. Spektaignore Check
   const spektaIgnores = await getIgnorePatterns();
-  // Simple check for demonstration; in production use a library like 'ignore'
-  const isSpektaIgnored = spektaIgnores.some((p) => filePath.includes(p));
-  if (isSpektaIgnored) {
+  const ig = ignore().add(spektaIgnores);
+  if (ig.ignores(relativePath)) {
     throw new Error(`Access Denied: ${filePath} is ignored by .spektaignore.`);
   }
 
-  // Check .gitignore via git
+  // 4. Gitignore Check
   try {
     await execa("git", ["check-ignore", "-q", filePath]);
-    // If command succeeds (exit code 0), the file is ignored
     throw new Error(`Access Denied: ${filePath} is ignored by git.`);
   } catch (error: any) {
-    if (error.exitCode !== 1) {
-      // Exit code 1 means NOT ignored. Any other code means git error or actual ignore.
-      if (error.exitCode === 0)
-        throw new Error(`Access Denied: ${filePath} is ignored by git.`);
-    }
+    if (error.exitCode === 0)
+      throw new Error(`Access Denied: ${filePath} is ignored by git.`);
+    // exitCode 1 is expected (not ignored)
   }
 };
