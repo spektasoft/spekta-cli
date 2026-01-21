@@ -4,7 +4,7 @@ import { encode } from "gpt-tokenizer";
 import isBinaryPath from "is-binary-path";
 import path from "path";
 import { getPlansDir } from "../fs-manager";
-import { searchableSelect } from "../ui";
+import { NAV_BACK, searchableSelect } from "../ui";
 import { RESTRICTED_FILES } from "../utils/security";
 
 export interface SelectedItem {
@@ -86,9 +86,8 @@ export async function collectSupplementalContext(): Promise<string> {
         continue;
       }
 
-      const BACK_SENTINEL = "__BACK__";
       const choices = [
-        { name: "[Back]", value: BACK_SENTINEL },
+        { name: "[Back]", value: NAV_BACK },
         ...availablePlans.map((f) => ({ name: f, value: f })),
       ];
 
@@ -97,7 +96,7 @@ export async function collectSupplementalContext(): Promise<string> {
         choices,
       );
 
-      if (selectedPlan === BACK_SENTINEL) continue;
+      if (selectedPlan === NAV_BACK) continue;
 
       const planPath = path.join(plansDir, selectedPlan);
       const content = await fs.readFile(planPath, "utf-8");
