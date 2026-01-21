@@ -113,7 +113,7 @@ export const getEnv = async () => {
       : null;
 
   if (envPath) {
-    dotenv.config({ path: envPath });
+    dotenv.config({ path: envPath, quiet: true });
   }
 
   envLoaded = true;
