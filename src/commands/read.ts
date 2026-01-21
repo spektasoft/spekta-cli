@@ -5,6 +5,14 @@ import { FileRequest, getFileLines, getTokenCount } from "../utils/read-utils";
 import { validatePathAccess } from "../utils/security";
 import { compactFile } from "../utils/compactor";
 
+const COMPACTION_ADVISORY = `
+### COMPACTION NOTICE
+Parts of the following file(s) have been collapsed for brevity.
+Line numbers in comments (e.g., // ... [lines 20-60 collapsed]) are absolute.
+DO NOT perform line-offset calculations based on visual line counts.
+Request specific line ranges if you need to see collapsed content.
+`.trim();
+
 export async function runRead(
   requests: FileRequest[],
   options: { save?: boolean } = {},
@@ -17,6 +25,7 @@ export async function runRead(
     const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "2000", 10);
     const compactThreshold = 500;
     let combinedOutput = "";
+    let anyCompacted = false;
 
     for (const req of requests) {
       await validatePathAccess(req.path);
@@ -43,6 +52,7 @@ export async function runRead(
           content = result.content;
           tokens = getTokenCount(content);
           isCompacted = true;
+          anyCompacted = true;
         }
       }
 
@@ -63,7 +73,10 @@ export async function runRead(
     }
 
     if (options.save) {
-      await processOutput(combinedOutput, "spekta-read");
+      const finalContent = anyCompacted
+        ? `${COMPACTION_ADVISORY}\n\n${combinedOutput}`
+        : combinedOutput;
+      await processOutput(finalContent, "spekta-read");
     } else {
       process.stdout.write(combinedOutput);
     }
