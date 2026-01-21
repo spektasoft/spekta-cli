@@ -4,6 +4,7 @@ import ignore from "ignore";
 import autocomplete from "inquirer-autocomplete-standalone";
 import path from "path";
 import { getIgnorePatterns } from "../config";
+import { NAV_BACK, isCancel } from "../ui";
 import { FileRequest } from "../utils/read-utils";
 import { RESTRICTED_FILES } from "../utils/security";
 import { runRead } from "./read";
@@ -71,21 +72,19 @@ export async function runReadInteractive() {
         },
       });
 
-      if (filePath === BACK_SENTINEL) continue;
+      if (filePath === NAV_BACK) continue;
 
-      const exitKeywords = ["c", "q", "back", "cancel"];
+      const getLineInput = async (msg: string, def: string) => {
+        const val = await input({ message: msg, default: def });
+        if (isCancel(val)) return NAV_BACK;
+        return val;
+      };
 
-      const startInput = await input({
-        message: "Start line (c to cancel):",
-        default: "1",
-      });
-      if (exitKeywords.includes(startInput.toLowerCase())) continue;
+      const startInput = await getLineInput("Start line (c to cancel):", "1");
+      if (startInput === NAV_BACK) continue;
 
-      const endInput = await input({
-        message: "End line (c to cancel):",
-        default: "$",
-      });
-      if (exitKeywords.includes(endInput.toLowerCase())) continue;
+      const endInput = await getLineInput("End line (c to cancel):", "$");
+      if (endInput === NAV_BACK) continue;
 
       const start = parseInt(startInput, 10);
       const end = endInput === "$" ? "$" : parseInt(endInput, 10);
@@ -94,7 +93,7 @@ export async function runReadInteractive() {
         path: filePath,
         range: {
           start: isNaN(start) ? 1 : start,
-          end: end,
+          end: isNaN(end as number) && end !== "$" ? "$" : end,
         },
       });
     }
