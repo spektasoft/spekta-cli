@@ -3,9 +3,9 @@ import { execa } from "execa";
 import ignore from "ignore";
 import autocomplete from "inquirer-autocomplete-standalone";
 import path from "path";
-import { RESTRICTED_FILES } from "../utils/security";
 import { getIgnorePatterns } from "../config";
-import { FileRequest, parseRange } from "../utils/read-utils";
+import { FileRequest } from "../utils/read-utils";
+import { RESTRICTED_FILES } from "../utils/security";
 import { runRead } from "./read";
 
 export async function runReadInteractive() {
@@ -73,14 +73,29 @@ export async function runReadInteractive() {
 
       if (filePath === BACK_SENTINEL) continue;
 
-      const rangeStr = await input({
-        message: "Enter range (e.g., 1,100) or leave blank for full/overview:",
-        default: "",
+      const exitKeywords = ["c", "q", "back", "cancel"];
+
+      const startInput = await input({
+        message: "Start line (c to cancel):",
+        default: "1",
       });
+      if (exitKeywords.includes(startInput.toLowerCase())) continue;
+
+      const endInput = await input({
+        message: "End line (c to cancel):",
+        default: "$",
+      });
+      if (exitKeywords.includes(endInput.toLowerCase())) continue;
+
+      const start = parseInt(startInput, 10);
+      const end = endInput === "$" ? "$" : parseInt(endInput, 10);
 
       selectedRequests.push({
         path: filePath,
-        range: rangeStr ? parseRange(rangeStr) : undefined,
+        range: {
+          start: isNaN(start) ? 1 : start,
+          end: end,
+        },
       });
     }
 
