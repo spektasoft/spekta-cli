@@ -6,6 +6,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { getReadContent } from "./commands/read";
 import { bootstrap } from "./config";
+import { Logger } from "./utils/logger";
 import { parseFilePathWithRange } from "./utils/read-utils";
 
 export async function runMcpServer() {
@@ -63,7 +64,7 @@ export async function runMcpServer() {
       };
     } catch (error: any) {
       // Log security violations or missing files to stderr for host debugging
-      process.stderr.write(`MCP Read Tool Error: ${error.message}\n`);
+      Logger.error(`MCP Read Tool Error: ${error.message}`);
       return {
         content: [{ type: "text", text: `Access Error: ${error.message}` }],
         isError: true,
@@ -74,7 +75,7 @@ export async function runMcpServer() {
   const transport = new StdioServerTransport();
 
   const cleanup = async () => {
-    process.stderr.write("Shutting down MCP server...\n");
+    Logger.info("Shutting down MCP server...");
     await server.close();
     process.exit(0);
   };
@@ -83,5 +84,5 @@ export async function runMcpServer() {
   process.on("SIGTERM", cleanup);
 
   await server.connect(transport);
-  process.stderr.write("Spekta MCP Server running on stdio\n");
+  Logger.info("Spekta MCP Server running on stdio");
 }
