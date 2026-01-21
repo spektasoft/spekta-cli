@@ -75,6 +75,7 @@ describe("collectSupplementalContext integration", () => {
 
     vi.doMock("../ui", () => ({
       searchableSelect: vi.fn().mockResolvedValue("test-plan.md"),
+      NAV_BACK: "__BACK__",
     }));
 
     const { collectSupplementalContext: mockedCollect } =
@@ -97,6 +98,7 @@ describe("collectSupplementalContext integration", () => {
 
     vi.doMock("../ui", () => ({
       searchableSelect: vi.fn(),
+      NAV_BACK: "__BACK__",
     }));
 
     const { collectSupplementalContext: mockedCollect } =
@@ -128,6 +130,7 @@ describe("collectSupplementalContext integration", () => {
         .fn()
         .mockResolvedValueOnce("plan1.md")
         .mockResolvedValueOnce("plan2.md"),
+      NAV_BACK: "__BACK__",
     }));
 
     const { collectSupplementalContext: mockedCollect } =
@@ -155,6 +158,7 @@ describe("collectSupplementalContext integration", () => {
 
     vi.doMock("../ui", () => ({
       searchableSelect: vi.fn(),
+      NAV_BACK: "__BACK__",
     }));
 
     const { collectSupplementalContext: mockedCollect } =
@@ -178,6 +182,7 @@ describe("collectSupplementalContext integration", () => {
 
     vi.doMock("../ui", () => ({
       searchableSelect: vi.fn(),
+      NAV_BACK: "__BACK__",
     }));
 
     const { collectSupplementalContext: mockedCollect } =
@@ -233,6 +238,7 @@ describe("review command prompt integrity", () => {
 
     vi.doMock("../ui", () => ({
       searchableSelect: mockSearchableSelect,
+      NAV_BACK: "__BACK__",
     }));
 
     const { collectSupplementalContext: mockedCollect } =
@@ -254,6 +260,7 @@ describe("review command prompt integrity", () => {
 
     vi.doMock("../ui", () => ({
       searchableSelect: vi.fn(),
+      NAV_BACK: "__BACK__",
     }));
 
     const { collectSupplementalContext: mockedCollect } =
