@@ -6,11 +6,14 @@ import { runPr } from "./commands/pr";
 import { runReview } from "./commands/review";
 import { runSummarize } from "./commands/summarize";
 import { runSync } from "./commands/sync";
+import { runReadInteractive } from "./commands/read-interactive";
+import { runRead } from "./commands/read";
 import { bootstrap } from "./config";
+import { parseFilePathWithRange } from "./utils/read-utils";
 
 interface CommandDefinition {
   name: string;
-  run: () => Promise<void>;
+  run: (args?: string[]) => Promise<void>;
 }
 
 const COMMANDS: Record<string, CommandDefinition> = {
@@ -25,6 +28,20 @@ const COMMANDS: Record<string, CommandDefinition> = {
   review: {
     name: "Run Git Review",
     run: runReview,
+  },
+  read: {
+    name: "Read Files",
+    run: async (args: string[] = []) => {
+      const fileArgs = args.filter((arg) => arg !== "--save");
+      const isSave = args.includes("--save");
+
+      if (fileArgs.length === 0) {
+        await runReadInteractive();
+      } else {
+        const requests = fileArgs.map((arg) => parseFilePathWithRange(arg));
+        await runRead(requests, { save: isSave });
+      }
+    },
   },
   pr: {
     name: "Generate PR Message",
@@ -52,7 +69,7 @@ async function main() {
 
   // 1. Check CLI Arguments
   if (commandArg && COMMANDS[commandArg]) {
-    await COMMANDS[commandArg].run();
+    await COMMANDS[commandArg].run(args.slice(1));
     return;
   }
 
