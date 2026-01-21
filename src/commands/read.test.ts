@@ -4,6 +4,7 @@ import * as editorUtils from "../editor-utils";
 import * as compactor from "../utils/compactor";
 import * as readUtils from "../utils/read-utils";
 import * as security from "../utils/security";
+import { Logger } from "../utils/logger";
 import { runRead } from "./read";
 
 vi.mock("../config");
@@ -11,6 +12,7 @@ vi.mock("../utils/read-utils");
 vi.mock("../utils/security");
 vi.mock("../utils/compactor");
 vi.mock("../editor-utils");
+vi.mock("../utils/logger");
 
 describe("runRead", () => {
   const mockGetEnv = vi.mocked(config.getEnv);
@@ -19,9 +21,9 @@ describe("runRead", () => {
   const mockValidatePathAccess = vi.mocked(security.validatePathAccess);
   const mockCompactFile = vi.mocked(compactor.compactFile);
   const mockProcessOutput = vi.mocked(editorUtils.processOutput);
+  const mockLogger = vi.mocked(Logger);
 
   let stdoutSpy: any;
-  let consoleErrorSpy: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -30,7 +32,6 @@ describe("runRead", () => {
     stdoutSpy = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
-    consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   it("should provide raw output for targeted range requests even if long", async () => {
@@ -67,7 +68,7 @@ describe("runRead", () => {
 
     await runRead([{ path: "large.ts", range: { start: 1, end: 100 } }]);
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
+    expect(mockLogger.error).toHaveBeenCalledWith(
       expect.stringContaining("exceeds token limit (3000 > 2000)"),
     );
     expect(stdoutSpy).toHaveBeenCalledWith(

@@ -1,6 +1,7 @@
 import path from "path";
 import { getEnv } from "../config";
 import { processOutput } from "../editor-utils";
+import { Logger } from "../utils/logger";
 import { compactFile } from "../utils/compactor";
 import { FileRequest, getFileLines, getTokenCount } from "../utils/read-utils";
 import { validatePathAccess } from "../utils/security";
@@ -59,15 +60,15 @@ export async function getReadContent(requests: FileRequest[]): Promise<string> {
     tokens = getTokenCount(content);
 
     if (isRangeRequest && tokens > tokenLimit) {
-      const errorMessage = `Error: Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}). Please request a smaller range.`;
-      process.stderr.write(`${errorMessage}\n`);
-      combinedOutput += `\n--- ${req.path} ERROR ---\n${errorMessage}\n`;
+      const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}). Please request a smaller range.`;
+      Logger.error(errorMessage);
+      combinedOutput += `\n--- ${req.path} ERROR ---\nError: ${errorMessage}\n`;
       continue;
     }
 
     if (tokens > tokenLimit && !isCompacted) {
-      process.stderr.write(
-        `Warning: ${req.path} exceeds token limit (${tokens} > ${tokenLimit}) and could not be compacted.\n`,
+      Logger.warn(
+        `${req.path} exceeds token limit (${tokens} > ${tokenLimit}) and could not be compacted.`,
       );
     }
 
@@ -107,7 +108,7 @@ export async function runRead(
       process.stdout.write(finalContent);
     }
   } catch (error: any) {
-    process.stderr.write(`Error: ${error.message}\n`);
+    Logger.error(error.message);
     process.exitCode = 1;
   }
 }
