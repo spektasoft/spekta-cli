@@ -3,6 +3,7 @@ import { getEnv } from "../config";
 import { processOutput } from "../editor-utils";
 import { FileRequest, getFileLines, getTokenCount } from "../utils/read-utils";
 import { validatePathAccess } from "../utils/security";
+import { compactFile } from "../utils/compactor";
 
 export async function runRead(
   requests: FileRequest[],
@@ -13,7 +14,8 @@ export async function runRead(
       throw new Error("At least one file path is required.");
 
     const env = await getEnv();
-    const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "1000", 10);
+    const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "2000", 10);
+    const compactThreshold = 500;
     let combinedOutput = "";
 
     for (const req of requests) {
@@ -22,12 +24,23 @@ export async function runRead(
         req.path,
         req.range || { start: 1, end: "$" },
       );
-      const content = lines.join("\n");
-      const tokens = getTokenCount(content);
+
+      let content = lines.join("\n");
+      let tokens = getTokenCount(content);
+      let isCompacted = false;
+
+      if (tokens > compactThreshold) {
+        const result = compactFile(req.path, content);
+        if (result.isCompacted) {
+          content = result.content;
+          tokens = getTokenCount(content);
+          isCompacted = true;
+        }
+      }
 
       if (tokens > tokenLimit) {
         console.warn(
-          `Warning: ${req.path} exceeds token limit (${tokens} > ${tokenLimit})`,
+          `Warning: ${req.path} still exceeds token limit after compaction (${tokens} > ${tokenLimit})`,
         );
       }
 
@@ -35,7 +48,10 @@ export async function runRead(
       const rangeLabel = req.range
         ? `${req.range.start}-${req.range.end === "$" ? total : req.range.end}`
         : `1-${total}`;
-      combinedOutput += `#### ${req.path} (lines ${rangeLabel})\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
+
+      const compactLabel = isCompacted ? " [COMPACTED OVERVIEW]" : "";
+
+      combinedOutput += `#### ${req.path} (lines ${rangeLabel})${compactLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
     }
 
     if (options.save) {
