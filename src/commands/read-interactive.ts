@@ -59,7 +59,6 @@ export async function runReadInteractive() {
     if (action === "done") break;
 
     if (action === "add") {
-      const BACK_SENTINEL = "__BACK__";
       const filePath = await autocomplete({
         message: "Select a file:",
         source: async (input) => {
@@ -68,10 +67,9 @@ export async function runReadInteractive() {
             .filter((f) => f.toLowerCase().includes(term))
             .map((f) => ({ value: f, name: f }));
 
-          return [{ name: "[Back]", value: BACK_SENTINEL }, ...filtered];
+          return [{ name: "[Back]", value: NAV_BACK }, ...filtered];
         },
       });
-
       if (filePath === NAV_BACK) continue;
 
       const getLineInput = async (msg: string, def: string) => {
