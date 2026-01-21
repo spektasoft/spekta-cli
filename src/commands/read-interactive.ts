@@ -58,15 +58,20 @@ export async function runReadInteractive() {
     if (action === "done") break;
 
     if (action === "add") {
+      const BACK_SENTINEL = "__BACK__";
       const filePath = await autocomplete({
         message: "Select a file:",
         source: async (input) => {
           const term = input?.toLowerCase() || "";
-          return files
+          const filtered = files
             .filter((f) => f.toLowerCase().includes(term))
             .map((f) => ({ value: f, name: f }));
+
+          return [{ name: "[Back]", value: BACK_SENTINEL }, ...filtered];
         },
       });
+
+      if (filePath === BACK_SENTINEL) continue;
 
       const rangeStr = await input({
         message: "Enter range (e.g., 1,100) or leave blank for full/overview:",
