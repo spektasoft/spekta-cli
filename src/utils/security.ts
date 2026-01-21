@@ -32,13 +32,18 @@ export const validatePathAccess = async (filePath: string): Promise<void> => {
   }
 
   // 4. Gitignore Check
+  let isGitIgnored = false;
   try {
+    // git check-ignore returns exitCode 0 if the file IS ignored.
     await execa("git", ["check-ignore", "-q", filePath]);
-    throw new Error(`Access Denied: ${filePath} is ignored by git.`);
+    isGitIgnored = true;
   } catch (error: any) {
-    if (error.exitCode === 0)
-      throw new Error(`Access Denied: ${filePath} is ignored by git.`);
-    // exitCode 1 is expected (not ignored)
+    // execa throws on non-zero exitCode (1 means NOT ignored).
+    // We swallow the error here as it implies the file is safe to access (relative to git).
+  }
+
+  if (isGitIgnored) {
+    throw new Error(`Access Denied: ${filePath} is ignored by git.`);
   }
 
   // 5. File Size Check
