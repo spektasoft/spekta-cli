@@ -138,16 +138,20 @@ export async function collectSupplementalContext(): Promise<string> {
       totalTokenCount += tokenCount;
       console.log(`Added plan: ${selectedPlan} (${tokenCount} tokens)`);
     } else if (action === "file") {
-      const filePath = await input({
-        message: "Enter file path to include:",
+      const filePathInput = await input({
+        message: "Enter file path to include (c to cancel):",
       });
 
-      if (!filePath.trim()) {
-        console.log("No path entered. Returning to menu.");
+      const exitKeywords = ["c", "q", "back", "cancel"];
+      if (
+        !filePathInput.trim() ||
+        exitKeywords.includes(filePathInput.toLowerCase())
+      ) {
+        console.log("Returning to menu.");
         continue;
       }
 
-      const trimmedPath = filePath.trim();
+      const trimmedPath = filePathInput.trim();
       const absolutePath = path.resolve(process.cwd(), trimmedPath);
 
       // Check for duplicate
@@ -186,7 +190,7 @@ export async function collectSupplementalContext(): Promise<string> {
       // Check for quadruple backticks
       if (content.includes("````")) {
         console.warn(
-          `Warning: File [${filePath}] contains quadruple backticks and has been excluded to prevent formatting errors.`,
+          `Warning: File [${filePathInput}] contains quadruple backticks and has been excluded to prevent formatting errors.`,
         );
         continue;
       }
