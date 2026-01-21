@@ -85,10 +85,18 @@ export async function collectSupplementalContext(): Promise<string> {
         continue;
       }
 
+      const BACK_SENTINEL = "__BACK__";
+      const choices = [
+        { name: "[Back]", value: BACK_SENTINEL },
+        ...availablePlans.map((f) => ({ name: f, value: f })),
+      ];
+
       const selectedPlan = await searchableSelect<string>(
         "Select an implementation plan:",
-        availablePlans.map((f) => ({ name: f, value: f })),
+        choices,
       );
+
+      if (selectedPlan === BACK_SENTINEL) continue;
 
       const planPath = path.join(plansDir, selectedPlan);
       const content = await fs.readFile(planPath, "utf-8");
