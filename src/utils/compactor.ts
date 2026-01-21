@@ -1,5 +1,12 @@
 import path from "path";
 
+// Helper function to detect if a line contains quotes that might indicate string literals
+const hasQuotes = (line: string): boolean =>
+  line.includes('"') ||
+  line.includes("'") ||
+  line.includes("`") ||
+  line.includes("/");
+
 export interface CompactionResult {
   content: string;
   isCompacted: boolean;
@@ -7,7 +14,10 @@ export interface CompactionResult {
 
 export interface CompactionStrategy {
   canHandle(extension: string): boolean;
-  compact(lines: string[], startLine: number): string;
+  compact(
+    lines: string[],
+    startLine: number,
+  ): { content: string; didCompact: boolean };
 }
 
 class BraceCompactor implements CompactionStrategy {
@@ -24,7 +34,10 @@ class BraceCompactor implements CompactionStrategy {
     ].includes(ext);
   }
 
-  compact(lines: string[], startLine: number): string {
+  compact(
+    lines: string[],
+    startLine: number,
+  ): { content: string; didCompact: boolean } {
     const matchingEnd = new Array(lines.length).fill(-1);
     const stack: { lineIdx: number; depthAtStart: number }[] = [];
     let currentDepth = 0;
@@ -34,9 +47,10 @@ class BraceCompactor implements CompactionStrategy {
       const line = lines[i];
       const openMatches = (line.match(/{/g) || []).length;
       const closeMatches = (line.match(/}/g) || []).length;
-      const endsWithOpen = line.trim().endsWith("{");
+      const trimmed = line.trim();
+      const endsWithOpen = trimmed.endsWith("{");
 
-      if (endsWithOpen) {
+      if (endsWithOpen && !hasQuotes(trimmed)) {
         stack.push({ lineIdx: i, depthAtStart: currentDepth });
       }
 
@@ -55,6 +69,7 @@ class BraceCompactor implements CompactionStrategy {
 
     // Pass 2: Build the result by collapsing the first long enough blocks encountered
     const result: string[] = [];
+    let didCompact = false;
     for (let i = 0; i < lines.length; i++) {
       const endIdx = matchingEnd[i];
       if (endIdx !== -1) {
@@ -70,13 +85,14 @@ class BraceCompactor implements CompactionStrategy {
           );
           result.push(lines[endIdx]);
           i = endIdx;
+          didCompact = true;
           continue;
         }
       }
       result.push(lines[i]);
     }
 
-    return result.join("\n");
+    return { content: result.join("\n"), didCompact };
   }
 }
 
@@ -85,9 +101,13 @@ class IndentationCompactor implements CompactionStrategy {
     return [".py", ".yml", ".yaml"].includes(ext);
   }
 
-  compact(lines: string[], startLine: number): string {
+  compact(
+    lines: string[],
+    startLine: number,
+  ): { content: string; didCompact: boolean } {
     const result: string[] = [];
     let i = 0;
+    let didCompact = false;
 
     while (i < lines.length) {
       const line = lines[i];
@@ -122,13 +142,14 @@ class IndentationCompactor implements CompactionStrategy {
             `${indentStr}# ... [lines ${absStart}-${absEnd} collapsed]`,
           );
           i = j - 1;
+          didCompact = true;
         }
       } else {
         result.push(line);
       }
       i++;
     }
-    return result.join("\n");
+    return { content: result.join("\n"), didCompact };
   }
 }
 
@@ -137,8 +158,12 @@ class TagCompactor implements CompactionStrategy {
     return [".html", ".blade.php", ".xml"].includes(ext);
   }
 
-  compact(lines: string[], startLine: number): string {
+  compact(
+    lines: string[],
+    startLine: number,
+  ): { content: string; didCompact: boolean } {
     const result: string[] = [];
+    let didCompact = false;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
@@ -171,12 +196,13 @@ class TagCompactor implements CompactionStrategy {
           const comment = `{{-- ... [lines ${absStart}-${absEnd} collapsed] --}}`;
           result.push(`${indent}  ${comment}`);
           i = j - 1;
+          didCompact = true;
         }
       } else {
         result.push(line);
       }
     }
-    return result.join("\n");
+    return { content: result.join("\n"), didCompact };
   }
 }
 
@@ -196,9 +222,9 @@ export function compactFile(
   if (!strategy) return { content, isCompacted: false };
 
   const lines = content.split("\n");
-  const compacted = strategy.compact(lines, startLine);
+  const { content: compacted, didCompact } = strategy.compact(lines, startLine);
   return {
     content: compacted,
-    isCompacted: compacted.length < content.length,
+    isCompacted: didCompact,
   };
 }

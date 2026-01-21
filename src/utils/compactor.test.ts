@@ -65,4 +65,24 @@ class MyClass {
     // Should collapse the outer if block
     expect(result.content).toContain("lines 2-5");
   });
+
+  it("should return isCompacted=true even when replacement comment is longer than original", () => {
+    const content = `function test() {
+  console.log("line1");
+  console.log("line2");
+  console.log("line3");
+}`;
+    const result = compactFile("test.ts", content);
+    // Even though we're replacing multiple lines with a potentially longer comment, isCompacted should be true
+    expect(result.isCompacted).toBe(true);
+  });
+
+  it("should not compact lines that contain string literals ending with brace", () => {
+    const content = `const x = "{";
+console.log("This should not be treated as a code block");`;
+    const result = compactFile("test.ts", content);
+    // The line with string literal should not trigger compaction
+    expect(result.content).toBe(content);
+    expect(result.isCompacted).toBe(false);
+  });
 });
