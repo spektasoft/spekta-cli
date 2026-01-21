@@ -42,19 +42,21 @@ export async function runRead(
         : 1;
 
       let content = lines.join("\n");
-      let tokens = getTokenCount(content);
+      const CHAR_THRESHOLD = compactThreshold * 4;
+      let tokens = 0;
       let isCompacted = false;
 
-      if (tokens > compactThreshold) {
+      if (content.length > CHAR_THRESHOLD) {
         // Pass startLineOffset to ensure correct absolute numbering
         const result = compactFile(req.path, content, startLineOffset);
         if (result.isCompacted) {
           content = result.content;
-          tokens = getTokenCount(content);
           isCompacted = true;
           anyCompacted = true;
         }
       }
+
+      tokens = getTokenCount(content);
 
       if (tokens > tokenLimit) {
         console.warn(
