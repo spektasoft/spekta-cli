@@ -62,10 +62,10 @@ export async function runMcpServer() {
         content: [{ type: "text", text: content }],
       };
     } catch (error: any) {
+      // Log security violations or missing files to stderr for host debugging
+      process.stderr.write(`MCP Read Tool Error: ${error.message}\n`);
       return {
-        content: [
-          { type: "text", text: `Error reading files: ${error.message}` },
-        ],
+        content: [{ type: "text", text: `Access Error: ${error.message}` }],
         isError: true,
       };
     }
