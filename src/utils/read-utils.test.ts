@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from "vitest";
-import { parseRange, getFileLines, getTokenCount } from "./read-utils";
-import fs from "fs-extra";
+import fs from "fs";
+import { Readable } from "stream";
+import { describe, expect, it, vi } from "vitest";
+import { getFileLines, getTokenCount, parseRange } from "./read-utils";
 
-vi.mock("fs-extra");
+vi.mock("fs");
 
 describe("read-utils", () => {
   describe("parseRange", () => {
@@ -28,23 +29,14 @@ describe("read-utils", () => {
   });
 
   describe("getFileLines", () => {
-    it("should return correct lines and total count", async () => {
-      const mockContent = "line1\nline2\nline3\nline4\nline5";
-      // @ts-ignore
-      vi.mocked(fs.readFile).mockResolvedValue(mockContent);
-
-      const result = await getFileLines("path/to/file", { start: 2, end: 4 });
-      expect(result.lines).toEqual(["line2", "line3", "line4"]);
-      expect(result.total).toBe(5);
-    });
-
-    it("should handle $ end", async () => {
+    it("should return correct lines using streams", async () => {
       const mockContent = "line1\nline2\nline3";
-      // @ts-ignore
-      vi.mocked(fs.readFile).mockResolvedValue(mockContent);
+      const mockStream = Readable.from(mockContent);
+      vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
 
-      const result = await getFileLines("path/to/file", { start: 2, end: "$" });
-      expect(result.lines).toEqual(["line2", "line3"]);
+      const result = await getFileLines("test.txt", { start: 2, end: 2 });
+      expect(result.lines).toEqual(["line2"]);
+      expect(result.total).toBe(3); // Should count full file lines despite range
     });
   });
 

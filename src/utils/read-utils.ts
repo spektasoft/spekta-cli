@@ -73,12 +73,6 @@ export const getFileLines = async (
     if (currentLine >= startLine && currentLine <= endLine) {
       lines.push(line);
     }
-    // Optimization: Stop reading if we passed the end of the range
-    if (currentLine >= endLine && range.end !== "$") {
-      rl.close();
-      fileStream.destroy();
-      break;
-    }
   }
 
   return { lines, total: currentLine };
