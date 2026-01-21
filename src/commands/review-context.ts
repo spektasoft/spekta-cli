@@ -5,6 +5,7 @@ import isBinaryPath from "is-binary-path";
 import path from "path";
 import { getPlansDir } from "../fs-manager";
 import { searchableSelect } from "../ui";
+import { RESTRICTED_FILES } from "../utils/security";
 
 export interface SelectedItem {
   type: "plan" | "file";
@@ -153,6 +154,14 @@ export async function collectSupplementalContext(): Promise<string> {
 
       const trimmedPath = filePathInput.trim();
       const absolutePath = path.resolve(process.cwd(), trimmedPath);
+
+      // Check for restricted files
+      if (RESTRICTED_FILES.includes(path.basename(trimmedPath))) {
+        console.error(
+          `Access Denied: ${trimmedPath} is a restricted system file.`,
+        );
+        continue;
+      }
 
       // Check for duplicate
       if (
