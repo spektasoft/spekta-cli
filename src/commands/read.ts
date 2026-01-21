@@ -25,12 +25,20 @@ export async function runRead(
         req.range || { start: 1, end: "$" },
       );
 
+      // Calculate the actual starting line number for absolute referencing
+      const startLineOffset = req.range
+        ? typeof req.range.start === "number"
+          ? req.range.start
+          : 1
+        : 1;
+
       let content = lines.join("\n");
       let tokens = getTokenCount(content);
       let isCompacted = false;
 
       if (tokens > compactThreshold) {
-        const result = compactFile(req.path, content, req.range?.start || 1);
+        // Pass startLineOffset to ensure correct absolute numbering
+        const result = compactFile(req.path, content, startLineOffset);
         if (result.isCompacted) {
           content = result.content;
           tokens = getTokenCount(content);
