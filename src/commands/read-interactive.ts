@@ -2,6 +2,8 @@ import { checkbox, input, select } from "@inquirer/prompts";
 import { execa } from "execa";
 import ignore from "ignore";
 import autocomplete from "inquirer-autocomplete-standalone";
+import path from "path";
+import { RESTRICTED_FILES } from "../utils/security";
 import { getIgnorePatterns } from "../config";
 import { FileRequest, parseRange } from "../utils/read-utils";
 import { runRead } from "./read";
@@ -17,7 +19,13 @@ export async function runReadInteractive() {
 
   const spektaIgnores = await getIgnorePatterns();
   const ig = ignore().add(spektaIgnores);
-  const files = allFiles.filter((f) => !ig.ignores(f));
+
+  // Filter files by gitignore, spektaignore, and restricted system files
+  const files = allFiles.filter((f) => {
+    const isIgnored = ig.ignores(f);
+    const isRestricted = RESTRICTED_FILES.includes(path.basename(f));
+    return !isIgnored && !isRestricted;
+  });
 
   const selectedRequests: FileRequest[] = [];
 
