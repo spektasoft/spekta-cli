@@ -3,6 +3,13 @@ import { encode } from "gpt-tokenizer";
 import autocomplete from "inquirer-autocomplete-standalone";
 import { Provider } from "./config";
 
+export const NAV_BACK = "__BACK__";
+export const EXIT_KEYWORDS = ["c", "q", "back", "cancel"];
+
+export function isCancel(input: string): boolean {
+  return EXIT_KEYWORDS.includes(input.toLowerCase().trim());
+}
+
 export interface ProviderSelection {
   isOnlyPrompt: boolean;
   provider?: Provider;
