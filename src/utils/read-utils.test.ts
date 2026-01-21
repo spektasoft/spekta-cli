@@ -1,7 +1,12 @@
 import fs from "fs";
 import { Readable } from "stream";
 import { describe, expect, it, vi } from "vitest";
-import { getFileLines, getTokenCount, parseRange } from "./read-utils";
+import {
+  getFileLines,
+  getTokenCount,
+  parseFilePathWithRange,
+  parseRange,
+} from "./read-utils";
 
 vi.mock("fs");
 
@@ -44,6 +49,29 @@ describe("read-utils", () => {
     it("should return a number for token count", () => {
       const text = "Hello world";
       expect(getTokenCount(text)).toBeGreaterThan(0);
+    });
+  });
+
+  describe("parseFilePathWithRange", () => {
+    it("should parse path with full range", () => {
+      const result = parseFilePathWithRange("src/main.ts[10,50]");
+      expect(result).toEqual({
+        path: "src/main.ts",
+        range: { start: 10, end: 50 },
+      });
+    });
+
+    it("should parse path with end-of-file alias", () => {
+      const result = parseFilePathWithRange("src/main.ts[100,$]");
+      expect(result).toEqual({
+        path: "src/main.ts",
+        range: { start: 100, end: "$" },
+      });
+    });
+
+    it("should handle paths without brackets", () => {
+      const result = parseFilePathWithRange("src/main.ts");
+      expect(result).toEqual({ path: "src/main.ts" });
     });
   });
 });
