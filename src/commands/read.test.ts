@@ -102,4 +102,32 @@ describe("runRead", () => {
       expect.stringContaining("[COMPACTED OVERVIEW]"),
     );
   });
+
+  it("should include total line count in metadata for range requests", async () => {
+    mockGetFileLines.mockResolvedValue({
+      lines: ["line 10", "line 11"],
+      total: 500,
+    });
+    mockGetTokenCount.mockReturnValue(10);
+
+    await runRead([{ path: "test.ts", range: { start: 10, end: 11 } }]);
+
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      expect.stringContaining("#### test.ts (lines 10-11 of 500)"),
+    );
+  });
+
+  it("should include total line count in metadata for full-file reads", async () => {
+    mockGetFileLines.mockResolvedValue({
+      lines: ["line 1", "line 2"],
+      total: 2,
+    });
+    mockGetTokenCount.mockReturnValue(5);
+
+    await runRead([{ path: "small.ts" }]);
+
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      expect.stringContaining("#### small.ts (lines 1-2 of 2)"),
+    );
+  });
 });
