@@ -6,11 +6,15 @@ import { validatePathAccess } from "../utils/security";
 import { compactFile } from "../utils/compactor";
 
 const COMPACTION_ADVISORY = `
-### COMPACTION NOTICE
+#### COMPACTION NOTICE
 Parts of the following file(s) have been collapsed for brevity.
 Line numbers in comments (e.g., // ... [lines 20-60 collapsed]) are absolute.
 DO NOT perform line-offset calculations based on visual line counts.
-Request specific line ranges if you need to see collapsed content.
+
+#### GUIDANCE FOR AGENT:
+If you need to see collapsed content, request specific line ranges.
+Targeted line range requests are NEVER compacted.
+Example: file.ts[20,60]
 `.trim();
 
 export async function runRead(
@@ -41,26 +45,38 @@ export async function runRead(
           : 1
         : 1;
 
+      const isRangeRequest = !!req.range;
       let content = lines.join("\n");
-      const CHAR_THRESHOLD = compactThreshold * 4;
       let tokens = 0;
       let isCompacted = false;
 
-      if (content.length > CHAR_THRESHOLD) {
-        // Pass startLineOffset to ensure correct absolute numbering
-        const result = compactFile(req.path, content, startLineOffset);
-        if (result.isCompacted) {
-          content = result.content;
-          isCompacted = true;
-          anyCompacted = true;
+      // POLICY: Bypass compaction for targeted range requests
+      if (!isRangeRequest) {
+        const CHAR_THRESHOLD = compactThreshold * 4;
+        if (content.length > CHAR_THRESHOLD) {
+          // Pass startLineOffset to ensure correct absolute numbering
+          const result = compactFile(req.path, content, startLineOffset);
+          if (result.isCompacted) {
+            content = result.content;
+            isCompacted = true;
+            anyCompacted = true;
+          }
         }
       }
 
       tokens = getTokenCount(content);
 
-      if (tokens > tokenLimit) {
+      // POLICY: Enforce hard limit for range requests to prevent token waste
+      if (isRangeRequest && tokens > tokenLimit) {
+        const errorMessage = `Error: Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}). Please request a smaller range.`;
+        console.error(errorMessage);
+        combinedOutput += `\n--- ${req.path} ERROR ---\n${errorMessage}\n`;
+        continue; // Skip processing this file
+      }
+
+      if (tokens > tokenLimit && !isCompacted) {
         console.warn(
-          `Warning: ${req.path} still exceeds token limit after compaction (${tokens} > ${tokenLimit})`,
+          `Warning: ${req.path} exceeds token limit (${tokens} > ${tokenLimit}) and could not be compacted.`,
         );
       }
 
