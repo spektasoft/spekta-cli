@@ -10,6 +10,7 @@ import { runReadInteractive } from "./commands/read-interactive";
 import { runRead } from "./commands/read";
 import { bootstrap } from "./config";
 import { parseFilePathWithRange } from "./utils/read-utils";
+import { runMcpServer } from "./mcp-server";
 
 interface CommandDefinition {
   name: string;
@@ -58,6 +59,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
   sync: {
     name: "Sync Free Models",
     run: runSync,
+  },
+  mcp: {
+    name: "Start the MCP Server",
+    run: runMcpServer,
   },
 };
 
