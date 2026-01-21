@@ -81,10 +81,18 @@ export async function runRead(
       }
 
       const ext = path.extname(req.path).slice(1) || "txt";
-      const rangeLabel = req.range
-        ? `${req.range.start}-${req.range.end === "$" ? total : req.range.end}`
-        : `1-${total}`;
+      const start = req.range
+        ? typeof req.range.start === "number"
+          ? req.range.start
+          : 1
+        : 1;
+      const end = req.range
+        ? req.range.end === "$"
+          ? total
+          : req.range.end
+        : total;
 
+      const rangeLabel = `${start}-${end} of ${total}`;
       const compactLabel = isCompacted ? " [COMPACTED OVERVIEW]" : "";
 
       combinedOutput += `#### ${req.path} (lines ${rangeLabel})${compactLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
