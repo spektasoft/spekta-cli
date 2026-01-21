@@ -14,7 +14,7 @@ export function test() {
 `.trim();
     const result = compactFile("test.ts", content);
     expect(result.isCompacted).toBe(true);
-    expect(result.content).toContain("// ... [5 lines collapsed]");
+    expect(result.content).toContain("// ... [lines 2-6 collapsed]");
   });
 
   it("should not compact a small function", () => {
@@ -44,6 +44,6 @@ class MyClass {
     const result = compactFile("test.ts", content);
     expect(result.isCompacted).toBe(true);
     // It should collapse MyClass since it's large enough (8 lines between braces)
-    expect(result.content).toContain("// ... [8 lines collapsed]");
+    expect(result.content).toContain("// ... [lines 2-9 collapsed]");
   });
 });

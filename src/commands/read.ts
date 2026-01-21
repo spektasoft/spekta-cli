@@ -30,7 +30,7 @@ export async function runRead(
       let isCompacted = false;
 
       if (tokens > compactThreshold) {
-        const result = compactFile(req.path, content);
+        const result = compactFile(req.path, content, req.range?.start || 1);
         if (result.isCompacted) {
           content = result.content;
           tokens = getTokenCount(content);
