@@ -74,7 +74,109 @@ class BraceCompactor implements CompactionStrategy {
   }
 }
 
-export const COMPACTORS: CompactionStrategy[] = [new BraceCompactor()];
+class IndentationCompactor implements CompactionStrategy {
+  canHandle(ext: string): boolean {
+    return [".py", ".yml", ".yaml"].includes(ext);
+  }
+
+  compact(lines: string[]): string {
+    const result: string[] = [];
+    let i = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      if (
+        trimmed.endsWith(":") &&
+        (trimmed.startsWith("def ") || trimmed.startsWith("class "))
+      ) {
+        result.push(line);
+        const baseIndent = line.match(/^\s*/)?.[0].length || 0;
+        let j = i + 1;
+        while (j < lines.length) {
+          const nextLine = lines[j];
+          if (nextLine.trim() === "") {
+            j++;
+            continue;
+          }
+          const nextIndent = nextLine.match(/^\s*/)?.[0].length || 0;
+          if (nextIndent <= baseIndent) break;
+          j++;
+        }
+
+        const collapsedCount = j - i - 1;
+        if (collapsedCount > 2) {
+          const indentStr = " ".repeat(baseIndent + 4);
+          result.push(`${indentStr}# ... [${collapsedCount} lines collapsed]`);
+          i = j - 1;
+        }
+      } else {
+        result.push(line);
+      }
+      i++;
+    }
+    return result.join("\n");
+  }
+}
+
+class TagCompactor implements CompactionStrategy {
+  canHandle(ext: string): boolean {
+    return [".html", ".blade.php", ".xml"].includes(ext);
+  }
+
+  compact(lines: string[]): string {
+    const result: string[] = [];
+    const directivePattern =
+      /^@(if|foreach|for|while|section|can|component|slot|push)/;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      if (
+        directivePattern.test(trimmed) ||
+        (trimmed.startsWith("<") &&
+          !trimmed.startsWith("</") &&
+          !trimmed.endsWith("/>"))
+      ) {
+        result.push(line);
+        // Basic heuristic: if the next line is deeply nested or just text, peek ahead
+        let j = i + 1;
+        if (
+          j < lines.length &&
+          !lines[j].trim().startsWith("<") &&
+          !lines[j].trim().startsWith("@")
+        ) {
+          // Find next structural line
+          while (
+            j < lines.length &&
+            !lines[j].trim().startsWith("<") &&
+            !lines[j].trim().startsWith("@") &&
+            !lines[j].trim().startsWith("</")
+          ) {
+            j++;
+          }
+          if (j - i > 3) {
+            result.push(
+              `${line.match(/^\s*/)?.[0] || ""}  {{-- ... [${j - i - 1} lines collapsed] --}}`,
+            );
+            i = j - 1;
+          }
+        }
+      } else {
+        result.push(line);
+      }
+    }
+    return result.join("\n");
+  }
+}
+
+export const COMPACTORS: CompactionStrategy[] = [
+  new BraceCompactor(),
+  new IndentationCompactor(),
+  new TagCompactor(),
+];
 
 export function compactFile(
   filePath: string,
