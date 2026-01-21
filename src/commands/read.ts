@@ -7,14 +7,9 @@ import { compactFile } from "../utils/compactor";
 
 const COMPACTION_ADVISORY = `
 #### COMPACTION NOTICE
-Parts of the following file(s) have been collapsed for brevity.
-Line numbers in comments (e.g., // ... [lines 20-60 collapsed]) are absolute.
-DO NOT perform line-offset calculations based on visual line counts.
-
-#### GUIDANCE FOR AGENT:
-If you need to see collapsed content, request specific line ranges.
-Targeted line range requests are NEVER compacted.
-Example: file.ts[20,60]
+Parts of these files are collapsed. Line numbers in comments are **absolute**; do not use visual line counts for offsets.
+ 
+**To expand:** Request specific line ranges (e.g., file.ts[20,60]). Targeted requests are never compacted.
 `.trim();
 
 export async function runRead(
@@ -98,13 +93,14 @@ export async function runRead(
       combinedOutput += `#### ${req.path} (lines ${rangeLabel})${compactLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
     }
 
+    const finalContent = anyCompacted
+      ? `${COMPACTION_ADVISORY}\n\n${combinedOutput}`
+      : combinedOutput;
+
     if (options.save) {
-      const finalContent = anyCompacted
-        ? `${COMPACTION_ADVISORY}\n\n${combinedOutput}`
-        : combinedOutput;
       await processOutput(finalContent, "spekta-read");
     } else {
-      process.stdout.write(combinedOutput);
+      process.stdout.write(finalContent);
     }
   } catch (error: any) {
     console.error(`Error: ${error.message}`);
