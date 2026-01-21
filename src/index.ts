@@ -3,14 +3,14 @@ import { runCommit } from "./commands/commit";
 import { runCommitRange } from "./commands/commit-range";
 import { runPlan } from "./commands/plan";
 import { runPr } from "./commands/pr";
+import { runRead } from "./commands/read";
+import { runReadInteractive } from "./commands/read-interactive";
 import { runReview } from "./commands/review";
 import { runSummarize } from "./commands/summarize";
 import { runSync } from "./commands/sync";
-import { runReadInteractive } from "./commands/read-interactive";
-import { runRead } from "./commands/read";
 import { bootstrap } from "./config";
-import { parseFilePathWithRange } from "./utils/read-utils";
 import { runMcpServer } from "./mcp-server";
+import { parseFilePathWithRange } from "./utils/read-utils";
 
 interface CommandDefinition {
   name: string;
@@ -79,15 +79,16 @@ async function main() {
   }
 
   // 2. Fallback to Interactive Menu
+  const choices = Object.entries(COMMANDS)
+    .filter(([key]) => key !== "mcp") // Hide from interactive menu
+    .map(([key, def]) => ({
+      name: def.name,
+      value: key,
+    }));
+
   const action = await select({
     message: "What would you like to do?",
-    choices: [
-      ...Object.entries(COMMANDS).map(([value, def]) => ({
-        name: def.name,
-        value: value,
-      })),
-      { name: "Exit", value: "exit" },
-    ],
+    choices: [...choices, { name: "Exit", value: "exit" }],
   });
 
   if (action !== "exit" && COMMANDS[action]) {

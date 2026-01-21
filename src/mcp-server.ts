@@ -1,19 +1,19 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { Server } from "@modelcontextprotocol/sdk/server";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { getReadContent } from "./commands/read";
-import { parseFilePathWithRange } from "./utils/read-utils";
 import { bootstrap } from "./config";
+import { parseFilePathWithRange } from "./utils/read-utils";
 
 export async function runMcpServer() {
   await bootstrap();
 
   const server = new Server(
     {
-      name: "spekta",
+      name: "spekta-mcp-server",
       version: "1.0.0",
     },
     {
@@ -72,6 +72,16 @@ export async function runMcpServer() {
   });
 
   const transport = new StdioServerTransport();
+
+  const cleanup = async () => {
+    process.stderr.write("Shutting down MCP server...\n");
+    await server.close();
+    process.exit(0);
+  };
+
+  process.on("SIGINT", cleanup);
+  process.on("SIGTERM", cleanup);
+
   await server.connect(transport);
   process.stderr.write("Spekta MCP Server running on stdio\n");
 }
