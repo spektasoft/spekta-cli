@@ -46,4 +46,23 @@ class MyClass {
     // It should collapse MyClass since it's large enough (8 lines between braces)
     expect(result.content).toContain("// ... [lines 2-9 collapsed]");
   });
+
+  it("should handle absolute line numbering correctly when offset is provided", () => {
+    const content = `function test() {\n  console.log(1);\n  console.log(2);\n}`;
+    const result = compactFile("test.ts", content, 100);
+
+    // Line 100: function test() {
+    // Line 101:   console.log(1);
+    // Line 102:   console.log(2);
+    // Line 103: }
+    // Collapsed: 101-102
+    expect(result.content).toContain("lines 101-102");
+  });
+
+  it("should collapse nested blocks aggressively", () => {
+    const content = `if (true) {\n  if (false) {\n    console.log(1);\n    console.log(2);\n  }\n}`;
+    const result = compactFile("test.ts", content, 1);
+    // Should collapse the outer if block
+    expect(result.content).toContain("lines 2-5");
+  });
 });
