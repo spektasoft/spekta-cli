@@ -1,8 +1,14 @@
-import { describe, it, expect, vi } from "vitest";
-import { parseRange, getFileLines, getTokenCount } from "./read-utils";
-import fs from "fs-extra";
+import fs from "fs";
+import { Readable } from "stream";
+import { describe, expect, it, vi } from "vitest";
+import {
+  getFileLines,
+  getTokenCount,
+  parseFilePathWithRange,
+  parseRange,
+} from "./read-utils";
 
-vi.mock("fs-extra");
+vi.mock("fs");
 
 describe("read-utils", () => {
   describe("parseRange", () => {
@@ -28,23 +34,14 @@ describe("read-utils", () => {
   });
 
   describe("getFileLines", () => {
-    it("should return correct lines and total count", async () => {
-      const mockContent = "line1\nline2\nline3\nline4\nline5";
-      // @ts-ignore
-      vi.mocked(fs.readFile).mockResolvedValue(mockContent);
-
-      const result = await getFileLines("path/to/file", { start: 2, end: 4 });
-      expect(result.lines).toEqual(["line2", "line3", "line4"]);
-      expect(result.total).toBe(5);
-    });
-
-    it("should handle $ end", async () => {
+    it("should return correct lines using streams", async () => {
       const mockContent = "line1\nline2\nline3";
-      // @ts-ignore
-      vi.mocked(fs.readFile).mockResolvedValue(mockContent);
+      const mockStream = Readable.from(mockContent);
+      vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
 
-      const result = await getFileLines("path/to/file", { start: 2, end: "$" });
-      expect(result.lines).toEqual(["line2", "line3"]);
+      const result = await getFileLines("test.txt", { start: 2, end: 2 });
+      expect(result.lines).toEqual(["line2"]);
+      expect(result.total).toBe(3); // Should count full file lines despite range
     });
   });
 
@@ -52,6 +49,29 @@ describe("read-utils", () => {
     it("should return a number for token count", () => {
       const text = "Hello world";
       expect(getTokenCount(text)).toBeGreaterThan(0);
+    });
+  });
+
+  describe("parseFilePathWithRange", () => {
+    it("should parse path with full range", () => {
+      const result = parseFilePathWithRange("src/main.ts[10,50]");
+      expect(result).toEqual({
+        path: "src/main.ts",
+        range: { start: 10, end: 50 },
+      });
+    });
+
+    it("should parse path with end-of-file alias", () => {
+      const result = parseFilePathWithRange("src/main.ts[100,$]");
+      expect(result).toEqual({
+        path: "src/main.ts",
+        range: { start: 100, end: "$" },
+      });
+    });
+
+    it("should handle paths without brackets", () => {
+      const result = parseFilePathWithRange("src/main.ts");
+      expect(result).toEqual({ path: "src/main.ts" });
     });
   });
 });

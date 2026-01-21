@@ -1,5 +1,6 @@
+import { createReadStream } from "fs";
 import { encode } from "gpt-tokenizer";
-import fs from "fs-extra";
+import readline from "readline";
 
 export interface LineRange {
   start: number;
@@ -56,17 +57,25 @@ export const getFileLines = async (
   filePath: string,
   range: LineRange,
 ): Promise<{ lines: string[]; total: number }> => {
-  const content = await fs.readFile(filePath, "utf-8");
-  const allLines = content.split("\n");
-  const total = allLines.length;
+  const fileStream = createReadStream(filePath);
+  const rl = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity,
+  });
 
-  const startIdx = Math.max(0, range.start - 1);
-  const endIdx = range.end === "$" ? total : Math.min(total, range.end);
+  const lines: string[] = [];
+  let currentLine = 0;
+  const startLine = range.start;
+  const endLine = range.end === "$" ? Infinity : range.end;
 
-  return {
-    lines: allLines.slice(startIdx, endIdx),
-    total,
-  };
+  for await (const line of rl) {
+    currentLine++;
+    if (currentLine >= startLine && currentLine <= endLine) {
+      lines.push(line);
+    }
+  }
+
+  return { lines, total: currentLine };
 };
 
 export const getTokenCount = (text: string): number => {
