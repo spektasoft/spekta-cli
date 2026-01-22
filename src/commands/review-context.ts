@@ -4,7 +4,8 @@ import { encode } from "gpt-tokenizer";
 import isBinaryPath from "is-binary-path";
 import path from "path";
 import { getPlansDir } from "../fs-manager";
-import { searchableSelect } from "../ui";
+import { NAV_BACK, searchableSelect } from "../ui";
+import { RESTRICTED_FILES } from "../utils/security";
 
 export interface SelectedItem {
   type: "plan" | "file";
@@ -85,10 +86,17 @@ export async function collectSupplementalContext(): Promise<string> {
         continue;
       }
 
+      const choices = [
+        { name: "[Back]", value: NAV_BACK },
+        ...availablePlans.map((f) => ({ name: f, value: f })),
+      ];
+
       const selectedPlan = await searchableSelect<string>(
         "Select an implementation plan:",
-        availablePlans.map((f) => ({ name: f, value: f })),
+        choices,
       );
+
+      if (selectedPlan === NAV_BACK) continue;
 
       const planPath = path.join(plansDir, selectedPlan);
       const content = await fs.readFile(planPath, "utf-8");
@@ -130,17 +138,29 @@ export async function collectSupplementalContext(): Promise<string> {
       totalTokenCount += tokenCount;
       console.log(`Added plan: ${selectedPlan} (${tokenCount} tokens)`);
     } else if (action === "file") {
-      const filePath = await input({
-        message: "Enter file path to include:",
+      const filePathInput = await input({
+        message: "Enter file path to include (c to cancel):",
       });
 
-      if (!filePath.trim()) {
-        console.log("No path entered. Returning to menu.");
+      const exitKeywords = ["c", "q", "back", "cancel"];
+      if (
+        !filePathInput.trim() ||
+        exitKeywords.includes(filePathInput.toLowerCase())
+      ) {
+        console.log("Returning to menu.");
         continue;
       }
 
-      const trimmedPath = filePath.trim();
+      const trimmedPath = filePathInput.trim();
       const absolutePath = path.resolve(process.cwd(), trimmedPath);
+
+      // Check for restricted files
+      if (RESTRICTED_FILES.includes(path.basename(trimmedPath))) {
+        console.error(
+          `Access Denied: ${trimmedPath} is a restricted system file.`,
+        );
+        continue;
+      }
 
       // Check for duplicate
       if (
@@ -178,7 +198,7 @@ export async function collectSupplementalContext(): Promise<string> {
       // Check for quadruple backticks
       if (content.includes("````")) {
         console.warn(
-          `Warning: File [${filePath}] contains quadruple backticks and has been excluded to prevent formatting errors.`,
+          `Warning: File [${filePathInput}] contains quadruple backticks and has been excluded to prevent formatting errors.`,
         );
         continue;
       }

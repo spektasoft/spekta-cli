@@ -4,7 +4,7 @@ import ignore from "ignore";
 import path from "path";
 import { getIgnorePatterns } from "../config";
 
-const RESTRICTED_FILES = [".env", ".gitignore", ".spektaignore"];
+export const RESTRICTED_FILES = [".env", ".gitignore", ".spektaignore"];
 const MAX_FILE_SIZE_MB = 10;
 
 export const validatePathAccess = async (filePath: string): Promise<void> => {

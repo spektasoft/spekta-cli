@@ -2,8 +2,11 @@ import { checkbox, input, select } from "@inquirer/prompts";
 import { execa } from "execa";
 import ignore from "ignore";
 import autocomplete from "inquirer-autocomplete-standalone";
+import path from "path";
 import { getIgnorePatterns } from "../config";
-import { FileRequest, parseRange } from "../utils/read-utils";
+import { NAV_BACK, isCancel } from "../ui";
+import { FileRequest } from "../utils/read-utils";
+import { RESTRICTED_FILES } from "../utils/security";
 import { runRead } from "./read";
 
 export async function runReadInteractive() {
@@ -17,7 +20,13 @@ export async function runReadInteractive() {
 
   const spektaIgnores = await getIgnorePatterns();
   const ig = ignore().add(spektaIgnores);
-  const files = allFiles.filter((f) => !ig.ignores(f));
+
+  // Filter files by gitignore, spektaignore, and restricted system files
+  const files = allFiles.filter((f) => {
+    const isIgnored = ig.ignores(f);
+    const isRestricted = RESTRICTED_FILES.includes(path.basename(f));
+    return !isIgnored && !isRestricted;
+  });
 
   const selectedRequests: FileRequest[] = [];
 
@@ -54,20 +63,36 @@ export async function runReadInteractive() {
         message: "Select a file:",
         source: async (input) => {
           const term = input?.toLowerCase() || "";
-          return files
+          const filtered = files
             .filter((f) => f.toLowerCase().includes(term))
             .map((f) => ({ value: f, name: f }));
+
+          return [{ name: "[Back]", value: NAV_BACK }, ...filtered];
         },
       });
+      if (filePath === NAV_BACK) continue;
 
-      const rangeStr = await input({
-        message: "Enter range (e.g., 1,100) or leave blank for full/overview:",
-        default: "",
-      });
+      const getLineInput = async (msg: string, def: string) => {
+        const val = await input({ message: msg, default: def });
+        if (isCancel(val)) return NAV_BACK;
+        return val;
+      };
+
+      const startInput = await getLineInput("Start line (c to cancel):", "1");
+      if (startInput === NAV_BACK) continue;
+
+      const endInput = await getLineInput("End line (c to cancel):", "$");
+      if (endInput === NAV_BACK) continue;
+
+      const start = parseInt(startInput, 10);
+      const end = endInput === "$" ? "$" : parseInt(endInput, 10);
 
       selectedRequests.push({
         path: filePath,
-        range: rangeStr ? parseRange(rangeStr) : undefined,
+        range: {
+          start: isNaN(start) ? 1 : start,
+          end: isNaN(end as number) && end !== "$" ? "$" : end,
+        },
       });
     }
 

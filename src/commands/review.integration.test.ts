@@ -4,6 +4,24 @@ import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Consolidated mocks for UI and third-party dependencies
+vi.mock("inquirer-autocomplete-standalone", () => ({
+  default: vi.fn(),
+}));
+
+vi.mock("../ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../ui")>();
+  return {
+    ...actual,
+    searchableSelect: vi.fn(),
+    confirmCommit: vi.fn(),
+    promptProviderSelection: vi.fn(),
+  };
+});
+
+// Import the mocked functions we need to control in tests
+import { searchableSelect } from "../ui";
+
 // Helper to mock all prompts consistently
 function mockAllPrompts(
   overrides?: Partial<{
@@ -11,8 +29,11 @@ function mockAllPrompts(
     input: any[];
     confirm: any[];
     checkbox: any[];
+    searchable: any[];
+    autocomplete: any[];
   }>,
 ) {
+  // Mock standard prompts
   vi.doMock("@inquirer/prompts", () => ({
     select: vi
       .fn()
@@ -35,6 +56,13 @@ function mockAllPrompts(
         Promise.resolve(overrides?.checkbox?.shift() ?? []),
       ),
   }));
+
+  // Mock UI searchableSelect
+  if (overrides?.searchable) {
+    vi.mocked(searchableSelect).mockImplementation(() =>
+      Promise.resolve(overrides.searchable?.shift()),
+    );
+  }
 }
 
 describe("collectSupplementalContext integration", () => {
@@ -70,12 +98,8 @@ describe("collectSupplementalContext integration", () => {
 
     mockAllPrompts({
       select: ["plan", "finalize"],
-      confirm: [true],
+      searchable: ["test-plan.md"],
     });
-
-    vi.doMock("../ui", () => ({
-      searchableSelect: vi.fn().mockResolvedValue("test-plan.md"),
-    }));
 
     const { collectSupplementalContext: mockedCollect } =
       await import("./review-context");
@@ -94,10 +118,6 @@ describe("collectSupplementalContext integration", () => {
     mockAllPrompts({
       select: ["finalize"],
     });
-
-    vi.doMock("../ui", () => ({
-      searchableSelect: vi.fn(),
-    }));
 
     const { collectSupplementalContext: mockedCollect } =
       await import("./review-context");
@@ -120,15 +140,8 @@ describe("collectSupplementalContext integration", () => {
 
     mockAllPrompts({
       select: ["plan", "plan", "finalize"],
-      confirm: [true, true],
+      searchable: ["plan1.md", "plan2.md"],
     });
-
-    vi.doMock("../ui", () => ({
-      searchableSelect: vi
-        .fn()
-        .mockResolvedValueOnce("plan1.md")
-        .mockResolvedValueOnce("plan2.md"),
-    }));
 
     const { collectSupplementalContext: mockedCollect } =
       await import("./review-context");
@@ -153,10 +166,6 @@ describe("collectSupplementalContext integration", () => {
       input: [testFilePath],
     });
 
-    vi.doMock("../ui", () => ({
-      searchableSelect: vi.fn(),
-    }));
-
     const { collectSupplementalContext: mockedCollect } =
       await import("./review-context");
 
@@ -175,10 +184,6 @@ describe("collectSupplementalContext integration", () => {
       select: ["file", "finalize"],
       input: [badFilePath],
     });
-
-    vi.doMock("../ui", () => ({
-      searchableSelect: vi.fn(),
-    }));
 
     const { collectSupplementalContext: mockedCollect } =
       await import("./review-context");
@@ -216,24 +221,10 @@ describe("review command prompt integrity", () => {
       getPlansDir: mockGetPlansDir,
     }));
 
-    // Manual mock here
-    const mockSelect = vi
-      .fn()
-      .mockResolvedValueOnce("plan")
-      .mockResolvedValueOnce("finalize");
-
-    const mockSearchableSelect = vi.fn().mockResolvedValue("test-plan.md");
-
-    vi.doMock("@inquirer/prompts", () => ({
-      select: mockSelect,
-      input: vi.fn(),
-      checkbox: vi.fn(),
-      confirm: vi.fn(),
-    }));
-
-    vi.doMock("../ui", () => ({
-      searchableSelect: mockSearchableSelect,
-    }));
+    mockAllPrompts({
+      select: ["plan", "finalize"],
+      searchable: ["test-plan.md"],
+    });
 
     const { collectSupplementalContext: mockedCollect } =
       await import("./review-context");
@@ -251,10 +242,6 @@ describe("review command prompt integrity", () => {
     mockAllPrompts({
       select: ["finalize"],
     });
-
-    vi.doMock("../ui", () => ({
-      searchableSelect: vi.fn(),
-    }));
 
     const { collectSupplementalContext: mockedCollect } =
       await import("./review-context");

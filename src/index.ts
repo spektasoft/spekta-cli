@@ -1,4 +1,4 @@
-import { select } from "@inquirer/prompts";
+import { searchableSelect } from "./ui";
 import { runCommit } from "./commands/commit";
 import { runCommitRange } from "./commands/commit-range";
 import { runPlan } from "./commands/plan";
@@ -86,10 +86,10 @@ async function main() {
       value: key,
     }));
 
-  const action = await select({
-    message: "What would you like to do?",
-    choices: [...choices, { name: "Exit", value: "exit" }],
-  });
+  const action = await searchableSelect<string>("What would you like to do?", [
+    ...choices,
+    { name: "Exit", value: "exit" },
+  ]);
 
   if (action !== "exit" && COMMANDS[action]) {
     await COMMANDS[action].run();
