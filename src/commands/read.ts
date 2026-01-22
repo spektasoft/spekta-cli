@@ -60,7 +60,7 @@ export async function getReadContent(requests: FileRequest[]): Promise<string> {
     tokens = getTokenCount(content);
 
     if (isRangeRequest && tokens > tokenLimit) {
-      const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}). Please request a smaller range.`;
+      const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}). This should have been caught during interactive selection.`;
       Logger.error(errorMessage);
       combinedOutput += `\n--- ${req.path} ERROR ---\nError: ${errorMessage}\n`;
       continue;
