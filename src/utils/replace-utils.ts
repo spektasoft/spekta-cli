@@ -22,14 +22,6 @@ const SEPARATOR = "=======";
 const REPLACE_MARKER = ">>>>>>> REPLACE";
 
 /**
- * Checks if the file content contains existing Git conflict markers.
- */
-export const containsConflictMarkers = (content: string): boolean => {
-  const markers = ["<<<<<<< ", "=======", ">>>>>>> "];
-  return markers.some((m) => content.includes(m));
-};
-
-/**
  * Detects the line ending used in the content.
  */
 export const detectLineEnding = (content: string): string => {
@@ -244,13 +236,6 @@ export const applyReplacements = async (
   totalLines: number;
 }> => {
   let fileContent = await fs.readFile(filePath, "utf-8");
-
-  // Check for existing Git conflict markers
-  if (containsConflictMarkers(fileContent)) {
-    throw new Error(
-      "File contains existing Git conflict markers. Resolve conflicts before applying replacements.",
-    );
-  }
 
   const lineEnding = detectLineEnding(fileContent);
   const appliedBlocks: AppliedBlock[] = [];

@@ -4,7 +4,6 @@ import path from "path";
 import { Logger } from "../utils/logger";
 import {
   applyReplacements,
-  containsConflictMarkers,
   parseReplaceBlocks,
   ReplaceRequest,
 } from "../utils/replace-utils";
@@ -122,13 +121,6 @@ export async function runReplace(args: string[] = []): Promise<void> {
 
     // Step 3: Check for conflict markers early
     const originalContent = await fs.readFile(request.path, "utf-8");
-    if (containsConflictMarkers(originalContent)) {
-      Logger.error(
-        `File ${request.path} contains Git conflict markers. Resolve them before editing.`,
-      );
-      process.exitCode = 1;
-      return;
-    }
 
     // Step 2: Get initial hash for stale-write check
     const initialHash = getFileHash(originalContent);
