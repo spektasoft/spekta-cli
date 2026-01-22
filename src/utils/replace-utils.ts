@@ -27,6 +27,22 @@ export const containsConflictMarkers = (content: string): boolean => {
 };
 
 /**
+ * Detects the line ending used in the content.
+ */
+export const detectLineEnding = (content: string): string => {
+  const temp = content.indexOf("\r\n");
+  if (temp !== -1) return "\r\n";
+  return "\n";
+};
+
+/**
+ * Reconstructs the file while preserving original line endings.
+ */
+const reconstructFile = (lines: string[], lineEnding: string): string => {
+  return lines.join(lineEnding);
+};
+
+/**
  * Normalizes the end index for a range.
  */
 export const getEndIndex = (end: number | "$", totalLines: number): number => {
@@ -127,12 +143,14 @@ export const getFileLinesForEdit = async (
   range: LineRange,
 ): Promise<{ lines: string[]; totalLines: number }> => {
   const fileContent = await fs.readFile(filePath, "utf-8");
-  
+
   // Check for existing Git conflict markers
   if (containsConflictMarkers(fileContent)) {
-    throw new Error("File contains existing Git conflict markers. Resolve conflicts before reading file lines for edit.");
+    throw new Error(
+      "File contains existing Git conflict markers. Resolve conflicts before reading file lines for edit.",
+    );
   }
-  
+
   const fileStream = createReadStream(filePath, { encoding: "utf-8" });
   const rl = readline.createInterface({
     input: fileStream,
@@ -176,26 +194,32 @@ export const applyReplacements = async (
   blocks: ReplaceBlock[],
 ): Promise<{ content: string; appliedCount: number }> => {
   const fileContent = await fs.readFile(filePath, "utf-8");
-  
+
   // Check for existing Git conflict markers
   if (containsConflictMarkers(fileContent)) {
-    throw new Error("File contains existing Git conflict markers. Resolve conflicts before applying replacements.");
+    throw new Error(
+      "File contains existing Git conflict markers. Resolve conflicts before applying replacements.",
+    );
   }
-  
-  const allLines = fileContent.split("\n");
+
+  const lineEnding = detectLineEnding(fileContent);
+  const allLines = fileContent.split(lineEnding);
 
   const startIdx = range.start - 1;
   const endIdx = getEndIndex(range.end, allLines.length);
 
   // Get the range content
-  const rangeContent = allLines.slice(startIdx, endIdx).join("\n");
+  const rangeContent = allLines.slice(startIdx, endIdx).join(lineEnding);
   let modifiedRange = rangeContent;
   let appliedCount = 0;
 
   for (const block of blocks) {
+    const search = block.search.replace(/\n/g, lineEnding);
+    const replace = block.replace.replace(/\n/g, lineEnding);
+
     // Try exact match first
-    if (modifiedRange.includes(block.search)) {
-      modifiedRange = modifiedRange.replace(block.search, block.replace);
+    if (modifiedRange.includes(search)) {
+      modifiedRange = modifiedRange.replace(search, replace);
       appliedCount++;
     } else {
       // If exact match fails, try normalized match
@@ -225,7 +249,7 @@ export const applyReplacements = async (
       );
 
       if (actualMatch) {
-        modifiedRange = modifiedRange.replace(actualMatch, block.replace);
+        modifiedRange = modifiedRange.replace(actualMatch, replace);
         appliedCount++;
       } else {
         throw new Error(
@@ -238,12 +262,12 @@ export const applyReplacements = async (
   // Reconstruct full file
   const updatedLines = [
     ...allLines.slice(0, startIdx),
-    ...modifiedRange.split("\n"),
+    ...modifiedRange.split(lineEnding),
     ...allLines.slice(endIdx),
   ];
 
   return {
-    content: updatedLines.join("\n"),
+    content: reconstructFile(updatedLines, lineEnding),
     appliedCount,
   };
 };

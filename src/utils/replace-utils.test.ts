@@ -4,7 +4,18 @@ import {
   normalizeWhitespace,
   parseReplaceBlocks,
   containsConflictMarkers,
+  detectLineEnding,
 } from "./replace-utils";
+
+describe("detectLineEnding", () => {
+  it("should detect CRLF line endings", () => {
+    expect(detectLineEnding("line1\r\nline2")).toBe("\r\n");
+  });
+
+  it("should detect LF line endings", () => {
+    expect(detectLineEnding("line1\nline2")).toBe("\n");
+  });
+});
 
 describe("normalizeWhitespace", () => {
   it("should normalize tabs to spaces", () => {
