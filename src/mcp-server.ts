@@ -41,6 +41,74 @@ export async function runMcpServer() {
     },
   );
 
+  server.registerTool(
+    "replace",
+    {
+      description:
+        "Replace code in a file using SEARCH/REPLACE blocks. File must be git-tracked. " +
+        "Format: path with range [start,end], then SEARCH/REPLACE block(s). " +
+        "Example: 'src/file.ts[10,50]' with blocks in content parameter.",
+      inputSchema: {
+        path: z
+          .string()
+          .describe("File path with range, e.g., 'src/main.ts[10,50]'"),
+        blocks: z
+          .string()
+          .describe(
+            "SEARCH/REPLACE blocks. Format:\n" +
+              "<<<<<<< SEARCH\n[exact code to find]\n=======\n[replacement code]\n>>>>>>> REPLACE",
+          ),
+      },
+    },
+    async ({ path: pathWithRange, blocks }) => {
+      try {
+        const { getReplaceContent } = await import("./commands/replace.js");
+        const { parseFilePathWithRange } =
+          await import("./utils/read-utils.js");
+
+        const parsed = parseFilePathWithRange(pathWithRange);
+
+        if (!parsed.range) {
+          throw new Error(
+            "Range is required for replace operations. Use format: file.ts[start,end]",
+          );
+        }
+
+        const request = {
+          path: parsed.path,
+          range: parsed.range,
+          blocks: [], // Will be processed by getReplaceContent
+        };
+
+        const result = await getReplaceContent(request, blocks);
+
+        // Write the updated content
+        const fs = await import("fs-extra");
+        await fs.writeFile(request.path, result.content, "utf-8");
+
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Successfully applied ${result.appliedCount} replacement(s) to ${request.path}`,
+            },
+          ],
+        };
+      } catch (error: any) {
+        Logger.error(`MCP Replace Tool Error: ${error.message}`);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Replace Error: ${error.message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    },
+  );
+
   const transport = new StdioServerTransport();
 
   const cleanup = async () => {
