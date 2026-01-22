@@ -119,13 +119,11 @@ export async function runReplace(args: string[] = []): Promise<void> {
       blocks: [], // Will be parsed in getReplaceContent
     };
 
-    // Step 3: Check for conflict markers early
+    // Step 2: Read file and get initial hash for stale-write check
     const originalContent = await fs.readFile(request.path, "utf-8");
-
-    // Step 2: Get initial hash for stale-write check
     const initialHash = getFileHash(originalContent);
 
-    // Execute replacement
+    // Step 3: Apply replacements
     const { content, message, appliedCount } = await getReplaceContent(
       request,
       blocksInput,

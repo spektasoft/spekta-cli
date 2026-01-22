@@ -4,7 +4,6 @@ import path from "path";
 import os from "os";
 import {
   applyReplacements,
-  containsConflictMarkers,
   detectLineEnding,
   findUniqueMatch,
   getLineNumberFromOffset,
@@ -164,22 +163,5 @@ new2
     expect(() => parseReplaceBlocks("invalid")).toThrow(
       "No SEARCH/REPLACE blocks found",
     );
-  });
-});
-
-describe("containsConflictMarkers", () => {
-  it("should detect git conflict markers", () => {
-    const conflict = "<<<<<<< HEAD\nline1\n=======\nline2\n>>>>>>> main";
-    expect(containsConflictMarkers(conflict)).toBe(true);
-  });
-
-  it("should return false for content without conflict markers", () => {
-    const noConflict = "normal code\nwithout\nconflicts";
-    expect(containsConflictMarkers(noConflict)).toBe(false);
-  });
-
-  it("should detect partial conflict markers", () => {
-    const partialConflict = "some code\n<<<<<<< branch\nmore code";
-    expect(containsConflictMarkers(partialConflict)).toBe(true);
   });
 });
