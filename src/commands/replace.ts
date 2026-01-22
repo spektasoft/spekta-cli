@@ -74,8 +74,21 @@ export async function getReplaceContent(
       totalLines: result.totalLines,
     };
   } catch (error: any) {
-    // Graceful error reporting without block dumps
-    throw new Error(`Action Failed: ${error.message}`);
+    let cleanMessage = error.message;
+
+    // Truncate or simplify common matching errors
+    if (cleanMessage.includes("search block was not found")) {
+      cleanMessage = `The SEARCH block could not be found in ${request.path}. Ensure the search text matches the file content exactly, including indentation.`;
+    } else if (cleanMessage.includes("Ambiguous match")) {
+      cleanMessage = `Multiple occurrences of the SEARCH block were found in ${request.path}. Please provide more context lines to ensure a unique match.`;
+    } else if (cleanMessage.includes("No SEARCH/REPLACE blocks found")) {
+      cleanMessage =
+        "No valid SEARCH/REPLACE blocks were found. Make sure to use the correct format with <<<<<<< SEARCH, =======, and >>>>>>> REPLACE markers.";
+    } else if (cleanMessage.includes("Invalid format")) {
+      cleanMessage = `Invalid format detected: ${error.message}`;
+    }
+
+    throw new Error(cleanMessage);
   }
 }
 
