@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import fs from "fs-extra";
 import { z } from "zod";
 import { getReadContent } from "./commands/read";
+import { getReplaceContent } from "./commands/replace";
 import { bootstrap } from "./config";
 import { Logger } from "./utils/logger";
 import { parseFilePathWithRange } from "./utils/read-utils";
@@ -36,6 +38,40 @@ export async function runMcpServer() {
         return {
           content: [{ type: "text", text: `Access Error: ${error.message}` }],
           isError: true,
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "replace",
+    {
+      description: "Replace code in a file.",
+      inputSchema: {
+        path: z.string().describe("The relative path to the file"),
+        blocks: z
+          .string()
+          .describe(
+            "SEARCH/REPLACE blocks (<<<<<<< SEARCH\n{old_string}\n=======\n{new_string}\n>>>>>>> REPLACE). Provide significant context for precise targeting.",
+          ),
+      },
+    },
+    async ({ path, blocks }) => {
+      try {
+        const request = { path, blocks: [] };
+        const { content, message } = await getReplaceContent(request, blocks);
+
+        await fs.writeFile(path, content, "utf-8");
+
+        return {
+          content: [{ type: "text", text: message }],
+        };
+      } catch (error: any) {
+        return {
+          isError: true,
+          content: [
+            { type: "text", text: `Replacement failed: ${error.message}` },
+          ],
         };
       }
     },

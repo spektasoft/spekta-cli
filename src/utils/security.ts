@@ -54,3 +54,30 @@ export const validatePathAccess = async (filePath: string): Promise<void> => {
     );
   }
 };
+
+/**
+ * Validates that a file is tracked by git.
+ * Edit operations should only be performed on tracked files to ensure safety.
+ */
+export const validateGitTracked = async (filePath: string): Promise<void> => {
+  const absolutePath = path.resolve(filePath);
+  const relativePath = path.relative(process.cwd(), absolutePath);
+
+  try {
+    // git ls-files --error-unmatch returns exit code 0 if file is tracked
+    await execa("git", ["ls-files", "--error-unmatch", relativePath]);
+  } catch (error: any) {
+    throw new Error(
+      `Edit Denied: ${filePath} is not tracked by git. Only tracked files can be edited.`,
+    );
+  }
+};
+
+/**
+ * Combined validation for edit operations.
+ * Ensures file passes both access and git tracking checks.
+ */
+export const validateEditAccess = async (filePath: string): Promise<void> => {
+  await validatePathAccess(filePath);
+  await validateGitTracked(filePath);
+};

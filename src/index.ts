@@ -8,6 +8,7 @@ import { runReadInteractive } from "./commands/read-interactive";
 import { runReview } from "./commands/review";
 import { runSummarize } from "./commands/summarize";
 import { runSync } from "./commands/sync";
+import { runReplace } from "./commands/replace";
 import { bootstrap } from "./config";
 import { runMcpServer } from "./mcp-server";
 import { parseFilePathWithRange } from "./utils/read-utils";
@@ -60,6 +61,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
     name: "Sync Free Models",
     run: runSync,
   },
+  replace: {
+    name: "Replace Code in File",
+    run: runReplace,
+  },
   mcp: {
     name: "Start the MCP Server",
     run: runMcpServer,
@@ -80,7 +85,7 @@ async function main() {
 
   // 2. Fallback to Interactive Menu
   const choices = Object.entries(COMMANDS)
-    .filter(([key]) => key !== "mcp") // Hide from interactive menu
+    .filter(([key]) => key !== "mcp" && key !== "replace") // Hide from interactive menu
     .map(([key, def]) => ({
       name: def.name,
       value: key,
