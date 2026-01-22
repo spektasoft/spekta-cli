@@ -19,6 +19,21 @@ const SEPARATOR = "=======";
 const REPLACE_MARKER = ">>>>>>> REPLACE";
 
 /**
+ * Checks if the file content contains existing Git conflict markers.
+ */
+export const containsConflictMarkers = (content: string): boolean => {
+  const markers = ["<<<<<<< ", "=======", ">>>>>>> "];
+  return markers.some((m) => content.includes(m));
+};
+
+/**
+ * Normalizes the end index for a range.
+ */
+export const getEndIndex = (end: number | "$", totalLines: number): number => {
+  return end === "$" ? totalLines : end;
+};
+
+/**
  * Normalizes whitespace for comparison while preserving content.
  * - Converts CRLF to LF
  * - Converts tabs to spaces (2 spaces per tab)
@@ -111,7 +126,14 @@ export const getFileLinesForEdit = async (
   filePath: string,
   range: LineRange,
 ): Promise<{ lines: string[]; totalLines: number }> => {
-  const fileStream = createReadStream(filePath);
+  const fileContent = await fs.readFile(filePath, "utf-8");
+  
+  // Check for existing Git conflict markers
+  if (containsConflictMarkers(fileContent)) {
+    throw new Error("File contains existing Git conflict markers. Resolve conflicts before reading file lines for edit.");
+  }
+  
+  const fileStream = createReadStream(filePath, { encoding: "utf-8" });
   const rl = readline.createInterface({
     input: fileStream,
     crlfDelay: Infinity,
@@ -126,9 +148,7 @@ export const getFileLinesForEdit = async (
   }
 
   const startLine = range.start;
-  const endLine = (range.end === "$" ? allLines.length : range.end) as
-    | number
-    | "$";
+  const endLine = getEndIndex(range.end, allLines.length);
 
   if (startLine < 1 || startLine > allLines.length) {
     throw new Error(
@@ -136,18 +156,14 @@ export const getFileLinesForEdit = async (
     );
   }
 
-  if (endLine !== "$" && endLine < startLine) {
+  if (endLine < startLine) {
     throw new Error(
       `Invalid range: end line ${endLine} is before start line ${startLine}`,
     );
   }
 
-  if (endLine !== "$") {
-    const lines = allLines.slice(startLine - 1, endLine);
-    return { lines, totalLines: allLines.length };
-  }
-
-  throw new Error("Unsupported operation");
+  const lines = allLines.slice(startLine - 1, endLine);
+  return { lines, totalLines: allLines.length };
 };
 
 /**
@@ -160,10 +176,16 @@ export const applyReplacements = async (
   blocks: ReplaceBlock[],
 ): Promise<{ content: string; appliedCount: number }> => {
   const fileContent = await fs.readFile(filePath, "utf-8");
+  
+  // Check for existing Git conflict markers
+  if (containsConflictMarkers(fileContent)) {
+    throw new Error("File contains existing Git conflict markers. Resolve conflicts before applying replacements.");
+  }
+  
   const allLines = fileContent.split("\n");
 
   const startIdx = range.start - 1;
-  const endIdx = range.end === "$" ? allLines.length : range.end;
+  const endIdx = getEndIndex(range.end, allLines.length);
 
   // Get the range content
   const rangeContent = allLines.slice(startIdx, endIdx).join("\n");

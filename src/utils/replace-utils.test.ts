@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { normalizeWhitespace, parseReplaceBlocks } from "./replace-utils";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import fs from "fs-extra";
+import {
+  normalizeWhitespace,
+  parseReplaceBlocks,
+  containsConflictMarkers,
+} from "./replace-utils";
 
 describe("normalizeWhitespace", () => {
   it("should normalize tabs to spaces", () => {
@@ -49,5 +54,22 @@ new2
     expect(() => parseReplaceBlocks("invalid")).toThrow(
       "No SEARCH/REPLACE blocks found",
     );
+  });
+});
+
+describe("containsConflictMarkers", () => {
+  it("should detect git conflict markers", () => {
+    const conflict = "<<<<<<< HEAD\nline1\n=======\nline2\n>>>>>>> main";
+    expect(containsConflictMarkers(conflict)).toBe(true);
+  });
+
+  it("should return false for content without conflict markers", () => {
+    const noConflict = "normal code\nwithout\nconflicts";
+    expect(containsConflictMarkers(noConflict)).toBe(false);
+  });
+
+  it("should detect partial conflict markers", () => {
+    const partialConflict = "some code\n<<<<<<< branch\nmore code";
+    expect(containsConflictMarkers(partialConflict)).toBe(true);
   });
 });
