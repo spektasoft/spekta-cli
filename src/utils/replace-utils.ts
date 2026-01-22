@@ -10,6 +10,13 @@ export interface ReplaceRequest {
   blocks: ReplaceBlock[];
 }
 
+export interface AppliedBlock {
+  startLine: number;
+  endLine: number;
+  originalText: string;
+  replacementText: string;
+}
+
 const SEARCH_MARKER = "<<<<<<< SEARCH";
 const SEPARATOR = "=======";
 const REPLACE_MARKER = ">>>>>>> REPLACE";
@@ -168,7 +175,9 @@ export const findUniqueMatch = (
 
   const normalizedContentFinal = normalizedContentBuilder.trim();
   // Adjust originalIndices to match the trimmed normalizedContentFinal
-  const leadingSpaces = normalizedContentBuilder.length - normalizedContentBuilder.trimStart().length;
+  const leadingSpaces =
+    normalizedContentBuilder.length -
+    normalizedContentBuilder.trimStart().length;
   const finalIndices = originalIndices.slice(
     leadingSpaces,
     leadingSpaces + normalizedContentFinal.length,
@@ -206,13 +215,34 @@ export const findUniqueMatch = (
 };
 
 /**
+ * Maps a character offset to its corresponding line number (1-indexed).
+ */
+export const getLineNumberFromOffset = (
+  content: string,
+  offset: number,
+): number => {
+  return content.substring(0, offset).split(/\r?\n/).length;
+};
+
+/**
+ * Calculates the total line count of a string.
+ */
+export const getTotalLines = (content: string): number => {
+  return content.split(/\r?\n/).length;
+};
+
+/**
  * Applies replacement blocks to file content.
  * Returns the complete updated file content.
  */
 export const applyReplacements = async (
   filePath: string,
   blocks: ReplaceBlock[],
-): Promise<{ content: string; appliedCount: number }> => {
+): Promise<{
+  content: string;
+  appliedBlocks: AppliedBlock[];
+  totalLines: number;
+}> => {
   let fileContent = await fs.readFile(filePath, "utf-8");
 
   // Check for existing Git conflict markers
@@ -223,24 +253,33 @@ export const applyReplacements = async (
   }
 
   const lineEnding = detectLineEnding(fileContent);
-  let appliedCount = 0;
+  const appliedBlocks: AppliedBlock[] = [];
 
   for (const block of blocks) {
     const match = findUniqueMatch(fileContent, block.search);
+    const startLine = getLineNumberFromOffset(fileContent, match.start);
+    const endLine = getLineNumberFromOffset(fileContent, match.end);
+    const originalText = fileContent.substring(match.start, match.end);
 
     // Ensure replacement uses the correct line endings
     const replace = block.replace.replace(/\r?\n/g, lineEnding);
+
+    appliedBlocks.push({
+      startLine,
+      endLine,
+      originalText,
+      replacementText: replace,
+    });
 
     fileContent =
       fileContent.substring(0, match.start) +
       replace +
       fileContent.substring(match.end);
-
-    appliedCount++;
   }
 
   return {
     content: fileContent,
-    appliedCount,
+    appliedBlocks,
+    totalLines: getTotalLines(fileContent),
   };
 };

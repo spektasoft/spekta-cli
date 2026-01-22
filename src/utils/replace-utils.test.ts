@@ -7,9 +7,33 @@ import {
   containsConflictMarkers,
   detectLineEnding,
   findUniqueMatch,
+  getLineNumberFromOffset,
+  getTotalLines,
   normalizeWhitespace,
   parseReplaceBlocks,
 } from "./replace-utils";
+
+describe("getLineNumberFromOffset", () => {
+  it("should return correct line number for offset", () => {
+    const content = "line 1\nline 2\nline 3";
+    expect(getLineNumberFromOffset(content, 0)).toBe(1);
+    expect(getLineNumberFromOffset(content, 7)).toBe(2);
+    expect(getLineNumberFromOffset(content, 14)).toBe(3);
+  });
+
+  it("should handle CRLF line endings", () => {
+    const content = "line 1\r\nline 2";
+    expect(getLineNumberFromOffset(content, 8)).toBe(2);
+  });
+});
+
+describe("getTotalLines", () => {
+  it("should return total line count", () => {
+    expect(getTotalLines("line 1\nline 2")).toBe(2);
+    expect(getTotalLines("line 1\r\nline 2\r\nline 3")).toBe(3);
+    expect(getTotalLines("")).toBe(1);
+  });
+});
 
 describe("detectLineEnding", () => {
   it("should detect CRLF line endings", () => {
@@ -77,7 +101,7 @@ describe("applyReplacements Integration", () => {
     ];
 
     const result = await applyReplacements(tempFile, blocks);
-    expect(result.appliedCount).toBe(2);
+    expect(result.appliedBlocks).toHaveLength(2);
     expect(result.content).toBe("updated 1\nline 2\nupdated 3");
   });
 

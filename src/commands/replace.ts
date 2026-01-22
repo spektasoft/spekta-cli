@@ -16,7 +16,12 @@ import { validateEditAccess } from "../utils/security";
 export async function getReplaceContent(
   request: ReplaceRequest,
   blocksInput: string,
-): Promise<{ content: string; appliedCount: number }> {
+): Promise<{
+  content: string;
+  appliedCount: number;
+  appliedBlocks: any[];
+  totalLines: number;
+}> {
   try {
     // Validate file access and git tracking
     await validateEditAccess(request.path);
@@ -27,7 +32,12 @@ export async function getReplaceContent(
     // Apply replacements
     const result = await applyReplacements(request.path, blocks);
 
-    return result;
+    return {
+      content: result.content,
+      appliedCount: result.appliedBlocks.length,
+      appliedBlocks: result.appliedBlocks,
+      totalLines: result.totalLines,
+    };
   } catch (error: any) {
     // Graceful error reporting without block dumps
     throw new Error(`Action Failed: ${error.message}`);

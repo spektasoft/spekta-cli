@@ -20,7 +20,7 @@ function goodbye() {
     try {
       await execa("git", ["add", testFile]);
     } catch (e) {
-      // In case we are not in a git repo during tests, 
+      // In case we are not in a git repo during tests,
       // but usually the project is a git repo.
     }
   });
@@ -34,18 +34,23 @@ function goodbye() {
 
   it("should apply single replacement", async () => {
     const blocks = `<<<<<<< SEARCH
-console.log("world");
+function hello() {
+  console.log("world");
+}
 =======
-console.log("universe");
+function hello() {
+  console.log("universe");
+}
 >>>>>>> REPLACE`;
 
     const result = await getReplaceContent(
-      { path: testFile, range: { start: 1, end: 3 }, blocks: [] },
+      { path: testFile, blocks: [] },
       blocks,
     );
 
     expect(result.appliedCount).toBe(1);
     expect(result.content).toContain('console.log("universe")');
+    expect(result.content).toContain('console.log("world")'); // The second one should remain
   });
 
   it("should reject untracked files", async () => {
@@ -54,7 +59,7 @@ console.log("universe");
 
     await expect(
       getReplaceContent(
-        { path: untrackedFile, range: { start: 1, end: 1 }, blocks: [] },
+        { path: untrackedFile, blocks: [] },
         "<<<<<<< SEARCH\ntest\n=======\nnew\n>>>>>>> REPLACE",
       ),
     ).rejects.toThrow("not tracked by git");
