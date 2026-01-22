@@ -29,6 +29,10 @@ export async function runReadInteractive() {
     return !isIgnored && !isRestricted;
   });
 
+  console.log("\nInteractive File Reader");
+  console.log("Files will open in your editor if SPEKTA_EDITOR is configured.");
+  console.log("Token limits are validated before adding files.\n");
+
   const selectedRequests: FileRequest[] = [];
 
   while (true) {
