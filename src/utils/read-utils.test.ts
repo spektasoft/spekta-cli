@@ -6,9 +6,13 @@ import {
   getTokenCount,
   parseFilePathWithRange,
   parseRange,
+  validateFileRange,
 } from "./read-utils";
 
 vi.mock("fs");
+vi.mock("gpt-tokenizer", () => ({
+  encode: vi.fn((text: string) => ({ length: text.split(/\s+/).length })),
+}));
 
 describe("read-utils", () => {
   describe("parseRange", () => {
@@ -72,6 +76,39 @@ describe("read-utils", () => {
     it("should handle paths without brackets", () => {
       const result = parseFilePathWithRange("src/main.ts");
       expect(result).toEqual({ path: "src/main.ts" });
+    });
+  });
+
+  describe("validateFileRange", () => {
+    it("should return valid for content under token limit", async () => {
+      const mockStream = Readable.from("line1\nline2\nline3");
+      vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
+
+      const result = await validateFileRange(
+        "test.ts",
+        { start: 1, end: 3 },
+        10,
+      );
+
+      expect(result.valid).toBe(true);
+      expect(result.tokens).toBeLessThanOrEqual(10);
+      expect(result.message).toBeUndefined();
+    });
+
+    it("should return invalid with helpful message when exceeding limit", async () => {
+      const mockStream = Readable.from("word1 word2 word3 word4 word5");
+      vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
+
+      const result = await validateFileRange(
+        "test.ts",
+        { start: 1, end: 1 },
+        2,
+      );
+
+      expect(result.valid).toBe(false);
+      expect(result.tokens).toBe(5);
+      expect(result.message).toContain("exceeds token limit");
+      expect(result.suggestedMaxLines).toBeDefined();
     });
   });
 });

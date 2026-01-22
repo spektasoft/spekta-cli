@@ -81,3 +81,40 @@ export const getFileLines = async (
 export const getTokenCount = (text: string): number => {
   return encode(text).length;
 };
+
+/**
+ * Validates if a file range request would exceed the token limit.
+ * Returns validation result with token count and helpful error message.
+ */
+export const validateFileRange = async (
+  filePath: string,
+  range: LineRange,
+  tokenLimit: number,
+): Promise<{
+  valid: boolean;
+  tokens: number;
+  message?: string;
+  suggestedMaxLines?: number;
+}> => {
+  const { lines } = await getFileLines(filePath, range);
+  const content = lines.join("\n");
+  const tokens = getTokenCount(content);
+
+  if (tokens <= tokenLimit) {
+    return { valid: true, tokens };
+  }
+
+  // Calculate suggested max lines based on average tokens per line
+  const requestedLines = lines.length;
+  const avgTokensPerLine = tokens / requestedLines;
+  const suggestedMaxLines = Math.floor(tokenLimit / avgTokensPerLine);
+
+  const message = `Range exceeds token limit (${tokens} > ${tokenLimit}). Try reducing to approximately ${suggestedMaxLines} lines or fewer.`;
+
+  return {
+    valid: false,
+    tokens,
+    message,
+    suggestedMaxLines,
+  };
+};
