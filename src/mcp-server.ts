@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import fs from "fs-extra";
 import { z } from "zod";
 import { getReadContent } from "./commands/read";
+import { getReplaceContent } from "./commands/replace";
 import { bootstrap } from "./config";
 import { Logger } from "./utils/logger";
 import { parseFilePathWithRange } from "./utils/read-utils";
@@ -62,9 +64,7 @@ export async function runMcpServer() {
     },
     async ({ path: pathWithRange, blocks }) => {
       try {
-        const { getReplaceContent } = await import("./commands/replace.js");
-        const { parseFilePathWithRange } =
-          await import("./utils/read-utils.js");
+        // Dynamic imports removed here
 
         const parsed = parseFilePathWithRange(pathWithRange);
 
@@ -83,7 +83,7 @@ export async function runMcpServer() {
         const result = await getReplaceContent(request, blocks);
 
         // Write the updated content
-        const fs = await import("fs-extra");
+        // fs is now available via static import
         await fs.writeFile(request.path, result.content, "utf-8");
 
         return {
