@@ -17,16 +17,21 @@ export async function getReplaceContent(
   request: ReplaceRequest,
   blocksInput: string,
 ): Promise<{ content: string; appliedCount: number }> {
-  // Validate file access and git tracking
-  await validateEditAccess(request.path);
+  try {
+    // Validate file access and git tracking
+    await validateEditAccess(request.path);
 
-  // Parse replacement blocks
-  const blocks = parseReplaceBlocks(blocksInput);
+    // Parse replacement blocks
+    const blocks = parseReplaceBlocks(blocksInput);
 
-  // Apply replacements
-  const result = await applyReplacements(request.path, blocks);
+    // Apply replacements
+    const result = await applyReplacements(request.path, blocks);
 
-  return result;
+    return result;
+  } catch (error: any) {
+    // Graceful error reporting without block dumps
+    throw new Error(`Action Failed: ${error.message}`);
+  }
 }
 
 const getFileHash = (content: string) =>
@@ -86,7 +91,8 @@ export async function runReplace(args: string[] = []): Promise<void> {
       `Successfully applied ${result.appliedCount} replacement(s) to ${request.path}`,
     );
   } catch (error: any) {
-    Logger.error(`Replace failed: ${error.message}`);
+    // Graceful error reporting without block dumps
+    Logger.error(`Action Failed: ${error.message}`);
     process.exitCode = 1;
   }
 }
