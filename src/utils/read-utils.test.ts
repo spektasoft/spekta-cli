@@ -6,9 +6,13 @@ import {
   getTokenCount,
   parseFilePathWithRange,
   parseRange,
+  validateFileRange,
 } from "./read-utils";
 
 vi.mock("fs");
+vi.mock("gpt-tokenizer", () => ({
+  encode: vi.fn((text: string) => ({ length: text.split(/\s+/).length })),
+}));
 
 describe("read-utils", () => {
   describe("parseRange", () => {
@@ -72,6 +76,63 @@ describe("read-utils", () => {
     it("should handle paths without brackets", () => {
       const result = parseFilePathWithRange("src/main.ts");
       expect(result).toEqual({ path: "src/main.ts" });
+    });
+  });
+
+  describe("validateFileRange", () => {
+    it("should return valid for content under token limit", async () => {
+      const mockStream = Readable.from("line1\nline2\nline3");
+      vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
+
+      const result = await validateFileRange(
+        "test.ts",
+        { start: 1, end: 3 },
+        10,
+      );
+
+      expect(result.valid).toBe(true);
+      expect(result.tokens).toBeLessThanOrEqual(10);
+      expect(result.message).toBeUndefined();
+    });
+
+    it("should return invalid with helpful message when exceeding limit", async () => {
+      const mockStream = Readable.from("word1 word2 word3 word4 word5");
+      vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
+
+      const result = await validateFileRange(
+        "test.ts",
+        { start: 1, end: 1 },
+        2,
+      );
+
+      expect(result.valid).toBe(false);
+      expect(result.tokens).toBe(5);
+      expect(result.message).toContain("Range exceeds token limit");
+      expect(result.suggestedMaxLines).toBeDefined();
+    });
+
+    it("should provide specific error message for full file vs range", async () => {
+      const mockStreamFull = Readable.from("word1 word2 word3 word4 word5");
+      vi.mocked(fs.createReadStream).mockReturnValueOnce(mockStreamFull as any);
+
+      const resultFull = await validateFileRange(
+        "large-file.ts",
+        { start: 1, end: "$" },
+        2,
+      );
+      expect(resultFull.valid).toBe(false);
+      expect(resultFull.message).toContain("Full file exceeds token limit");
+
+      const mockStreamRange = Readable.from("word1\nword2\nword3\nword4\nword5");
+      vi.mocked(fs.createReadStream).mockReturnValueOnce(mockStreamRange as any);
+
+      const resultRange = await validateFileRange(
+        "large-file.ts",
+        { start: 2, end: 5 },
+        2,
+      );
+      expect(resultRange.valid).toBe(false);
+      expect(resultRange.message).toContain("Range exceeds token limit");
     });
   });
 });

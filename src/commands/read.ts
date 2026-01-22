@@ -60,7 +60,7 @@ export async function getReadContent(requests: FileRequest[]): Promise<string> {
     tokens = getTokenCount(content);
 
     if (isRangeRequest && tokens > tokenLimit) {
-      const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}). Please request a smaller range.`;
+      const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}). This should have been caught during interactive selection.`;
       Logger.error(errorMessage);
       combinedOutput += `\n--- ${req.path} ERROR ---\nError: ${errorMessage}\n`;
       continue;
@@ -73,18 +73,9 @@ export async function getReadContent(requests: FileRequest[]): Promise<string> {
     }
 
     const ext = path.extname(req.path).slice(1) || "txt";
-    const start = req.range
-      ? typeof req.range.start === "number"
-        ? req.range.start
-        : 1
-      : 1;
-    const end = req.range
-      ? req.range.end === "$"
-        ? total
-        : req.range.end
-      : total;
-
-    const rangeLabel = `${start}-${end} of ${total}`;
+    const rangeLabel = isRangeRequest
+      ? `${req.range!.start}-${req.range!.end === "$" ? total : req.range!.end} of ${total}`
+      : `1-${total} (Full File)`;
     const compactLabel = isCompacted ? " [COMPACTED OVERVIEW]" : "";
 
     combinedOutput += `#### ${req.path} (lines ${rangeLabel})${compactLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
