@@ -6,7 +6,7 @@ import path from "path";
 import { getEnv, getIgnorePatterns } from "../config";
 import { openEditor } from "../editor-utils";
 import { NAV_BACK, isCancel } from "../ui";
-import { FileRequest } from "../utils/read-utils";
+import { FileRequest, LineRange, validateFileRange } from "../utils/read-utils";
 import { RESTRICTED_FILES } from "../utils/security";
 import { runRead } from "./read";
 
@@ -79,8 +79,6 @@ export async function runReadInteractive() {
       if (editor) {
         try {
           console.log(`Opening ${filePath} in editor for reference...`);
-          // Note: openEditor waits for editor to close, but for most editors
-          // like VS Code with --wait flag, this allows user to keep it open
           openEditor(editor, filePath).catch((err) => {
             console.warn(`Could not open editor: ${err.message}`);
           });
@@ -89,28 +87,45 @@ export async function runReadInteractive() {
         }
       }
 
+      const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "2000", 10);
+
       const getLineInput = async (msg: string, def: string) => {
         const val = await input({ message: msg, default: def });
         if (isCancel(val)) return NAV_BACK;
         return val;
       };
 
-      const startInput = await getLineInput("Start line (c to cancel):", "1");
-      if (startInput === NAV_BACK) continue;
+      // Validation loop: keep prompting until valid range or user cancels
+      let validRange = false;
+      while (!validRange) {
+        const startInput = await getLineInput("Start line (c to cancel):", "1");
+        if (startInput === NAV_BACK) break;
 
-      const endInput = await getLineInput("End line (c to cancel):", "$");
-      if (endInput === NAV_BACK) continue;
+        const endInput = await getLineInput("End line (c to cancel):", "$");
+        if (endInput === NAV_BACK) break;
 
-      const start = parseInt(startInput, 10);
-      const end = endInput === "$" ? "$" : parseInt(endInput, 10);
+        const start = parseInt(startInput, 10);
+        const end = endInput === "$" ? "$" : parseInt(endInput, 10);
 
-      selectedRequests.push({
-        path: filePath,
-        range: {
+        const range: LineRange = {
           start: isNaN(start) ? 1 : start,
           end: isNaN(end as number) && end !== "$" ? "$" : end,
-        },
-      });
+        };
+
+        // Validate token count
+        const validation = await validateFileRange(filePath, range, tokenLimit);
+
+        if (validation.valid) {
+          selectedRequests.push({ path: filePath, range });
+          validRange = true;
+          console.log(`✓ File added (${validation.tokens} tokens)`);
+        } else {
+          console.error(`\n✗ ${validation.message}\n`);
+          // Loop continues, prompting for new range
+        }
+      }
+      // If user cancelled during validation loop, continue to main menu
+      continue;
     }
 
     if (action === "remove") {
