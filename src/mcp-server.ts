@@ -47,35 +47,25 @@ export async function runMcpServer() {
     "replace",
     {
       description:
-        "Replace code in a file using SEARCH/REPLACE blocks. File must be git-tracked. " +
-        "Format: path, then SEARCH/REPLACE block(s). " +
-        "Example: 'src/file.ts' with blocks in content parameter.",
+        "Replace code in a file using SEARCH/REPLACE blocks. File must be git-tracked. Provide significant context for precise targeting.",
       inputSchema: {
         path: z.string().describe("The relative path to the file"),
         blocks: z
           .string()
           .describe(
-            "SEARCH/REPLACE blocks. Format:\n" +
-              "<<<<<<< SEARCH\n[exact code to find]\n=======\n[replacement code]\n>>>>>>> REPLACE\n\n" +
-              "Provide significant context around the change to ensure precise targeting.",
+            "SEARCH/REPLACE blocks. Provide significant context for precise targeting.",
           ),
       },
     },
     async ({ path, blocks }) => {
       try {
-        // Logic no longer needs parseFilePathWithRange
         const request = { path, blocks: [] };
-        const result = await getReplaceContent(request, blocks);
+        const { content, message } = await getReplaceContent(request, blocks);
 
-        await fs.writeFile(path, result.content, "utf-8");
+        await fs.writeFile(path, content, "utf-8");
 
         return {
-          content: [
-            {
-              type: "text",
-              text: `Successfully applied ${result.appliedCount} replacement(s) to ${path}`,
-            },
-          ],
+          content: [{ type: "text", text: message }],
         };
       } catch (error: any) {
         return {
