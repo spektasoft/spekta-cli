@@ -1,8 +1,12 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { validatePathAccess } from "./security";
-import fs from "fs-extra";
 import { execa } from "execa";
+import fs from "fs-extra";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getIgnorePatterns } from "../config";
+import {
+  validateEditAccess,
+  validateGitTracked,
+  validatePathAccess,
+} from "./security";
 
 // 1. Mock fs-extra with a default export structure
 vi.mock("fs-extra", () => ({
@@ -99,5 +103,44 @@ describe("Security Validation", () => {
     await expect(validatePathAccess("big.log")).rejects.toThrow(
       "exceeds size limit",
     );
+  });
+
+  describe("validateGitTracked", () => {
+    it("should pass for tracked files", async () => {
+      vi.mocked(execa).mockResolvedValue({ stdout: "tracked-file.ts" } as any);
+      await expect(
+        validateGitTracked("tracked-file.ts"),
+      ).resolves.not.toThrow();
+    });
+
+    it("should reject untracked files", async () => {
+      vi.mocked(execa).mockRejectedValue(new Error("not tracked"));
+      await expect(validateGitTracked("untracked.ts")).rejects.toThrow(
+        "Edit Denied: untracked.ts is not tracked by git.",
+      );
+    });
+  });
+
+  describe("validateEditAccess", () => {
+    it("should pass all checks for valid tracked file", async () => {
+      // 1. validatePathAccess:
+      //    - fs.stat (already mocked to 1024)
+      //    - getIgnorePatterns (already mocked to [])
+      //    - execa (check-ignore) -> should reject (not ignored)
+      // 2. validateGitTracked:
+      //    - execa (ls-files) -> should resolve (tracked)
+
+      vi.mocked(execa)
+        .mockRejectedValueOnce({ exitCode: 1 } as any) // check-ignore
+        .mockResolvedValueOnce({ stdout: "valid-file.ts" } as any); // ls-files
+
+      await expect(validateEditAccess("valid-file.ts")).resolves.not.toThrow();
+    });
+
+    it("should reject restricted files even if tracked", async () => {
+      await expect(validateEditAccess(".gitignore")).rejects.toThrow(
+        "restricted system file",
+      );
+    });
   });
 });
