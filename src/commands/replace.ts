@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import fs from "fs-extra";
 import path from "path";
+import { formatFile } from "../utils/format-utils";
 import { Logger } from "../utils/logger";
 import {
   applyReplacements,
@@ -124,10 +125,14 @@ export async function runReplace(args: string[] = []): Promise<void> {
     const initialHash = getFileHash(originalContent);
 
     // Step 3: Apply replacements
-    const { content, message, appliedCount } = await getReplaceContent(
-      request,
-      blocksInput,
-    );
+    const {
+      content: replacedContent,
+      message,
+      appliedCount,
+    } = await getReplaceContent(request, blocksInput);
+
+    // Step 4: Canonicalize formatting to prevent agent loops
+    const content = await formatFile(request.path, replacedContent);
 
     // Before writing, verify file hasn't changed (stale-write check)
     const currentContent = await fs.readFile(request.path, "utf-8");
