@@ -122,7 +122,10 @@ export async function runReplace(args: string[] = []): Promise<void> {
     const initialHash = getFileHash(originalContent);
 
     // Execute replacement
-    const result = await getReplaceContent(request, blocksInput);
+    const { content, message, appliedCount } = await getReplaceContent(
+      request,
+      blocksInput,
+    );
 
     // Before writing, verify file hasn't changed (stale-write check)
     const currentContent = await fs.readFile(request.path, "utf-8");
@@ -131,11 +134,12 @@ export async function runReplace(args: string[] = []): Promise<void> {
     }
 
     // Write updated content back to file
-    await fs.writeFile(request.path, result.content, "utf-8");
+    await fs.writeFile(request.path, content, "utf-8");
 
-    Logger.info(result.message);
+    // Output the rich feedback to the console
+    process.stdout.write(message);
     Logger.info(
-      `Successfully applied ${result.appliedCount} replacement(s) to ${request.path}`,
+      `Successfully applied ${appliedCount} replacement(s) to ${request.path}`,
     );
   } catch (error: any) {
     // Graceful error reporting without block dumps
