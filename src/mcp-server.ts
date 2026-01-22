@@ -48,35 +48,25 @@ export async function runMcpServer() {
     {
       description:
         "Replace code in a file using SEARCH/REPLACE blocks. File must be git-tracked. " +
-        "Format: path with range [start,end], then SEARCH/REPLACE block(s). " +
-        "Example: 'src/file.ts[10,50]' with blocks in content parameter.",
+        "Format: path, then SEARCH/REPLACE block(s). " +
+        "Example: 'src/file.ts' with blocks in content parameter.",
       inputSchema: {
-        path: z
-          .string()
-          .describe("File path with range, e.g., 'src/main.ts[10,50]'"),
+        path: z.string().describe("The path to the file to modify."),
         blocks: z
           .string()
           .describe(
             "SEARCH/REPLACE blocks. Format:\n" +
-              "<<<<<<< SEARCH\n[exact code to find]\n=======\n[replacement code]\n>>>>>>> REPLACE",
+              "<<<<<<< SEARCH\n[exact code to find]\n=======\n[replacement code]\n>>>>>>> REPLACE\n\n" +
+              "Provide significant context around the change to ensure precise targeting.",
           ),
       },
     },
-    async ({ path: pathWithRange, blocks }) => {
+    async ({ path: filePath, blocks }) => {
       try {
         // Dynamic imports removed here
 
-        const parsed = parseFilePathWithRange(pathWithRange);
-
-        if (!parsed.range) {
-          throw new Error(
-            "Range is required for replace operations. Use format: file.ts[start,end]",
-          );
-        }
-
         const request = {
-          path: parsed.path,
-          range: parsed.range,
+          path: filePath,
           blocks: [], // Will be processed by getReplaceContent
         };
 

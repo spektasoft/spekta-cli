@@ -1,7 +1,6 @@
 import crypto from "crypto";
 import fs from "fs-extra";
 import { Logger } from "../utils/logger";
-import { parseFilePathWithRange } from "../utils/read-utils";
 import {
   applyReplacements,
   containsConflictMarkers,
@@ -25,7 +24,7 @@ export async function getReplaceContent(
   const blocks = parseReplaceBlocks(blocksInput);
 
   // Apply replacements
-  const result = await applyReplacements(request.path, request.range, blocks);
+  const result = await applyReplacements(request.path, blocks);
 
   return result;
 }
@@ -40,33 +39,21 @@ export async function runReplace(args: string[] = []): Promise<void> {
   try {
     if (args.length < 2) {
       Logger.error(
-        "Usage: spekta replace <file[start,end]> <blocks>\n" +
-          "Example: spekta replace src/file.ts[10,50] 'blocks content'",
+        "Usage: spekta replace <file> <blocks>\n" +
+          "Example: spekta replace src/file.ts 'blocks content'",
       );
       process.exitCode = 1;
       return;
     }
 
-    const fileArg = args[0];
+    const filePath = args[0];
     const blocksInput = args.slice(1).join(" ");
 
-    // Parse file path and range
-    const parsed = parseFilePathWithRange(fileArg);
-
-    if (!parsed.range) {
-      Logger.error(
-        "Range is required for replace operations. Use format: file.ts[start,end]",
-      );
-      process.exitCode = 1;
-      return;
-    }
-
     // Validate file access and git tracking early
-    await validateEditAccess(parsed.path);
+    await validateEditAccess(filePath);
 
     const request: ReplaceRequest = {
-      path: parsed.path,
-      range: parsed.range,
+      path: filePath,
       blocks: [], // Will be parsed in getReplaceContent
     };
 

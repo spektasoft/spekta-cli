@@ -1,7 +1,4 @@
-import { createReadStream } from "fs";
 import fs from "fs-extra";
-import readline from "readline";
-import { LineRange } from "./read-utils";
 
 export interface ReplaceBlock {
   search: string;
@@ -10,7 +7,6 @@ export interface ReplaceBlock {
 
 export interface ReplaceRequest {
   path: string;
-  range: LineRange;
   blocks: ReplaceBlock[];
 }
 
@@ -136,64 +132,88 @@ export const parseReplaceBlocks = (input: string): ReplaceBlock[] => {
 };
 
 /**
- * Reads file lines within a range.
+ * Finds the exact start and end character offsets of a search string
+ * within the original content, ignoring whitespace differences.
  */
-export const getFileLinesForEdit = async (
-  filePath: string,
-  range: LineRange,
-): Promise<{ lines: string[]; totalLines: number }> => {
-  const fileContent = await fs.readFile(filePath, "utf-8");
+export const findUniqueMatch = (
+  content: string,
+  search: string,
+): { start: number; end: number } => {
+  const normalize = (s: string) => s.replace(/\s+/g, " ").trim();
+  const normalizedContent = normalize(content);
+  const normalizedSearch = normalize(search);
 
-  // Check for existing Git conflict markers
-  if (containsConflictMarkers(fileContent)) {
+  // Map normalized index back to original index
+  // We need to find where the normalized search starts and ends in the original content
+  // by tracking character positions.
+  const contentChars = [...content];
+  let normalizedContentBuilder = "";
+  const originalIndices: number[] = [];
+
+  for (let i = 0; i < contentChars.length; i++) {
+    const char = contentChars[i];
+    if (/\s/.test(char)) {
+      if (
+        normalizedContentBuilder.length > 0 &&
+        !normalizedContentBuilder.endsWith(" ")
+      ) {
+        normalizedContentBuilder += " ";
+        originalIndices.push(i);
+      }
+    } else {
+      normalizedContentBuilder += char;
+      originalIndices.push(i);
+    }
+  }
+
+  const normalizedContentFinal = normalizedContentBuilder.trim();
+  // Adjust originalIndices to match the trimmed normalizedContentFinal
+  const leadingSpaces = normalizedContentBuilder.length - normalizedContentBuilder.trimStart().length;
+  const finalIndices = originalIndices.slice(
+    leadingSpaces,
+    leadingSpaces + normalizedContentFinal.length,
+  );
+
+  const occurrences = [];
+  let pos = normalizedContentFinal.indexOf(normalizedSearch);
+
+  while (pos !== -1) {
+    occurrences.push(pos);
+    pos = normalizedContentFinal.indexOf(normalizedSearch, pos + 1);
+  }
+
+  if (occurrences.length === 0) {
     throw new Error(
-      "File contains existing Git conflict markers. Resolve conflicts before reading file lines for edit.",
+      "The search block was not found in the file. Ensure the search block matches the file content exactly (ignoring indentation).",
     );
   }
 
-  const fileStream = createReadStream(filePath, { encoding: "utf-8" });
-  const rl = readline.createInterface({
-    input: fileStream,
-    crlfDelay: Infinity,
-  });
-
-  const allLines: string[] = [];
-  let currentLine = 0;
-
-  for await (const line of rl) {
-    currentLine++;
-    allLines.push(line);
-  }
-
-  const startLine = range.start;
-  const endLine = getEndIndex(range.end, allLines.length);
-
-  if (startLine < 1 || startLine > allLines.length) {
+  if (occurrences.length > 1) {
     throw new Error(
-      `Invalid range: start line ${startLine} is out of bounds (1-${allLines.length})`,
+      `Ambiguous match: Found ${occurrences.length} occurrences of the search block. Please provide more surrounding context to uniquely identify the target.`,
     );
   }
 
-  if (endLine < startLine) {
-    throw new Error(
-      `Invalid range: end line ${endLine} is before start line ${startLine}`,
-    );
-  }
+  const matchStartNormalized = occurrences[0];
+  const matchEndNormalized = matchStartNormalized + normalizedSearch.length;
 
-  const lines = allLines.slice(startLine - 1, endLine);
-  return { lines, totalLines: allLines.length };
+  const start = finalIndices[matchStartNormalized];
+  // For the end index, we take the index of the last character in the match and add 1
+  // If the match is empty (shouldn't happen here), we'd need to handle it.
+  const end = finalIndices[matchEndNormalized - 1] + 1;
+
+  return { start, end };
 };
 
 /**
- * Applies replacement blocks to file content within specified range.
+ * Applies replacement blocks to file content.
  * Returns the complete updated file content.
  */
 export const applyReplacements = async (
   filePath: string,
-  range: LineRange,
   blocks: ReplaceBlock[],
 ): Promise<{ content: string; appliedCount: number }> => {
-  const fileContent = await fs.readFile(filePath, "utf-8");
+  let fileContent = await fs.readFile(filePath, "utf-8");
 
   // Check for existing Git conflict markers
   if (containsConflictMarkers(fileContent)) {
@@ -203,120 +223,24 @@ export const applyReplacements = async (
   }
 
   const lineEnding = detectLineEnding(fileContent);
-  const allLines = fileContent.split(lineEnding);
-
-  const startIdx = range.start - 1;
-  const endIdx = getEndIndex(range.end, allLines.length);
-
-  // Get the range content
-  const rangeContent = allLines.slice(startIdx, endIdx).join(lineEnding);
-  let modifiedRange = rangeContent;
   let appliedCount = 0;
 
   for (const block of blocks) {
-    const search = block.search.replace(/\n/g, lineEnding);
-    const replace = block.replace.replace(/\n/g, lineEnding);
+    const match = findUniqueMatch(fileContent, block.search);
 
-    // Try exact match first
-    if (modifiedRange.includes(search)) {
-      modifiedRange = modifiedRange.replace(search, replace);
-      appliedCount++;
-    } else {
-      // If exact match fails, try normalized match
-      const normalizedRange = normalizeWhitespace(modifiedRange);
-      const normalizedSearch = normalizeWhitespace(block.search);
+    // Ensure replacement uses the correct line endings
+    const replace = block.replace.replace(/\r?\n/g, lineEnding);
 
-      if (!normalizedRange.includes(normalizedSearch)) {
-        throw new Error(
-          `Search block not found in specified range:\n${block.search}`,
-        );
-      }
+    fileContent =
+      fileContent.substring(0, match.start) +
+      replace +
+      fileContent.substring(match.end);
 
-      // Find all possible positions where the normalized search could match
-      const positions = findAllPositions(normalizedRange, normalizedSearch);
-
-      if (positions.length > 1) {
-        throw new Error(
-          `Search block found multiple times in range. Please narrow the range or make the search more specific:\n${block.search}`,
-        );
-      }
-
-      // Get the actual substring from the original content that corresponds to the normalized match
-      const actualMatch = getActualSubstringFromNormalizedPosition(
-        modifiedRange,
-        positions[0],
-        normalizedSearch,
-      );
-
-      if (actualMatch) {
-        modifiedRange = modifiedRange.replace(actualMatch, replace);
-        appliedCount++;
-      } else {
-        throw new Error(
-          `Could not locate exact match for search block:\n${block.search}`,
-        );
-      }
-    }
+    appliedCount++;
   }
-
-  // Reconstruct full file
-  const updatedLines = [
-    ...allLines.slice(0, startIdx),
-    ...modifiedRange.split(lineEnding),
-    ...allLines.slice(endIdx),
-  ];
 
   return {
-    content: reconstructFile(updatedLines, lineEnding),
+    content: fileContent,
     appliedCount,
   };
-};
-
-/**
- * Finds all starting positions of a substring within a string
- */
-const findAllPositions = (str: string, searchStr: string): number[] => {
-  const positions = [];
-  let pos = str.indexOf(searchStr);
-
-  while (pos !== -1) {
-    positions.push(pos);
-    pos = str.indexOf(searchStr, pos + 1);
-  }
-
-  return positions;
-};
-
-/**
- * Gets the actual substring from the original text that corresponds to the normalized match
- */
-const getActualSubstringFromNormalizedPosition = (
-  originalText: string,
-  normalizedPos: number,
-  normalizedMatch: string,
-): string | null => {
-  // This is a simplified approach - we'll try to find the actual substring
-  // by testing different possible substrings from the original text
-  const originalLines = originalText.split("\n");
-  const normalizedLines = normalizeWhitespace(originalText).split("\n");
-
-  // Since this is complex, we'll use a simpler approach:
-  // Find all possible substrings of similar length and normalize them to see which matches
-  for (let i = 0; i < originalText.length; i++) {
-    for (
-      let len = normalizedMatch.length;
-      len <= normalizedMatch.length + 20;
-      len++
-    ) {
-      // Allow some flexibility
-      if (i + len > originalText.length) continue;
-
-      const candidate = originalText.substring(i, i + len);
-      if (normalizeWhitespace(candidate) === normalizedMatch) {
-        return candidate;
-      }
-    }
-  }
-
-  return null;
 };
