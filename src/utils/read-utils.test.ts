@@ -107,8 +107,32 @@ describe("read-utils", () => {
 
       expect(result.valid).toBe(false);
       expect(result.tokens).toBe(5);
-      expect(result.message).toContain("exceeds token limit");
+      expect(result.message).toContain("Range exceeds token limit");
       expect(result.suggestedMaxLines).toBeDefined();
+    });
+
+    it("should provide specific error message for full file vs range", async () => {
+      const mockStreamFull = Readable.from("word1 word2 word3 word4 word5");
+      vi.mocked(fs.createReadStream).mockReturnValueOnce(mockStreamFull as any);
+
+      const resultFull = await validateFileRange(
+        "large-file.ts",
+        { start: 1, end: "$" },
+        2,
+      );
+      expect(resultFull.valid).toBe(false);
+      expect(resultFull.message).toContain("Full file exceeds token limit");
+
+      const mockStreamRange = Readable.from("word1\nword2\nword3\nword4\nword5");
+      vi.mocked(fs.createReadStream).mockReturnValueOnce(mockStreamRange as any);
+
+      const resultRange = await validateFileRange(
+        "large-file.ts",
+        { start: 2, end: 5 },
+        2,
+      );
+      expect(resultRange.valid).toBe(false);
+      expect(resultRange.message).toContain("Range exceeds token limit");
     });
   });
 });
