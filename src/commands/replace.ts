@@ -5,7 +5,6 @@ import { Logger } from "../utils/logger";
 import {
   applyReplacements,
   containsConflictMarkers,
-  generateMarkdownDiff,
   parseReplaceBlocks,
   ReplaceRequest,
 } from "../utils/replace-utils";
@@ -51,19 +50,19 @@ export async function getReplaceContent(
 
     const ext = path.extname(request.path).slice(1) || "txt";
     let message = "";
+    const PADDING = 3; // Reduced from 5 to 3 for less verbosity
 
     for (const block of result.appliedBlocks) {
-      const contextStart = Math.max(1, block.startLine - 5);
-      const contextEnd = Math.min(result.totalLines, block.endLine + 5);
+      const contextStart = Math.max(1, block.startLine - PADDING);
+      const contextEnd = Math.min(result.totalLines, block.endLine + PADDING);
 
       message += `#### ${request.path} (lines ${contextStart}-${contextEnd} of ${result.totalLines})\n`;
-      message += `**Diff:**\n${generateMarkdownDiff(block.originalText, block.replacementText)}\n\n`;
       message += `**Updated Context:**\n\`\`\`${ext}\n`;
       message += getContextWindow(
         result.content,
         block.startLine,
         block.endLine,
-        5,
+        PADDING,
       );
       message += `\n\`\`\`\n\n`;
     }

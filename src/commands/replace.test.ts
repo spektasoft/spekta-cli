@@ -51,10 +51,8 @@ function hello() {
     expect(result.content).toContain('console.log("universe")');
     expect(result.content).toContain('console.log("world")'); // The second one should remain
     expect(result.message).toContain(`#### ${testFile}`);
-    expect(result.message).toContain("**Diff:**");
-    expect(result.message).toContain("```diff");
-    expect(result.message).toContain("-function hello() {");
-    expect(result.message).toContain("+function hello() {");
+    expect(result.message).not.toContain("**Diff:**");
+    expect(result.message).not.toContain("```diff");
     expect(result.message).toContain("**Updated Context:**");
   });
 
