@@ -77,36 +77,56 @@ export async function runReadInteractive() {
       });
       if (filePath === NAV_BACK) continue;
 
-      // Open file in editor for reference (interactive mode only)
       const env = await getEnv();
       const editor = env.SPEKTA_EDITOR;
-      if (editor) {
-        try {
-          console.log(`Opening ${filePath} in editor for reference...`);
-          openEditor(editor, filePath).catch((err) => {
-            console.warn(`Could not open editor: ${err.message}`);
-          });
-        } catch (error: any) {
-          console.warn(`Could not open editor: ${error.message}`);
-        }
-      }
-
       const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "2000", 10);
 
-      const getLineInput = async (msg: string, def: string) => {
-        const val = await input({ message: msg, default: def });
-        if (isCancel(val)) return NAV_BACK;
-        return val;
-      };
+      let validRequest = false;
+      while (!validRequest) {
+        const startInput = await input({
+          message: "Start line (o: open, f: full, c: cancel):",
+          default: "1",
+        });
 
-      // Validation loop: keep prompting until valid range or user cancels
-      let validRange = false;
-      while (!validRange) {
-        const startInput = await getLineInput("Start line (c to cancel):", "1");
-        if (startInput === NAV_BACK) break;
+        if (isCancel(startInput)) break;
 
-        const endInput = await getLineInput("End line (c to cancel):", "$");
-        if (endInput === NAV_BACK) break;
+        // Shortcut: Open Editor
+        if (startInput.toLowerCase() === "o") {
+          if (editor) {
+            console.log(`Opening ${filePath} in editor...`);
+            // Run in background to maintain terminal focus
+            openEditor(editor, filePath).catch((err) => {
+              console.warn(`Could not open editor: ${err.message}`);
+            });
+          } else {
+            console.warn("SPEKTA_EDITOR not configured.");
+          }
+          continue; // Re-prompt for line numbers
+        }
+
+        // Shortcut: Full File
+        if (startInput.toLowerCase() === "f") {
+          const validation = await validateFileRange(
+            filePath,
+            { start: 1, end: "$" },
+            tokenLimit,
+          );
+          if (validation.valid) {
+            selectedRequests.push({ path: filePath }); // Omit range for full file
+            console.log(`✓ Full file added (${validation.tokens} tokens)`);
+            validRequest = true;
+          } else {
+            console.error(`\n✗ ${validation.message}\n`);
+          }
+          continue;
+        }
+
+        const endInput = await input({
+          message: "End line (c: cancel):",
+          default: "$",
+        });
+
+        if (isCancel(endInput)) break;
 
         const start = parseInt(startInput, 10);
         const end = endInput === "$" ? "$" : parseInt(endInput, 10);
@@ -116,16 +136,14 @@ export async function runReadInteractive() {
           end: isNaN(end as number) && end !== "$" ? "$" : end,
         };
 
-        // Validate token count
         const validation = await validateFileRange(filePath, range, tokenLimit);
 
         if (validation.valid) {
           selectedRequests.push({ path: filePath, range });
-          validRange = true;
-          console.log(`✓ File added (${validation.tokens} tokens)`);
+          validRequest = true;
+          console.log(`Range added (${validation.tokens} tokens)`);
         } else {
           console.error(`\n✗ ${validation.message}\n`);
-          // Loop continues, prompting for new range
         }
       }
       // If user cancelled during validation loop, continue to main menu
