@@ -1,13 +1,30 @@
 import crypto from "crypto";
 import fs from "fs-extra";
+import path from "path";
 import { Logger } from "../utils/logger";
 import {
   applyReplacements,
   containsConflictMarkers,
+  generateMarkdownDiff,
   parseReplaceBlocks,
   ReplaceRequest,
 } from "../utils/replace-utils";
 import { validateEditAccess } from "../utils/security";
+
+/**
+ * Extracts a window of lines around the change for context.
+ */
+function getContextWindow(
+  content: string,
+  startLine: number,
+  endLine: number,
+  padding: number = 5,
+): string {
+  const lines = content.split(/\r?\n/);
+  const windowStart = Math.max(0, startLine - padding - 1);
+  const windowEnd = Math.min(lines.length, endLine + padding);
+  return lines.slice(windowStart, windowEnd).join("\n");
+}
 
 /**
  * Core logic for applying replacements to a file.
@@ -19,7 +36,7 @@ export async function getReplaceContent(
 ): Promise<{
   content: string;
   appliedCount: number;
-  appliedBlocks: any[];
+  message: string;
   totalLines: number;
 }> {
   try {
@@ -32,10 +49,29 @@ export async function getReplaceContent(
     // Apply replacements
     const result = await applyReplacements(request.path, blocks);
 
+    const ext = path.extname(request.path).slice(1) || "txt";
+    let message = "";
+
+    for (const block of result.appliedBlocks) {
+      const contextStart = Math.max(1, block.startLine - 5);
+      const contextEnd = Math.min(result.totalLines, block.endLine + 5);
+
+      message += `#### ${request.path} (lines ${contextStart}-${contextEnd} of ${result.totalLines})\n`;
+      message += `**Diff:**\n${generateMarkdownDiff(block.originalText, block.replacementText)}\n\n`;
+      message += `**Updated Context:**\n\`\`\`${ext}\n`;
+      message += getContextWindow(
+        result.content,
+        block.startLine,
+        block.endLine,
+        5,
+      );
+      message += `\n\`\`\`\n\n`;
+    }
+
     return {
       content: result.content,
       appliedCount: result.appliedBlocks.length,
-      appliedBlocks: result.appliedBlocks,
+      message,
       totalLines: result.totalLines,
     };
   } catch (error: any) {
@@ -97,6 +133,7 @@ export async function runReplace(args: string[] = []): Promise<void> {
     // Write updated content back to file
     await fs.writeFile(request.path, result.content, "utf-8");
 
+    Logger.info(result.message);
     Logger.info(
       `Successfully applied ${result.appliedCount} replacement(s) to ${request.path}`,
     );

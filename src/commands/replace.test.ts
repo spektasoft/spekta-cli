@@ -1,8 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { getReplaceContent } from "./replace";
-import fs from "fs-extra";
-import path from "path";
 import { execa } from "execa";
+import fs from "fs-extra";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getReplaceContent } from "./replace";
 
 describe("getReplaceContent", () => {
   const testFile = "test-replace.ts";
@@ -32,7 +31,7 @@ function goodbye() {
     await fs.remove(testFile);
   });
 
-  it("should apply single replacement", async () => {
+  it("should apply single replacement and generate message", async () => {
     const blocks = `<<<<<<< SEARCH
 function hello() {
   console.log("world");
@@ -51,6 +50,12 @@ function hello() {
     expect(result.appliedCount).toBe(1);
     expect(result.content).toContain('console.log("universe")');
     expect(result.content).toContain('console.log("world")'); // The second one should remain
+    expect(result.message).toContain(`#### ${testFile}`);
+    expect(result.message).toContain("**Diff:**");
+    expect(result.message).toContain("```diff");
+    expect(result.message).toContain("-function hello() {");
+    expect(result.message).toContain("+function hello() {");
+    expect(result.message).toContain("**Updated Context:**");
   });
 
   it("should reject untracked files", async () => {

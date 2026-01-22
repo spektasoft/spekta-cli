@@ -231,6 +231,21 @@ export const getTotalLines = (content: string): number => {
   return content.split(/\r?\n/).length;
 };
 
+export const generateMarkdownDiff = (
+  original: string,
+  replacement: string,
+): string => {
+  const oldLines = original.split(/\r?\n/);
+  const newLines = replacement.split(/\r?\n/);
+
+  return [
+    "```diff",
+    ...oldLines.map((l) => `-${l}`),
+    ...newLines.map((l) => `+${l}`),
+    "```",
+  ].join("\n");
+};
+
 /**
  * Applies replacement blocks to file content.
  * Returns the complete updated file content.
