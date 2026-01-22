@@ -83,7 +83,7 @@ export async function getReplaceContent(
       cleanMessage = `Multiple occurrences of the SEARCH block were found in ${request.path}. Please provide more context lines to ensure a unique match.`;
     } else if (cleanMessage.includes("No SEARCH/REPLACE blocks found")) {
       cleanMessage =
-        "No valid SEARCH/REPLACE blocks were found. Make sure to use the correct format with <<<<<<< SEARCH, =======, and >>>>>>> REPLACE markers.";
+        "No valid SEARCH/REPLACE blocks were found. Make sure to use the correct format with `<<<<<<< SEARCH\n{old_string}\n=======\n{new_string}\n>>>>>>> REPLACE` markers.";
     } else if (cleanMessage.includes("Invalid format")) {
       cleanMessage = `Invalid format detected: ${error.message}`;
     }

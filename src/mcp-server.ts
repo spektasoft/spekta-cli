@@ -46,14 +46,13 @@ export async function runMcpServer() {
   server.registerTool(
     "replace",
     {
-      description:
-        "Replace code in a file using SEARCH/REPLACE blocks (<<<<<<< SEARCH\n{old}\n=======\n{new}\n>>>>>>> REPLACE). File must be git-tracked. Provide significant context for precise targeting.",
+      description: "Replace code in a file.",
       inputSchema: {
         path: z.string().describe("The relative path to the file"),
         blocks: z
           .string()
           .describe(
-            "SEARCH/REPLACE blocks. Provide significant context for precise targeting.",
+            "SEARCH/REPLACE blocks (<<<<<<< SEARCH\n{old_string}\n=======\n{new_string}\n>>>>>>> REPLACE). Provide significant context for precise targeting.",
           ),
       },
     },
