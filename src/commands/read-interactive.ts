@@ -3,7 +3,8 @@ import { execa } from "execa";
 import ignore from "ignore";
 import autocomplete from "inquirer-autocomplete-standalone";
 import path from "path";
-import { getIgnorePatterns } from "../config";
+import { getEnv, getIgnorePatterns } from "../config";
+import { openEditor } from "../editor-utils";
 import { NAV_BACK, isCancel } from "../ui";
 import { FileRequest } from "../utils/read-utils";
 import { RESTRICTED_FILES } from "../utils/security";
@@ -71,6 +72,22 @@ export async function runReadInteractive() {
         },
       });
       if (filePath === NAV_BACK) continue;
+
+      // Open file in editor for reference (interactive mode only)
+      const env = await getEnv();
+      const editor = env.SPEKTA_EDITOR;
+      if (editor) {
+        try {
+          console.log(`Opening ${filePath} in editor for reference...`);
+          // Note: openEditor waits for editor to close, but for most editors
+          // like VS Code with --wait flag, this allows user to keep it open
+          openEditor(editor, filePath).catch((err) => {
+            console.warn(`Could not open editor: ${err.message}`);
+          });
+        } catch (error: any) {
+          console.warn(`Could not open editor: ${error.message}`);
+        }
+      }
 
       const getLineInput = async (msg: string, def: string) => {
         const val = await input({ message: msg, default: def });
