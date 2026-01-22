@@ -47,7 +47,7 @@ export async function runMcpServer() {
     "replace",
     {
       description:
-        "Replace code in a file using SEARCH/REPLACE blocks. File must be git-tracked. Provide significant context for precise targeting.",
+        "Replace code in a file using SEARCH/REPLACE blocks (<<<<<<< SEARCH\n{old}\n=======\n{new}\n>>>>>>> REPLACE). File must be git-tracked. Provide significant context for precise targeting.",
       inputSchema: {
         path: z.string().describe("The relative path to the file"),
         blocks: z
