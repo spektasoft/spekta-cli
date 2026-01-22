@@ -51,7 +51,7 @@ export async function runMcpServer() {
         "Format: path, then SEARCH/REPLACE block(s). " +
         "Example: 'src/file.ts' with blocks in content parameter.",
       inputSchema: {
-        path: z.string().describe("The path to the file to modify."),
+        path: z.string().describe("The relative path to the file"),
         blocks: z
           .string()
           .describe(
@@ -61,39 +61,28 @@ export async function runMcpServer() {
           ),
       },
     },
-    async ({ path: filePath, blocks }) => {
+    async ({ path, blocks }) => {
       try {
-        // Dynamic imports removed here
-
-        const request = {
-          path: filePath,
-          blocks: [], // Will be processed by getReplaceContent
-        };
-
+        // Logic no longer needs parseFilePathWithRange
+        const request = { path, blocks: [] };
         const result = await getReplaceContent(request, blocks);
 
-        // Write the updated content
-        // fs is now available via static import
-        await fs.writeFile(request.path, result.content, "utf-8");
+        await fs.writeFile(path, result.content, "utf-8");
 
         return {
           content: [
             {
               type: "text",
-              text: `Successfully applied ${result.appliedCount} replacement(s) to ${request.path}`,
+              text: `Successfully applied ${result.appliedCount} replacement(s) to ${path}`,
             },
           ],
         };
       } catch (error: any) {
-        Logger.error(`MCP Replace Tool Error: ${error.message}`);
         return {
-          content: [
-            {
-              type: "text",
-              text: `Replace Error: ${error.message}`,
-            },
-          ],
           isError: true,
+          content: [
+            { type: "text", text: `Replacement failed: ${error.message}` },
+          ],
         };
       }
     },
