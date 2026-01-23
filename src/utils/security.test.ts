@@ -5,13 +5,16 @@ import { getIgnorePatterns } from "../config";
 import {
   validateEditAccess,
   validateGitTracked,
+  validateParentDirForCreate,
   validatePathAccess,
+  validatePathAccessForWrite,
 } from "./security";
 
 // 1. Mock fs-extra with a default export structure
 vi.mock("fs-extra", () => ({
   default: {
     stat: vi.fn(),
+    pathExists: vi.fn(),
   },
 }));
 
@@ -28,11 +31,11 @@ vi.mock("../config", () => ({
 describe("Security Validation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-
     // Default happy path setups
     vi.mocked(fs.stat).mockResolvedValue({ size: 1024 } as any);
+    // @ts-ignore
+    vi.mocked(fs.pathExists).mockResolvedValue(true); // Default: directories exist
     vi.mocked(getIgnorePatterns).mockResolvedValue([]);
-
     // Default execa behavior: Reject with exitCode 1 (meaning "git check-ignore" found nothing, so file is NOT ignored)
     // This allows the "valid file" checks to pass by default unless overridden
     vi.mocked(execa).mockRejectedValue({ exitCode: 1 });
@@ -142,5 +145,49 @@ describe("Security Validation", () => {
         "restricted system file",
       );
     });
+  });
+});
+
+describe("validatePathAccessForWrite and validateParentDirForCreate", () => {
+  describe("validatePathAccessForWrite", () => {
+    it("should deny write to path outside project root", async () => {
+      await expect(
+        validatePathAccessForWrite("../outside-file.txt"),
+      ).rejects.toThrow(
+        "Access Denied: ../outside-file.txt is outside the project directory.",
+      );
+
+      await expect(validatePathAccessForWrite("/etc/passwd")).rejects.toThrow(
+        "Access Denied: /etc/passwd is outside the project directory.",
+      );
+    });
+
+    it("should deny write to gitignored path via git check-ignore", async () => {
+      // Mock git check-ignore to succeed (exitCode 0), meaning file WOULD BE ignored
+      vi.mocked(execa).mockResolvedValue({
+        stdout: "ignored-new-file.txt",
+      } as any);
+
+      await expect(
+        validatePathAccessForWrite("ignored-new-file.txt"),
+      ).rejects.toThrow(
+        "Access Denied: ignored-new-file.txt would be ignored by git.",
+      );
+    });
+  });
+});
+
+describe("validateParentDirForCreate", () => {
+  it("should permit write to new file in valid tracked location", async () => {
+    // Mock parent directory exists
+    // @ts-ignore
+    vi.mocked(fs.pathExists).mockResolvedValue(true);
+
+    // Mock git ls-files to succeed (parent directory is tracked)
+    vi.mocked(execa).mockResolvedValue({ stdout: "src/" } as any);
+
+    await expect(
+      validateParentDirForCreate("src/new-feature.ts"),
+    ).resolves.not.toThrow();
   });
 });
