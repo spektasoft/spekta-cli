@@ -17,6 +17,7 @@ import { parseFilePathWithRange } from "./utils/read-utils";
 interface CommandDefinition {
   name: string;
   run: (args?: string[]) => Promise<void>;
+  hidden?: boolean;
 }
 
 const COMMANDS: Record<string, CommandDefinition> = {
@@ -65,14 +66,17 @@ const COMMANDS: Record<string, CommandDefinition> = {
   replace: {
     name: "Replace Code in File",
     run: runReplace,
+    hidden: true,
   },
   write: {
-    name: "Write New File",
+    name: "Write New File (agent tool)",
     run: runWrite,
+    hidden: true,
   },
   mcp: {
     name: "Start the MCP Server",
     run: runMcpServer,
+    hidden: true,
   },
 };
 
@@ -90,7 +94,7 @@ async function main() {
 
   // 2. Fallback to Interactive Menu
   const choices = Object.entries(COMMANDS)
-    .filter(([key]) => key !== "mcp" && key !== "replace") // Hide from interactive menu
+    .filter(([key, def]) => !def.hidden) // Hide commands marked as hidden
     .map(([key, def]) => ({
       name: def.name,
       value: key,
