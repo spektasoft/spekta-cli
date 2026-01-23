@@ -1,12 +1,9 @@
 import fs from "fs-extra";
 import path from "path";
 import { Logger } from "../utils/logger";
-import {
-  validatePathAccess,
-  validateParentDirForCreate,
-} from "../utils/security";
+import { validateParentDirForCreate } from "../utils/security";
 import { formatFile } from "../utils/format-utils";
-import { getEnv } from "../config";
+import { validatePathAccessForWrite } from "../utils/security";
 
 export async function getWriteContent(
   filePath: string,
@@ -14,17 +11,17 @@ export async function getWriteContent(
 ): Promise<{ success: boolean; message: string }> {
   const absolutePath = path.resolve(filePath);
 
-  // 1. Cannot already exist
+  // 1. Security checks FIRST (prevent information leakage)
+  await validatePathAccessForWrite(filePath);
+  await validateParentDirForCreate(filePath);
+
+  // 2. Cannot already exist (safe to check after security validation)
   if (await fs.pathExists(absolutePath)) {
     return {
       success: false,
       message: `Write failed: File already exists at ${filePath}. Cannot overwrite with this tool.`,
     };
   }
-
-  // 2. Security checks
-  await validatePathAccess(filePath);
-  await validateParentDirForCreate(filePath);
 
   // 3. Format content (consistency with replace)
   let formattedContent: string;

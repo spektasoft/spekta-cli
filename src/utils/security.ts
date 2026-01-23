@@ -55,6 +55,49 @@ export const validatePathAccess = async (filePath: string): Promise<void> => {
   }
 };
 
+export const validatePathAccessForWrite = async (
+  filePath: string,
+): Promise<void> => {
+  const absolutePath = path.resolve(filePath);
+  const fileName = path.basename(absolutePath);
+  const relativePath = path.relative(process.cwd(), absolutePath);
+
+  // 1. System File Block
+  if (RESTRICTED_FILES.includes(fileName)) {
+    throw new Error(`Access Denied: ${fileName} is a restricted system file.`);
+  }
+
+  // 2. Out-of-bounds Block: Prevent reading outside project root
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new Error(
+      `Access Denied: ${filePath} is outside the project directory.`,
+    );
+  }
+
+  // 3. Spektaignore Check
+  const spektaIgnores = await getIgnorePatterns();
+  const ig = ignore().add(spektaIgnores);
+  if (ig.ignores(relativePath)) {
+    throw new Error(`Access Denied: ${filePath} is ignored by .spektaignore.`);
+  }
+
+  // 4. Gitignore Check (for the target file path, even though it doesn't exist yet)
+  let isGitIgnored = false;
+  try {
+    // git check-ignore returns exitCode 0 if the file WOULD BE ignored.
+    await execa("git", ["check-ignore", "-q", filePath]);
+    isGitIgnored = true;
+  } catch (error: any) {
+    // execa throws on non-zero exitCode (1 means NOT ignored).
+  }
+
+  if (isGitIgnored) {
+    throw new Error(`Access Denied: ${filePath} would be ignored by git.`);
+  }
+
+  // Note: File size check is intentionally omitted since file doesn't exist
+};
+
 /**
  * Validates that a file is tracked by git.
  * Edit operations should only be performed on tracked files to ensure safety.
