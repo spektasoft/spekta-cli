@@ -4,6 +4,7 @@ import fs from "fs-extra";
 import { z } from "zod";
 import { getReadContent } from "./commands/read";
 import { getReplaceContent } from "./commands/replace";
+import { getWriteContent } from "./commands/write";
 import { bootstrap } from "./config";
 import { Logger } from "./utils/logger";
 import { parseFilePathWithRange } from "./utils/read-utils";
@@ -72,6 +73,43 @@ export async function runMcpServer() {
           content: [
             { type: "text", text: `Replacement failed: ${error.message}` },
           ],
+        };
+      }
+    },
+  );
+
+  server.registerTool(
+    "write_file",
+    {
+      description:
+        "Create a new file with the provided full content. Fails if the file already exists. Path must be relative. Only for new files – use replace for modifications.",
+      inputSchema: {
+        path: z
+          .string()
+          .describe(
+            "Relative path to the new file (e.g. src/utils/new-helper.ts)",
+          ),
+        content: z.string().describe("Full content to write to the file"),
+      },
+    },
+    async ({ path: filePath, content }) => {
+      try {
+        const result = await getWriteContent(filePath, content);
+        if (result.success) {
+          return {
+            content: [{ type: "text", text: result.message }],
+          };
+        } else {
+          return {
+            isError: true,
+            content: [{ type: "text", text: result.message }],
+          };
+        }
+      } catch (error: any) {
+        Logger.error(`MCP Write Tool Error: ${error.message}`);
+        return {
+          isError: true,
+          content: [{ type: "text", text: `Write failed: ${error.message}` }],
         };
       }
     },
