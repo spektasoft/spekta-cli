@@ -1,4 +1,4 @@
-import { input, select } from "@inquirer/prompts";
+import { input, select, confirm } from "@inquirer/prompts";
 import { encode } from "gpt-tokenizer";
 import autocomplete from "inquirer-autocomplete-standalone";
 import { Provider } from "./config";
@@ -122,4 +122,16 @@ export async function confirmLargePayload(
  */
 export function getTokenCount(text: string): number {
   return encode(text).length;
+}
+
+export function formatToolPreview(
+  type: string,
+  path: string,
+  content?: string,
+): string {
+  let preview = `\n--- TOOL CALL: ${type.toUpperCase()} ---\nPath: ${path}\n`;
+  if (content) {
+    preview += `Content:\n----------------\n${content}\n----------------\n`;
+  }
+  return preview;
 }
