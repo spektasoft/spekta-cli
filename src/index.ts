@@ -9,6 +9,7 @@ import { runReview } from "./commands/review";
 import { runSummarize } from "./commands/summarize";
 import { runSync } from "./commands/sync";
 import { runReplace } from "./commands/replace";
+import { runWrite } from "./commands/write";
 import { bootstrap } from "./config";
 import { runMcpServer } from "./mcp-server";
 import { parseFilePathWithRange } from "./utils/read-utils";
@@ -64,6 +65,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
   replace: {
     name: "Replace Code in File",
     run: runReplace,
+  },
+  write: {
+    name: "Write New File",
+    run: runWrite,
   },
   mcp: {
     name: "Start the MCP Server",
