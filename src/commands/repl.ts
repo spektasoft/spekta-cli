@@ -1,9 +1,11 @@
-import { getEnv, getProviders, getPromptContent } from "../config";
-import { promptReplProviderSelection } from "../ui/repl";
+import { confirm, input } from "@inquirer/prompts";
 import { callAIStream, Message } from "../api";
+import { getEnv, getPromptContent, getProviders } from "../config";
+import { formatToolPreview } from "../ui";
+import { promptReplProviderSelection } from "../ui/repl";
+import { executeTool, parseToolCalls } from "../utils/agent-utils";
 import { Logger } from "../utils/logger";
 import { generateSessionId, saveSession } from "../utils/session-utils";
-import { input } from "@inquirer/prompts";
 
 export async function runRepl() {
   const env = await getEnv();
@@ -43,9 +45,45 @@ export async function runRepl() {
       assistantContent += delta;
       process.stdout.write(delta);
     }
-
     process.stdout.write("\n");
-    messages.push({ role: "assistant", content: assistantContent });
+
+    const toolCalls = parseToolCalls(assistantContent);
+    let toolDenied = false;
+
+    for (const call of toolCalls) {
+      console.log(formatToolPreview(call.type, call.path, call.content));
+      const approved = await confirm({
+        message: `Execute ${call.type} on ${call.path}?`,
+        default: true,
+      });
+
+      if (approved) {
+        try {
+          const result = await executeTool(call);
+          messages.push({ role: "assistant", content: call.raw });
+          messages.push({ role: "user", content: `Tool Output:\n${result}` });
+          Logger.info(`Tool executed successfully.`);
+        } catch (err: any) {
+          messages.push({
+            role: "user",
+            content: `Tool Error: ${err.message}`,
+          });
+          Logger.error(err.message);
+        }
+      } else {
+        toolDenied = true;
+        Logger.warn("Tool execution denied by user.");
+        break;
+      }
+    }
+
+    if (!toolDenied && toolCalls.length > 0) {
+      // If tools were run, we ideally would loop back to AI automatically,
+      // but requirements state breaking on denial. If accepted, we continue
+      // the loop which will naturally ask for user input or can be modified
+      // to auto-trigger the AI again.
+    }
+
     await saveSession(sessionId, messages);
   }
 }
