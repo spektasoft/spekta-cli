@@ -1,7 +1,10 @@
 import fs from "fs-extra";
 import path from "path";
 import { Logger } from "../utils/logger";
-import { validatePathAccess } from "../utils/security";
+import {
+  validatePathAccess,
+  validateParentDirForCreate,
+} from "../utils/security";
 import { formatFile } from "../utils/format-utils";
 import { getEnv } from "../config";
 
@@ -9,8 +12,39 @@ export async function getWriteContent(
   filePath: string,
   content: string,
 ): Promise<{ success: boolean; message: string }> {
-  // Placeholder – implementation in later step
-  return { success: false, message: "Not implemented" };
+  const absolutePath = path.resolve(filePath);
+
+  // 1. Cannot already exist
+  if (await fs.pathExists(absolutePath)) {
+    return {
+      success: false,
+      message: `Write failed: File already exists at ${filePath}. Cannot overwrite with this tool.`,
+    };
+  }
+
+  // 2. Security checks
+  await validatePathAccess(filePath);
+  await validateParentDirForCreate(filePath);
+
+  // 3. Format content (consistency with replace)
+  let formattedContent: string;
+  try {
+    formattedContent = await formatFile(filePath, content);
+  } catch (err: any) {
+    Logger.warn(
+      `Formatting failed: ${err.message}. Writing unformatted content.`,
+    );
+    formattedContent = content;
+  }
+
+  // 4. Write
+  await fs.ensureDir(path.dirname(absolutePath));
+  await fs.writeFile(absolutePath, formattedContent, "utf-8");
+
+  return {
+    success: true,
+    message: `Successfully created and wrote ${filePath} (${formattedContent.length} bytes after formatting)`,
+  };
 }
 
 export async function runWrite(args: string[] = []): Promise<void> {
