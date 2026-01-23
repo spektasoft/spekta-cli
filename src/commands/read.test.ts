@@ -128,7 +128,7 @@ describe("runRead", () => {
     await runRead([{ path: "small.ts" }]);
 
     expect(stdoutSpy).toHaveBeenCalledWith(
-      expect.stringContaining("#### small.ts (lines 1-2 of 2)"),
+      expect.stringContaining("#### small.ts (lines 1-2 (Full File))"),
     );
   });
 });
