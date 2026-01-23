@@ -146,13 +146,30 @@ export const validateParentDirForCreate = async (
     throw new Error(`Parent directory does not exist: ${parentDir}`);
   }
 
-  // Directory should be git-tracked (or at least in a git repo)
+  // Verify we are inside a git repository
   try {
-    await execa("git", ["ls-files", "--error-unmatch", relativeParent || "."]);
-  } catch (error: any) {
+    await execa("git", ["rev-parse", "--is-inside-work-tree"]);
+  } catch {
+    throw new Error(
+      `Parent directory is not in a git repository: ${parentDir}`,
+    );
+  }
+
+  // Check for tracked files under this directory (or repo root)
+  try {
+    const { stdout } = await execa("git", [
+      "ls-files",
+      "--full-name",
+      relativeParent || ".",
+    ]);
+
+    if (stdout.trim() === "") {
+      throw new Error("No tracked files found");
+    }
+  } catch {
     throw new Error(
       `Parent directory is not in a git-tracked location: ${parentDir}. ` +
-        `New files can only be created in tracked directories.`,
+        `New files can only be created in directories containing tracked files.`,
     );
   }
 };
