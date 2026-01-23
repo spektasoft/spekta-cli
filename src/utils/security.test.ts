@@ -178,16 +178,29 @@ describe("validatePathAccessForWrite and validateParentDirForCreate", () => {
 });
 
 describe("validateParentDirForCreate", () => {
-  it("should permit write to new file in valid tracked location", async () => {
+  it("should permit write to new file in git repository", async () => {
     // Mock parent directory exists
     // @ts-ignore
     vi.mocked(fs.pathExists).mockResolvedValue(true);
 
-    // Mock git ls-files to succeed (parent directory is tracked)
-    vi.mocked(execa).mockResolvedValue({ stdout: "src/" } as any);
+    // Mock git rev-parse to succeed (we are inside a git repository)
+    vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
 
     await expect(
       validateParentDirForCreate("src/new-feature.ts"),
     ).resolves.not.toThrow();
+  });
+
+  it("should deny write to new file outside git repository", async () => {
+    // Mock parent directory exists
+    // @ts-ignore
+    vi.mocked(fs.pathExists).mockResolvedValue(true);
+
+    // Mock git rev-parse to fail (not inside a git repository)
+    vi.mocked(execa).mockRejectedValue(new Error());
+
+    await expect(
+      validateParentDirForCreate("src/new-feature.ts"),
+    ).rejects.toThrow("Parent directory is not in a git repository");
   });
 });
