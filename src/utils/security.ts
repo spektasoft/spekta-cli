@@ -81,3 +81,35 @@ export const validateEditAccess = async (filePath: string): Promise<void> => {
   await validatePathAccess(filePath);
   await validateGitTracked(filePath);
 };
+
+/**
+ * Validates that the parent directory of a path exists and is git-tracked.
+ * Used for safe creation of new files.
+ */
+export const validateParentDirForCreate = async (
+  filePath: string,
+): Promise<void> => {
+  const absolutePath = path.resolve(filePath);
+  const parentDir = path.dirname(absolutePath);
+  const relativeParent = path.relative(process.cwd(), parentDir);
+
+  // Must be inside project root
+  if (relativeParent.startsWith("..") || path.isAbsolute(relativeParent)) {
+    throw new Error(`Parent directory is outside project root: ${parentDir}`);
+  }
+
+  // Directory must exist
+  if (!(await fs.pathExists(parentDir))) {
+    throw new Error(`Parent directory does not exist: ${parentDir}`);
+  }
+
+  // Directory should be git-tracked (or at least in a git repo)
+  try {
+    await execa("git", ["ls-files", "--error-unmatch", relativeParent || "."]);
+  } catch (error: any) {
+    throw new Error(
+      `Parent directory is not in a git-tracked location: ${parentDir}. ` +
+        `New files can only be created in tracked directories.`,
+    );
+  }
+};
