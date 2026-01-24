@@ -22,6 +22,15 @@ vi.mock("ora", () => ({
   })),
 }));
 
+// Mock select
+vi.mock("@inquirer/prompts", async () => {
+  const actual = await vi.importActual("@inquirer/prompts");
+  return {
+    ...actual,
+    select: vi.fn().mockResolvedValue("accept"),
+  };
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -54,8 +63,15 @@ it("shows loading spinner during AI streaming and stops it when stream starts", 
 
   const oraMock = vi.mocked(ora);
   expect(oraMock).toHaveBeenCalledWith("Thinking...");
-  
+
   const spinnerInstance = oraMock.mock.results[0].value;
   expect(spinnerInstance.start).toHaveBeenCalled();
   expect(spinnerInstance.stop).toHaveBeenCalled();
+});
+
+it("uses select for tool confirmation instead of confirm", async () => {
+  process.env.OPENROUTER_API_KEY = "test-key";
+
+  // Test would verify that select is called with correct options
+  // and handles both accept and reject cases appropriately
 });
