@@ -1,4 +1,5 @@
-import { confirm, input } from "@inquirer/prompts";
+import { confirm } from "@inquirer/prompts";
+import * as readline from "readline";
 import { callAIStream, Message } from "../api";
 import { getEnv, getPromptContent, getProviders } from "../config";
 import { formatToolPreview } from "../ui";
@@ -6,6 +7,47 @@ import { promptReplProviderSelection } from "../ui/repl";
 import { executeTool, parseToolCalls } from "../utils/agent-utils";
 import { Logger } from "../utils/logger";
 import { generateSessionId, saveSession } from "../utils/session-utils";
+import { getUserMessage } from "../utils/multiline-input";
+
+/**
+ * Get multiline input from user with ability to interrupt and see responses
+ */
+async function getMultilineInput(prompt: string): Promise<string> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    const lines: string[] = [];
+
+    const askForLine = () => {
+      const promptText =
+        lines.length === 0
+          ? `${prompt}\n(Multiline mode - type 'END' on its own line to submit, 'CANCEL' to abort)\n> `
+          : `${lines.length + 1}> `;
+
+      rl.question(promptText, (input) => {
+        if (input.trim().toUpperCase() === "CANCEL") {
+          rl.close();
+          resolve("");
+          return;
+        }
+
+        if (input.trim().toUpperCase() === "END") {
+          rl.close();
+          resolve(lines.join("\n"));
+          return;
+        }
+
+        lines.push(input);
+        askForLine();
+      });
+    };
+
+    askForLine();
+  });
+}
 
 export async function runRepl() {
   const env = await getEnv();
@@ -24,8 +66,20 @@ export async function runRepl() {
   Logger.info(`Starting REPL session: ${sessionId}`);
 
   while (true) {
-    const userInput = await input({ message: "You:" });
-    if (userInput.toLowerCase() === "exit") break;
+    const userInput = await getUserMessage("You:");
+
+    if (userInput === null) {
+      // cancelled → just loop again
+      continue;
+    }
+
+    if (userInput.toLowerCase() === "exit") {
+      break;
+    }
+
+    if (userInput.trim() === "") {
+      continue; // safety net – should not happen
+    }
 
     messages.push({ role: "user", content: userInput });
     await saveSession(sessionId, messages);
