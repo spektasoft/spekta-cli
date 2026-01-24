@@ -1,8 +1,10 @@
+import path from "node:path";
 import { getReadContent } from "../commands/read";
 import { getWriteContent } from "../commands/write";
 import { getReplaceContent } from "../commands/replace";
 import { parseFilePathWithRange } from "./read-utils";
 import { ReplaceRequest } from "./replace-utils";
+import { Logger } from "./logger";
 
 export interface ToolCall {
   type: "read" | "write" | "replace";
@@ -14,40 +16,58 @@ export interface ToolCall {
 export function parseToolCalls(text: string): ToolCall[] {
   const calls: ToolCall[] = [];
 
-  // Parse <read path="..." />
-  const readRegex = /<read\s+path=["']([^"']+)["']\s*\/>/g;
+  // More robust parsing with better error handling
+  const toolRegex =
+    /<(read|write|replace)\s+path=["']([^"']+)["']\s*>([\s\S]*?)<\/\1>|<(read)\s+path=["']([^"']+)["']\s*\/>/g;
+
   let match;
-  while ((match = readRegex.exec(text)) !== null) {
-    calls.push({ type: "read", path: match[1], raw: match[0] });
-  }
+  while ((match = toolRegex.exec(text)) !== null) {
+    const fullMatch = match[0];
 
-  // Parse <write path="...">...</write>
-  const writeRegex = /<write\s+path=["']([^"']+)["']\s*>([\s\S]*?)<\/write>/g;
-  while ((match = writeRegex.exec(text)) !== null) {
-    calls.push({
-      type: "write",
-      path: match[1],
-      content: match[2],
-      raw: match[0],
-    });
-  }
+    const type = (match[1] || match[4]) as "read" | "write" | "replace";
+    const filePath = match[2] || match[5];
+    const content = match[3] || undefined;
 
-  // Parse <replace path="...">...</replace>
-  const replaceRegex =
-    /<replace\s+path=["']([^"']+)["']\s*>([\s\S]*?)<\/replace>/g;
-  while ((match = replaceRegex.exec(text)) !== null) {
+    // Validate path doesn't contain dangerous patterns
+    if (
+      filePath.includes("..") ||
+      filePath.startsWith("/") ||
+      filePath.includes("\\")
+    ) {
+      Logger.warn(`Invalid path detected in tool call: ${filePath}`);
+      continue; // Skip invalid paths
+    }
+
     calls.push({
-      type: "replace",
-      path: match[1],
-      content: match[2],
-      raw: match[0],
+      type,
+      path: filePath,
+      content,
+      raw: fullMatch,
     });
   }
 
   return calls;
 }
 
+/**
+ * Validates that a file path is safe to access.
+ * Must be within the current working directory.
+ */
+export function validateFilePath(filePath: string): boolean {
+  // Resolve to absolute path and ensure it's within current working directory
+  const resolvedPath = path.resolve(filePath);
+  const cwd = process.cwd();
+
+  // Check if resolved path is within current working directory
+  return resolvedPath.startsWith(cwd + path.sep) || resolvedPath === cwd;
+}
+
 export async function executeTool(call: ToolCall): Promise<string> {
+  // Validate path before any operation
+  if (!validateFilePath(call.path)) {
+    throw new Error(`Invalid file path: ${call.path}`);
+  }
+
   if (call.type === "read") {
     const req = parseFilePathWithRange(call.path);
     return await getReadContent([req]);
