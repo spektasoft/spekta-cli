@@ -3,17 +3,29 @@ import { runRepl } from "./repl";
 import { callAIStream } from "../api";
 import { getUserMessage } from "../utils/multiline-input";
 import { promptReplProviderSelection } from "../ui/repl";
+import { parseToolCalls, executeTool } from "../utils/agent-utils";
 import ora from "ora";
 
+// 1. Mock API and Config
 vi.mock("../api");
 vi.mock("../config", () => ({
   getEnv: vi.fn().mockResolvedValue({ OPENROUTER_API_KEY: "test-key" }),
   getProviders: vi.fn().mockResolvedValue({ providers: [] }),
   getPromptContent: vi.fn().mockResolvedValue("system prompt"),
 }));
+
+// 2. Mock UI and Utils
 vi.mock("../ui/repl");
 vi.mock("../utils/multiline-input");
 vi.mock("../utils/session-utils");
+
+// 3. Mock Agent Utils (Crucial for preventing FS operations and parsing logic isolation)
+vi.mock("../utils/agent-utils", () => ({
+  parseToolCalls: vi.fn(),
+  executeTool: vi.fn(),
+}));
+
+// 4. Mock UI Libraries
 vi.mock("ora", () => ({
   default: vi.fn().mockImplementation(() => ({
     start: vi.fn().mockReturnThis(),
@@ -22,7 +34,6 @@ vi.mock("ora", () => ({
   })),
 }));
 
-// Mock select
 vi.mock("@inquirer/prompts", async () => {
   const actual = await vi.importActual("@inquirer/prompts");
   return {
@@ -59,19 +70,69 @@ it("shows loading spinner during AI streaming and stops it when stream starts", 
 
   vi.mocked(callAIStream).mockResolvedValue(mockStream as any);
 
+  // Mock parseToolCalls to return empty for simple text
+  vi.mocked(parseToolCalls).mockReturnValue([]);
+
   await runRepl();
 
   const oraMock = vi.mocked(ora);
-  expect(oraMock).toHaveBeenCalledWith("Thinking...");
+  // Note: The actual code uses "Assistant thinking..." so we match that
+  expect(oraMock).toHaveBeenCalledWith("Assistant thinking...");
 
   const spinnerInstance = oraMock.mock.results[0].value;
   expect(spinnerInstance.start).toHaveBeenCalled();
   expect(spinnerInstance.stop).toHaveBeenCalled();
 });
 
-it("uses select for tool confirmation instead of confirm", async () => {
-  process.env.OPENROUTER_API_KEY = "test-key";
+it("automatically triggers AI response after successful tool execution", async () => {
+  vi.mocked(getUserMessage)
+    .mockResolvedValueOnce("hello")
+    .mockResolvedValueOnce("exit");
 
-  // Test would verify that select is called with correct options
-  // and handles both accept and reject cases appropriately
+  vi.mocked(promptReplProviderSelection).mockResolvedValue({
+    name: "Test",
+    model: "test-model",
+    config: {},
+  });
+
+  const xmlContent = '<write path="test.txt">hello</write>';
+
+  // First call returns a tool call
+  const mockStream1 = {
+    [Symbol.asyncIterator]: async function* () {
+      yield {
+        choices: [{ delta: { content: xmlContent } }],
+      };
+    },
+  };
+
+  // Second call (auto-triggered) returns a final response
+  const mockStream2 = {
+    [Symbol.asyncIterator]: async function* () {
+      yield { choices: [{ delta: { content: "Done!" } }] };
+    },
+  };
+
+  vi.mocked(callAIStream)
+    .mockResolvedValueOnce(mockStream1 as any)
+    .mockResolvedValueOnce(mockStream2 as any);
+
+  // First pass: returns tool
+  vi.mocked(parseToolCalls).mockReturnValueOnce([
+    {
+      type: "write",
+      path: "test.txt",
+      content: "hello",
+      raw: xmlContent,
+    },
+  ]);
+  // Second pass: returns empty (normal text)
+  vi.mocked(parseToolCalls).mockReturnValueOnce([]);
+
+  vi.mocked(executeTool).mockResolvedValue("Success");
+
+  await runRepl();
+
+  // callAIStream should be called twice even though getUserMessage was only called once for "hello"
+  expect(callAIStream).toHaveBeenCalledTimes(2);
 });

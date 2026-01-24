@@ -66,28 +66,34 @@ export async function runRepl() {
 
   Logger.info(`Starting REPL session: ${sessionId}`);
 
+  let shouldAutoTriggerAI = false;
+
   while (true) {
-    const userInput = await getUserMessage("You:");
+    if (!shouldAutoTriggerAI) {
+      const userInput = await getUserMessage("You:");
 
-    if (userInput === null) {
-      // cancelled → just loop again
-      continue;
+      if (userInput === null) {
+        // cancelled → just loop again
+        continue;
+      }
+
+      if (userInput.toLowerCase() === "exit") {
+        break;
+      }
+
+      if (userInput.trim() === "") {
+        continue; // safety net – should not happen
+      }
+
+      process.stdout.write("You:\n");
+      process.stdout.write(userInput);
+      process.stdout.write("\n---\n");
+
+      messages.push({ role: "user", content: userInput });
+      await saveSession(sessionId, messages);
+    } else {
+      shouldAutoTriggerAI = false; // Reset for next iteration
     }
-
-    if (userInput.toLowerCase() === "exit") {
-      break;
-    }
-
-    if (userInput.trim() === "") {
-      continue; // safety net – should not happen
-    }
-
-    process.stdout.write("You:\n");
-    process.stdout.write(userInput);
-    process.stdout.write("\n---\n");
-
-    messages.push({ role: "user", content: userInput });
-    await saveSession(sessionId, messages);
 
     let assistantContent = "";
     process.stdout.write("\n");
@@ -95,33 +101,68 @@ export async function runRepl() {
     const spinner = ora("Assistant thinking...").start();
     let hasContent = false;
 
-    try {
-      const stream = await callAIStream(
-        env.OPENROUTER_API_KEY,
-        provider.model,
-        messages,
-        provider.config ?? {},
-      );
+    let retryAttempts = 0;
+    const maxRetries = 3;
+    let success = false;
 
-      spinner.stop();
+    while (retryAttempts <= maxRetries) {
+      try {
+        const stream = await callAIStream(
+          env.OPENROUTER_API_KEY,
+          provider.model,
+          messages,
+          provider.config ?? {},
+        );
 
-      process.stdout.write("Assistant:\n");
+        spinner.stop();
+        success = true;
+        process.stdout.write("Assistant:\n");
 
-      for await (const chunk of stream) {
-        if (!hasContent) {
-          hasContent = true;
-          process.stdout.write(""); // Clear any remaining spinner artifacts
+        for await (const chunk of stream) {
+          if (!hasContent) {
+            hasContent = true;
+            process.stdout.write(""); // Clear any remaining spinner artifacts
+          }
+          const delta = chunk.choices[0]?.delta?.content || "";
+          assistantContent += delta;
+          process.stdout.write(delta);
         }
-        const delta = chunk.choices[0]?.delta?.content || "";
-        assistantContent += delta;
-        process.stdout.write(delta);
+        break; // Success, exit retry loop
+      } catch (error: any) {
+        retryAttempts++;
+        Logger.error(
+          `AI call failed (attempt ${retryAttempts}): ${error.message}`,
+        );
+
+        if (retryAttempts > maxRetries) {
+          spinner.fail("AI request failed after multiple attempts");
+          // Final failure - ask user what to do
+          const retryChoice = await select({
+            message: "AI service unavailable. What would you like to do?",
+            choices: [
+              { name: "Retry", value: "retry" },
+              { name: "Exit REPL", value: "exit" },
+            ],
+          });
+
+          if (retryChoice === "retry") {
+            retryAttempts = 0; // Reset and try again
+            spinner.start("Assistant thinking...");
+            continue;
+          } else {
+            Logger.info("Exiting REPL due to AI service failure");
+            return; // Exit the REPL function
+          }
+        }
+
+        // Brief pause before retry
+        await new Promise((resolve) =>
+          setTimeout(resolve, 1000 * retryAttempts),
+        );
       }
-    } catch (error) {
-      spinner.fail("AI request failed");
-      console.log("Error:", error);
-      Logger.error("AI request failed, continuing REPL session");
-      continue; // Continue the REPL session instead of exiting
     }
+
+    if (!success) continue;
 
     if (!hasContent) {
       process.stdout.write(""); // Ensure clean output if no content received
@@ -133,12 +174,11 @@ export async function runRepl() {
 
     const toolCalls = parseToolCalls(assistantContent);
     let toolDenied = false;
-    let shouldAutoTriggerAI = false;
+    let toolExecuted = false;
 
     for (const call of toolCalls) {
       console.log(formatToolPreview(call.type, call.path, call.content));
 
-      // Use select instead of confirm
       const choice = await select({
         message: `Execute ${call.type} on ${call.path}?`,
         choices: [
@@ -147,27 +187,19 @@ export async function runRepl() {
         ],
       });
 
-      const approved = choice === "accept";
-
-      if (approved) {
+      if (choice === "accept") {
         try {
           const result = await executeTool(call);
-          messages.push({ role: "assistant", content: call.raw });
           messages.push({ role: "user", content: `Tool Output:\n${result}` });
-          Logger.info(`Tool executed successfully.`);
-
-          // Display the actual tool output to user
-          console.log(`\nTool Result:\n${result}\n`);
-
-          // Mark that we should auto-trigger AI response
-          shouldAutoTriggerAI = true;
+          process.stdout.write(`\nTool Output:\n${result}\n`);
+          toolExecuted = true;
         } catch (err: any) {
           messages.push({
             role: "user",
             content: `Tool Error: ${err.message}`,
           });
-          Logger.error(err.message);
-          console.log(`\nTool Error: ${err.message}\n`);
+          process.stdout.write(`\nTool Error: ${err.message}\n`);
+          toolExecuted = true;
         }
       } else {
         toolDenied = true;
@@ -176,11 +208,14 @@ export async function runRepl() {
       }
     }
 
-    // If tools were executed successfully, automatically trigger AI response
-    if (shouldAutoTriggerAI && !toolDenied) {
-      continue; // Skip asking for user input and go straight to AI
-    }
-
     await saveSession(sessionId, messages);
+
+    // Auto-trigger AI response only if tools were executed and NONE were denied
+    if (toolExecuted && !toolDenied) {
+      shouldAutoTriggerAI = true;
+      continue;
+    } else {
+      shouldAutoTriggerAI = false;
+    }
   }
 }
