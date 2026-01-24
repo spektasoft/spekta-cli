@@ -2,55 +2,13 @@ import { checkbox, select } from "@inquirer/prompts";
 import boxen from "boxen";
 import chalk from "chalk";
 import ora from "ora";
-import * as readline from "readline";
 import { callAIStream, Message } from "../api";
 import { getEnv, getPromptContent, getProviders } from "../config";
-import { formatToolPreview } from "../ui";
 import { promptReplProviderSelection } from "../ui/repl";
 import { executeTool, parseToolCalls } from "../utils/agent-utils";
 import { Logger } from "../utils/logger";
 import { getUserMessage } from "../utils/multiline-input";
 import { generateSessionId, saveSession } from "../utils/session-utils";
-
-/**
- * Get multiline input from user with ability to interrupt and see responses
- */
-async function getMultilineInput(prompt: string): Promise<string> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    const lines: string[] = [];
-
-    const askForLine = () => {
-      const promptText =
-        lines.length === 0
-          ? `${prompt}\n(Multiline mode - type 'END' on its own line to submit, 'CANCEL' to abort)\n> `
-          : `${lines.length + 1}> `;
-
-      rl.question(promptText, (input) => {
-        if (input.trim().toUpperCase() === "CANCEL") {
-          rl.close();
-          resolve("");
-          return;
-        }
-
-        if (input.trim().toUpperCase() === "END") {
-          rl.close();
-          resolve(lines.join("\n"));
-          return;
-        }
-
-        lines.push(input);
-        askForLine();
-      });
-    };
-
-    askForLine();
-  });
-}
 
 export async function runRepl() {
   const env = await getEnv();
@@ -72,7 +30,7 @@ export async function runRepl() {
 
   while (true) {
     if (!shouldAutoTriggerAI) {
-      const userInput = await getUserMessage("You:");
+      const userInput = await getUserMessage();
 
       if (userInput === null) {
         // cancelled → just loop again
@@ -87,9 +45,13 @@ export async function runRepl() {
         continue; // safety net – should not happen
       }
 
+      process.stdout.write(chalk.green.bold("\n"));
       process.stdout.write(chalk.green.bold("You:\n"));
-      process.stdout.write(userInput);
-      process.stdout.write("\n---\n");
+      console.log(
+        boxen(userInput, {
+          borderColor: "green",
+        }),
+      );
 
       messages.push({ role: "user", content: userInput });
       await saveSession(sessionId, messages);
@@ -128,7 +90,7 @@ export async function runRepl() {
           assistantContent += delta;
           process.stdout.write(delta);
         }
-        process.stdout.write("\n\n---\n\n");
+        process.stdout.write("\n\n");
         break; // Success, exit retry loop
       } catch (error: any) {
         retryAttempts++;
@@ -180,8 +142,7 @@ export async function runRepl() {
             .join("\n"),
           {
             title: "Proposed Tools",
-            padding: 1,
-            borderColor: "yellow",
+            borderColor: "cyan",
             dimBorder: true,
           },
         ),
@@ -231,7 +192,16 @@ export async function runRepl() {
 
       // 3. Aggregate all results into ONE user message
       if (toolResults.length > 0) {
-        const aggregatedContent = toolResults.join("\n\n---\n\n");
+        const aggregatedContent = toolResults.join("\n").trim();
+        process.stdout.write("\n");
+
+        console.log(
+          boxen(aggregatedContent, {
+            title: "Tools Result",
+            borderColor: "cyan",
+          }),
+        );
+
         messages.push({ role: "user", content: aggregatedContent });
         await saveSession(sessionId, messages);
 

@@ -4,6 +4,7 @@ import * as readline from "readline";
 import { getEnv } from "../config";
 import { openEditor } from "../editor-utils";
 import { getTempPath } from "./fs-utils";
+import chalk from "chalk";
 
 type InputResult = string | null;
 
@@ -43,9 +44,7 @@ async function openInEditorWithConfirmation(
   }
 }
 
-export async function getUserMessage(
-  prompt: string = "You:",
-): Promise<InputResult> {
+export async function getUserMessage(): Promise<InputResult> {
   let currentBuffer = "";
 
   const runInputLoop = (): Promise<InputResult> => {
@@ -56,9 +55,12 @@ export async function getUserMessage(
       });
 
       const askForLine = () => {
+        const instruction = chalk.green.dim(
+          "Type your message. 'e' to edit in external editor, 's'/'send'/'.'/';;' to submit, 'c'/'cancel' to abort, 'q'/'quit' to exit",
+        );
         const promptText =
           currentBuffer === ""
-            ? `${prompt}\n(Type your message. 'e' to edit in external editor, 's'/'send'/'.'/';;' to submit, 'c'/'cancel' to abort, 'q'/'quit' to exit)\n> `
+            ? `${instruction}\n1> `
             : `${currentBuffer.split("\n").length + 1}> `;
         rl.question(promptText, async (input) => {
           const trimmed = input.trim().toLowerCase();
