@@ -27,6 +27,7 @@ export async function runRepl() {
   Logger.info(`Starting REPL session: ${sessionId}`);
 
   let shouldAutoTriggerAI = false;
+  let pendingToolResults = "";
 
   while (true) {
     if (!shouldAutoTriggerAI) {
@@ -38,6 +39,11 @@ export async function runRepl() {
       }
 
       if (userInput.toLowerCase() === "exit") {
+        // Best practice: if there are pending rejections, save them before exiting
+        if (pendingToolResults) {
+          messages.push({ role: "user", content: pendingToolResults });
+          await saveSession(sessionId, messages);
+        }
         break;
       }
 
@@ -45,15 +51,23 @@ export async function runRepl() {
         continue; // safety net – should not happen
       }
 
+      // Prepend pending tool results if they exist
+      const finalMessageContent = pendingToolResults
+        ? `${pendingToolResults}\n\n${userInput}`
+        : userInput;
+
+      // Clear buffer after consumption
+      pendingToolResults = "";
+
       process.stdout.write(chalk.green.bold("\n"));
       process.stdout.write(chalk.green.bold("You:\n"));
       console.log(
-        boxen(userInput, {
+        boxen(finalMessageContent, {
           borderColor: "green",
         }),
       );
 
-      messages.push({ role: "user", content: userInput });
+      messages.push({ role: "user", content: finalMessageContent });
       await saveSession(sessionId, messages);
     } else {
       shouldAutoTriggerAI = false; // Reset for next iteration
@@ -190,9 +204,9 @@ export async function runRepl() {
         }
       }
 
-      // 3. Aggregate all results into ONE user message
+      // 3. Aggregate all results into pending buffer for next user message
       if (toolResults.length > 0) {
-        const aggregatedContent = toolResults.join("\n").trim();
+        const aggregatedContent = toolResults.join("\n");
         process.stdout.write("\n");
 
         console.log(
@@ -202,8 +216,8 @@ export async function runRepl() {
           }),
         );
 
-        messages.push({ role: "user", content: aggregatedContent });
-        await saveSession(sessionId, messages);
+        // Store in pending buffer instead of immediately committing
+        pendingToolResults = aggregatedContent;
 
         if (hasAnyExecution) {
           shouldAutoTriggerAI = true;
