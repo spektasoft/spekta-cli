@@ -1,5 +1,24 @@
-import { expect, it, describe } from "vitest";
-import { parseToolCalls, validateFilePath } from "./agent-utils";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getReadContent } from "../commands/read";
+import {
+  executeTool,
+  parseToolCalls,
+  ToolCall,
+  validateFilePath,
+} from "./agent-utils";
+import { parseFilePathWithRange } from "./read-utils";
+
+vi.mock("../commands/read", () => ({
+  getReadContent: vi.fn(),
+}));
+
+vi.mock("./read-utils", async () => {
+  const actual = await vi.importActual("./read-utils");
+  return {
+    ...(actual as any),
+    parseFilePathWithRange: vi.fn(),
+  };
+});
 
 describe("agent-utils", () => {
   describe("parseToolCalls", () => {
@@ -55,6 +74,38 @@ describe("agent-utils", () => {
       expect(validateFilePath("../outside/file.ts")).toBe(false);
       expect(validateFilePath("/absolute/path/file.ts")).toBe(false);
       expect(validateFilePath("/etc/passwd")).toBe(false);
+    });
+  });
+
+  describe("executeTool", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+    });
+
+    it("handles multi-file read with ranges and quotes", async () => {
+      const mockParse = vi.mocked(parseFilePathWithRange);
+      mockParse.mockReturnValueOnce({ path: "file1.ts" }).mockReturnValueOnce({
+        path: "spaced file.ts",
+        range: { start: 1, end: 10 },
+      });
+
+      const mockGetReadContent = vi.mocked(getReadContent);
+      mockGetReadContent.mockResolvedValue("mocked content");
+
+      const call: ToolCall = {
+        type: "read",
+        path: `file1.ts "spaced file.ts[1,10]"`,
+        raw: '<read path="file1.ts \\"spaced file.ts[1,10]\\"" />',
+      };
+
+      const result = await executeTool(call);
+
+      expect(result).toBe("mocked content");
+      expect(mockParse).toHaveBeenCalledTimes(2);
+      expect(mockGetReadContent).toHaveBeenCalledWith([
+        { path: "file1.ts" },
+        { path: "spaced file.ts", range: { start: 1, end: 10 } },
+      ]);
     });
   });
 });

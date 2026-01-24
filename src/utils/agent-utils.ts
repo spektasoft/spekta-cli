@@ -1,10 +1,10 @@
 import path from "node:path";
 import { getReadContent } from "../commands/read";
-import { getWriteContent } from "../commands/write";
 import { executeSafeReplace } from "../commands/replace";
-import { parseFilePathWithRange } from "./read-utils";
-import { ReplaceRequest } from "./replace-utils";
+import { getWriteContent } from "../commands/write";
 import { Logger } from "./logger";
+import { parseFilePathWithRange, tokenizeQuotedPaths } from "./read-utils";
+import { ReplaceRequest } from "./replace-utils";
 
 export interface ToolCall {
   type: "read" | "write" | "replace";
@@ -63,15 +63,30 @@ export function validateFilePath(filePath: string): boolean {
 }
 
 export async function executeTool(call: ToolCall): Promise<string> {
-  // Validate path before any operation
+  if (call.type === "read") {
+    // Tokenize and normalize the path string to support multiple files and quoted paths
+    const tokens = tokenizeQuotedPaths(call.path);
+    if (tokens.length === 0) {
+      throw new Error("Read tool requires at least one file path.");
+    }
+
+    const requests = tokens.map((token) => {
+      const req = parseFilePathWithRange(token);
+      // Validate each resolved path
+      if (!validateFilePath(req.path)) {
+        throw new Error(`Invalid file path: ${req.path}`);
+      }
+      return req;
+    });
+
+    return await getReadContent(requests);
+  }
+
+  // Validate path before any operation for non-read tools
   if (!validateFilePath(call.path)) {
     throw new Error(`Invalid file path: ${call.path}`);
   }
 
-  if (call.type === "read") {
-    const req = parseFilePathWithRange(call.path);
-    return await getReadContent([req]);
-  }
   if (call.type === "write") {
     const res = await getWriteContent(call.path, call.content || "");
     return res.message;
