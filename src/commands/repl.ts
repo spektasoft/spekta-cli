@@ -128,6 +128,9 @@ export async function runRepl() {
     }
     process.stdout.write("\n\n---\n\n");
 
+    messages.push({ role: "assistant", content: assistantContent });
+    await saveSession(sessionId, messages);
+
     const toolCalls = parseToolCalls(assistantContent);
     let toolDenied = false;
     let shouldAutoTriggerAI = false;
