@@ -1,4 +1,4 @@
-import { confirm } from "@inquirer/prompts";
+import { select } from "@inquirer/prompts";
 import ora from "ora";
 import * as readline from "readline";
 import { callAIStream, Message } from "../api";
@@ -118,7 +118,9 @@ export async function runRepl() {
       }
     } catch (error) {
       spinner.fail("AI request failed");
-      throw error;
+      console.log("Error:", error);
+      Logger.error("AI request failed, continuing REPL session");
+      continue; // Continue the REPL session instead of exiting
     }
 
     if (!hasContent) {
@@ -128,13 +130,21 @@ export async function runRepl() {
 
     const toolCalls = parseToolCalls(assistantContent);
     let toolDenied = false;
+    let shouldAutoTriggerAI = false;
 
     for (const call of toolCalls) {
       console.log(formatToolPreview(call.type, call.path, call.content));
-      const approved = await confirm({
+
+      // Use select instead of confirm
+      const choice = await select({
         message: `Execute ${call.type} on ${call.path}?`,
-        default: true,
+        choices: [
+          { name: "Accept", value: "accept" },
+          { name: "Reject", value: "reject" },
+        ],
       });
+
+      const approved = choice === "accept";
 
       if (approved) {
         try {
@@ -142,12 +152,19 @@ export async function runRepl() {
           messages.push({ role: "assistant", content: call.raw });
           messages.push({ role: "user", content: `Tool Output:\n${result}` });
           Logger.info(`Tool executed successfully.`);
+
+          // Display the actual tool output to user
+          console.log(`\nTool Result:\n${result}\n`);
+
+          // Mark that we should auto-trigger AI response
+          shouldAutoTriggerAI = true;
         } catch (err: any) {
           messages.push({
             role: "user",
             content: `Tool Error: ${err.message}`,
           });
           Logger.error(err.message);
+          console.log(`\nTool Error: ${err.message}\n`);
         }
       } else {
         toolDenied = true;
@@ -156,11 +173,9 @@ export async function runRepl() {
       }
     }
 
-    if (!toolDenied && toolCalls.length > 0) {
-      // If tools were run, we ideally would loop back to AI automatically,
-      // but requirements state breaking on denial. If accepted, we continue
-      // the loop which will naturally ask for user input or can be modified
-      // to auto-trigger the AI again.
+    // If tools were executed successfully, automatically trigger AI response
+    if (shouldAutoTriggerAI && !toolDenied) {
+      continue; // Skip asking for user input and go straight to AI
     }
 
     await saveSession(sessionId, messages);
