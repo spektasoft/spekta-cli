@@ -1,4 +1,5 @@
 import { confirm } from "@inquirer/prompts";
+import ora from "ora";
 import * as readline from "readline";
 import { callAIStream, Message } from "../api";
 import { getEnv, getPromptContent, getProviders } from "../config";
@@ -6,8 +7,8 @@ import { formatToolPreview } from "../ui";
 import { promptReplProviderSelection } from "../ui/repl";
 import { executeTool, parseToolCalls } from "../utils/agent-utils";
 import { Logger } from "../utils/logger";
-import { generateSessionId, saveSession } from "../utils/session-utils";
 import { getUserMessage } from "../utils/multiline-input";
+import { generateSessionId, saveSession } from "../utils/session-utils";
 
 /**
  * Get multiline input from user with ability to interrupt and see responses
@@ -81,25 +82,49 @@ export async function runRepl() {
       continue; // safety net – should not happen
     }
 
+    process.stdout.write("You:\n");
+    process.stdout.write(userInput);
+    process.stdout.write("\n---\n");
+
     messages.push({ role: "user", content: userInput });
     await saveSession(sessionId, messages);
 
     let assistantContent = "";
-    process.stdout.write("\nAssistant: ");
-
-    const stream = await callAIStream(
-      env.OPENROUTER_API_KEY,
-      provider.model,
-      messages,
-      provider.config ?? {},
-    );
-
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content || "";
-      assistantContent += delta;
-      process.stdout.write(delta);
-    }
     process.stdout.write("\n");
+
+    const spinner = ora("Assistant thinking...").start();
+    let hasContent = false;
+
+    try {
+      const stream = await callAIStream(
+        env.OPENROUTER_API_KEY,
+        provider.model,
+        messages,
+        provider.config ?? {},
+      );
+
+      spinner.stop();
+
+      process.stdout.write("Assistant:\n");
+
+      for await (const chunk of stream) {
+        if (!hasContent) {
+          hasContent = true;
+          process.stdout.write(""); // Clear any remaining spinner artifacts
+        }
+        const delta = chunk.choices[0]?.delta?.content || "";
+        assistantContent += delta;
+        process.stdout.write(delta);
+      }
+    } catch (error) {
+      spinner.fail("AI request failed");
+      throw error;
+    }
+
+    if (!hasContent) {
+      process.stdout.write(""); // Ensure clean output if no content received
+    }
+    process.stdout.write("\n\n---\n\n");
 
     const toolCalls = parseToolCalls(assistantContent);
     let toolDenied = false;
