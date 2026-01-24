@@ -1,4 +1,6 @@
-import { select } from "@inquirer/prompts";
+import { checkbox, select } from "@inquirer/prompts";
+import boxen from "boxen";
+import chalk from "chalk";
 import ora from "ora";
 import * as readline from "readline";
 import { callAIStream, Message } from "../api";
@@ -85,7 +87,7 @@ export async function runRepl() {
         continue; // safety net – should not happen
       }
 
-      process.stdout.write("You:\n");
+      process.stdout.write(chalk.green.bold("You:\n"));
       process.stdout.write(userInput);
       process.stdout.write("\n---\n");
 
@@ -116,17 +118,17 @@ export async function runRepl() {
 
         spinner.stop();
         success = true;
-        process.stdout.write("Assistant:\n");
+        process.stdout.write(chalk.cyan.bold("Assistant:\n"));
 
         for await (const chunk of stream) {
           if (!hasContent) {
             hasContent = true;
-            process.stdout.write(""); // Clear any remaining spinner artifacts
           }
           const delta = chunk.choices[0]?.delta?.content || "";
           assistantContent += delta;
           process.stdout.write(delta);
         }
+        process.stdout.write("\n\n---\n\n");
         break; // Success, exit retry loop
       } catch (error: any) {
         retryAttempts++;
@@ -164,58 +166,82 @@ export async function runRepl() {
 
     if (!success) continue;
 
-    if (!hasContent) {
-      process.stdout.write(""); // Ensure clean output if no content received
-    }
-    process.stdout.write("\n\n---\n\n");
-
     messages.push({ role: "assistant", content: assistantContent });
     await saveSession(sessionId, messages);
 
     const toolCalls = parseToolCalls(assistantContent);
-    let toolDenied = false;
-    let toolExecuted = false;
 
-    for (const call of toolCalls) {
-      console.log(formatToolPreview(call.type, call.path, call.content));
+    if (toolCalls.length > 0) {
+      // 1. Show Plan Summary
+      console.log(
+        boxen(
+          toolCalls
+            .map((c, i) => `${i + 1}. [${c.type.toUpperCase()}] ${c.path}`)
+            .join("\n"),
+          {
+            title: "Proposed Tools",
+            padding: 1,
+            borderColor: "yellow",
+            dimBorder: true,
+          },
+        ),
+      );
 
-      const choice = await select({
-        message: `Execute ${call.type} on ${call.path}?`,
-        choices: [
-          { name: "Accept", value: "accept" },
-          { name: "Reject", value: "reject" },
-        ],
+      // 2. Individual Selection
+      const selectedTools = await checkbox({
+        message: "Select tools to execute:",
+        choices: toolCalls.map((c, i) => ({
+          name: `${c.type}: ${c.path}`,
+          value: i,
+        })),
       });
 
-      if (choice === "accept") {
-        try {
-          const result = await executeTool(call);
-          messages.push({ role: "user", content: `Tool Output:\n${result}` });
-          process.stdout.write(`\nTool Output:\n${result}\n`);
-          toolExecuted = true;
-        } catch (err: any) {
-          messages.push({
-            role: "user",
-            content: `Tool Error: ${err.message}`,
-          });
-          process.stdout.write(`\nTool Error: ${err.message}\n`);
-          toolExecuted = true;
+      const toolResults: string[] = [];
+      let hasAnyExecution = false;
+
+      for (let i = 0; i < toolCalls.length; i++) {
+        const call = toolCalls[i];
+        if (selectedTools.includes(i)) {
+          try {
+            const result = await executeTool(call);
+            toolResults.push(
+              `### Tool: ${call.type} on ${call.path}\nStatus: Success\nOutput:\n${result}`,
+            );
+            hasAnyExecution = true;
+            process.stdout.write(
+              chalk.green(`✓ Executed ${call.type} on ${call.path}\n`),
+            );
+          } catch (err: any) {
+            toolResults.push(
+              `### Tool: ${call.type} on ${call.path}\nStatus: Error\n${err.message}`,
+            );
+            hasAnyExecution = true;
+            process.stdout.write(
+              chalk.red(
+                `✗ Failed ${call.type} on ${call.path}: ${err.message}\n`,
+              ),
+            );
+          }
+        } else {
+          toolResults.push(
+            `### Tool: ${call.type} on ${call.path}\nStatus: Denied by user`,
+          );
         }
-      } else {
-        toolDenied = true;
-        Logger.warn("Tool execution denied by user.");
-        break;
+      }
+
+      // 3. Aggregate all results into ONE user message
+      if (toolResults.length > 0) {
+        const aggregatedContent = toolResults.join("\n\n---\n\n");
+        messages.push({ role: "user", content: aggregatedContent });
+        await saveSession(sessionId, messages);
+
+        if (hasAnyExecution) {
+          shouldAutoTriggerAI = true;
+          continue;
+        }
       }
     }
 
-    await saveSession(sessionId, messages);
-
-    // Auto-trigger AI response only if tools were executed and NONE were denied
-    if (toolExecuted && !toolDenied) {
-      shouldAutoTriggerAI = true;
-      continue;
-    } else {
-      shouldAutoTriggerAI = false;
-    }
+    shouldAutoTriggerAI = false;
   }
 }
