@@ -31,7 +31,7 @@ function getContextWindow(
  */
 export async function getReplaceContent(
   request: ReplaceRequest,
-  blocksInput: string,
+  blocksInput?: string,
 ): Promise<{
   content: string;
   appliedCount: number;
@@ -42,8 +42,14 @@ export async function getReplaceContent(
     // Validate file access and git tracking
     await validateEditAccess(request.path);
 
-    // Parse replacement blocks
-    const blocks = parseReplaceBlocks(blocksInput);
+    // Use provided blocks or parse from input
+    const blocks = blocksInput
+      ? parseReplaceBlocks(blocksInput)
+      : request.blocks;
+
+    if (blocks.length === 0) {
+      throw new Error("No replacement blocks provided or parsed.");
+    }
 
     // Apply replacements
     const result = await applyReplacements(request.path, blocks);
@@ -96,6 +102,66 @@ const getFileHash = (content: string) =>
   crypto.createHash("md5").update(content).digest("hex");
 
 /**
+ * Reusable function for programmatic replace operations with full safety checks.
+ */
+export async function executeSafeReplace(
+  request: ReplaceRequest,
+  blocksInput?: string,
+): Promise<{ message: string; appliedCount: number }> {
+  try {
+    // 1. Validate access
+    await validateEditAccess(request.path);
+
+    // 2. Read original content + hash
+    const originalContent = await fs.readFile(request.path, "utf-8");
+    const initialHash = getFileHash(originalContent);
+
+    // 3. Ensure we have blocks (parse if provided as string)
+    let blocks = request.blocks;
+    if (blocks.length === 0 && blocksInput) {
+      blocks = parseReplaceBlocks(blocksInput);
+      request.blocks = blocks;
+    }
+
+    if (blocks.length === 0) {
+      throw new Error("No replacement blocks provided or parsed.");
+    }
+
+    // 4. Apply replacements
+    const {
+      content: replacedContent,
+      message,
+      appliedCount,
+    } = await getReplaceContent(request, "");
+
+    if (appliedCount === 0) {
+      return {
+        message: "No changes applied (blocks matched nothing)",
+        appliedCount: 0,
+      };
+    }
+
+    // 5. Canonicalize formatting
+    const content = await formatFile(request.path, replacedContent);
+
+    // 6. Stale-write check
+    const currentContent = await fs.readFile(request.path, "utf-8");
+    if (getFileHash(currentContent) !== initialHash) {
+      throw new Error("File was modified by another process during execution.");
+    }
+
+    // 7. Write
+    await fs.writeFile(request.path, content, "utf-8");
+
+    return { message, appliedCount };
+  } catch (error: any) {
+    const errMsg = `Replacement failed: ${error.message}`;
+    Logger.error(errMsg);
+    throw new Error(errMsg);
+  }
+}
+
+/**
  * CLI command for replace operation.
  */
 export async function runReplace(args: string[] = []): Promise<void> {
@@ -112,42 +178,19 @@ export async function runReplace(args: string[] = []): Promise<void> {
     const filePath = args[0];
     const blocksInput = args.slice(1).join(" ");
 
-    // Validate file access and git tracking early
-    await validateEditAccess(filePath);
+    const request: ReplaceRequest = { path: filePath, blocks: [] };
 
-    const request: ReplaceRequest = {
-      path: filePath,
-      blocks: [], // Will be parsed in getReplaceContent
-    };
-
-    // Step 2: Read file and get initial hash for stale-write check
-    const originalContent = await fs.readFile(request.path, "utf-8");
-    const initialHash = getFileHash(originalContent);
-
-    // Step 3: Apply replacements
-    const {
-      content: replacedContent,
-      message,
-      appliedCount,
-    } = await getReplaceContent(request, blocksInput);
-
-    // Step 4: Canonicalize formatting to prevent agent loops
-    const content = await formatFile(request.path, replacedContent);
-
-    // Before writing, verify file hasn't changed (stale-write check)
-    const currentContent = await fs.readFile(request.path, "utf-8");
-    if (getFileHash(currentContent) !== initialHash) {
-      throw new Error("File was modified by another process during execution.");
-    }
-
-    // Write updated content back to file
-    await fs.writeFile(request.path, content, "utf-8");
-
-    // Output the rich feedback to the console
-    process.stdout.write(message);
-    Logger.info(
-      `Successfully applied ${appliedCount} replacement(s) to ${request.path}`,
+    const { message, appliedCount } = await executeSafeReplace(
+      request,
+      blocksInput,
     );
+
+    process.stdout.write(message);
+    if (appliedCount > 0) {
+      Logger.info(
+        `Successfully applied ${appliedCount} replacement(s) to ${filePath}`,
+      );
+    }
   } catch (error: any) {
     // Graceful error reporting without block dumps
     Logger.error(`Action Failed: ${error.message}`);

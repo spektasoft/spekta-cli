@@ -1,7 +1,7 @@
 import path from "node:path";
 import { getReadContent } from "../commands/read";
 import { getWriteContent } from "../commands/write";
-import { getReplaceContent } from "../commands/replace";
+import { executeSafeReplace } from "../commands/replace";
 import { parseFilePathWithRange } from "./read-utils";
 import { ReplaceRequest } from "./replace-utils";
 import { Logger } from "./logger";
@@ -77,9 +77,21 @@ export async function executeTool(call: ToolCall): Promise<string> {
     return res.message;
   }
   if (call.type === "replace") {
-    const req: ReplaceRequest = { path: call.path, blocks: [] };
-    const res = await getReplaceContent(req, call.content || "");
-    return res.message;
+    if (!call.content) {
+      throw new Error("Replace tool requires content (search/replace blocks)");
+    }
+
+    const request: ReplaceRequest = {
+      path: call.path,
+      blocks: [], // will be parsed from content
+    };
+
+    const { message, appliedCount } = await executeSafeReplace(
+      request,
+      call.content,
+    );
+
+    return `${message}\nApplied ${appliedCount} change(s).`;
   }
   throw new Error("Unknown tool");
 }

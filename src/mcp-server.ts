@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import fs from "fs-extra";
 import { z } from "zod";
 import { getReadContent } from "./commands/read";
-import { getReplaceContent } from "./commands/replace";
+import { executeSafeReplace } from "./commands/replace";
 import { getWriteContent } from "./commands/write";
 import { bootstrap } from "./config";
 import { Logger } from "./utils/logger";
@@ -59,13 +59,20 @@ export async function runMcpServer() {
     },
     async ({ path, blocks }) => {
       try {
-        const request = { path, blocks: [] };
-        const { content, message } = await getReplaceContent(request, blocks);
+        const request = { path, blocks: [] }; // blocks parsed later
 
-        await fs.writeFile(path, content, "utf-8");
+        const { message, appliedCount } = await executeSafeReplace(
+          request,
+          blocks,
+        );
 
         return {
-          content: [{ type: "text", text: message }],
+          content: [
+            {
+              type: "text",
+              text: `${message}\nApplied ${appliedCount} replacement(s).`,
+            },
+          ],
         };
       } catch (error: any) {
         return {
