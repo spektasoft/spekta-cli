@@ -114,6 +114,14 @@ export async function runRepl() {
 
         if (retryAttempts > maxRetries) {
           spinner.fail("AI request failed after multiple attempts");
+
+          // Save pending state before offering exit choice
+          if (pendingToolResults) {
+            messages.push({ role: "user", content: pendingToolResults });
+            await saveSession(sessionId, messages);
+            pendingToolResults = "";
+          }
+
           // Final failure - ask user what to do
           const retryChoice = await select({
             message: "AI service unavailable. What would you like to do?",
