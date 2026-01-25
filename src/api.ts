@@ -1,7 +1,18 @@
 import OpenAI from "openai";
-import { OpenRouterModel } from "./config";
 import { ChatCompletionChunk } from "openai/resources/chat/completions";
-import { Stream } from "openai/streaming";
+import { OpenRouterModel } from "./config";
+
+// Extension interface for OpenAI streaming chunk with reasoning_details
+export interface ChatCompletionChunkWithReasoning {
+  choices: Array<{
+    delta: {
+      reasoning_details?: Array<{
+        text?: string;
+      }>;
+      content: string;
+    };
+  }>;
+}
 
 export interface Message {
   role: "system" | "user" | "assistant";
@@ -33,11 +44,8 @@ export const callAI = async (
 ): Promise<string> => {
   const client = clientOverride || getAIClient(apiKey);
 
-  // Strip reasoning field from history
-  const sanitizedMessages = messages.map((message) => ({
-    role: message.role,
-    content: message.content,
-  }));
+  // Use destructuring to exclude reasoning while preserving all other fields
+  const sanitizedMessages = messages.map(({ reasoning, ...rest }) => rest);
 
   const response = await client.chat.completions.create({
     model,
@@ -100,11 +108,8 @@ export const callAIStream = async (
 ): Promise<AsyncIterable<ChatCompletionChunk>> => {
   const client = clientOverride || getAIClient(apiKey);
 
-  // Strip reasoning field from history
-  const sanitizedMessages = messages.map((message) => ({
-    role: message.role,
-    content: message.content,
-  }));
+  // Use destructuring to exclude reasoning while preserving all other fields
+  const sanitizedMessages = messages.map(({ reasoning, ...rest }) => rest);
 
   return await client.chat.completions.create({
     model,

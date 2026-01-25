@@ -105,4 +105,47 @@ describe("callAI", () => {
       content: "Hello, world!",
     });
   });
+
+  it("preserves standard fields like 'name' while removing 'reasoning'", async () => {
+    const mockClient = {
+      chat: {
+        completions: {
+          create: vi.fn().mockResolvedValue({
+            choices: [{ message: { content: "test response" } }],
+          }),
+        },
+      },
+    } as unknown as OpenAI;
+
+    const messages = [
+      {
+        role: "user",
+        content: "Hello",
+        name: "test_user",
+        reasoning: "internal thought process",
+      },
+      {
+        role: "assistant",
+        content: "Hi there",
+        name: "assistant",
+      },
+    ] as unknown as Message[];
+
+    const result = await callAI("key", "gpt-4", messages, {}, mockClient);
+    // @ts-ignore
+    const payload = mockClient.chat.completions.create.mock.calls[0][0];
+
+    expect(payload.messages).toHaveLength(2);
+    expect(payload.messages[0]).toEqual({
+      role: "user",
+      content: "Hello",
+      name: "test_user",
+      // reasoning should be removed
+    });
+    expect(payload.messages[1]).toEqual({
+      role: "assistant",
+      content: "Hi there",
+      name: "assistant",
+    });
+  });
 });

@@ -2,7 +2,11 @@ import { checkbox, select } from "@inquirer/prompts";
 import boxen from "boxen";
 import chalk from "chalk";
 import ora from "ora";
-import { callAIStream, Message } from "../api";
+import {
+  callAIStream,
+  ChatCompletionChunkWithReasoning,
+  Message,
+} from "../api";
 import { getEnv, getPromptContent, getProviders } from "../config";
 import { promptReplProviderSelection } from "../ui/repl";
 import { executeTool, parseToolCalls } from "../utils/agent-utils";
@@ -84,7 +88,8 @@ export async function runRepl() {
         let isThinking = false;
 
         for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta as any;
+          const delta = (chunk as ChatCompletionChunkWithReasoning).choices[0]
+            ?.delta;
           const reasoning = delta?.reasoning_details?.[0]?.text || "";
           const content = delta?.content || "";
 
