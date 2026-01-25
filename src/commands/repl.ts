@@ -55,6 +55,7 @@ export async function runRepl() {
 
       process.stdout.write(chalk.green.bold("\nYou:\n"));
       console.log(boxen(finalMessageContent, { borderColor: "green" }));
+      process.stdout.write("\n");
     } else {
       // Automatic progression: Commit successful results before AI call
       messages.push({ role: "user", content: pendingToolResults });
@@ -68,7 +69,7 @@ export async function runRepl() {
     let success = false;
 
     while (!success) {
-      const spinner = ora("Assistant thinking...").start();
+      const spinner = ora("Calling assistant...\n").start();
       try {
         const stream = await callAIStream(
           env.OPENROUTER_API_KEY,
@@ -90,11 +91,12 @@ export async function runRepl() {
           // Handle Reasoning Chunk
           if (reasoning) {
             if (!isThinking) {
-              process.stdout.write(chalk.dim.italic("> Thought:\n"));
+              process.stdout.write("\n");
+              process.stdout.write(chalk.cyan.italic.dim("Thought:\n"));
               isThinking = true;
             }
             assistantReasoning += reasoning;
-            process.stdout.write(chalk.dim(reasoning));
+            process.stdout.write(chalk.italic.dim(reasoning));
           }
 
           // Handle Content Chunk
