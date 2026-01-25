@@ -148,6 +148,124 @@ describe("Session Utils - Atomic Write", () => {
 
       await expect(loadSession(mockSessionId)).rejects.toThrow();
     });
+
+    it("should load session with reasoning field", async () => {
+      const sessionData = {
+        sessionId: mockSessionId,
+        messages: [
+          { role: "user", content: "Hello" },
+          {
+            role: "assistant",
+            content: "Hi there!",
+            reasoning: "The user greeted me, so I should respond politely.",
+          },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+      const filePath = path.join(tmpDir, `${mockSessionId}.json`);
+      await fs.writeJSON(filePath, sessionData, { spaces: 2 });
+
+      const result = await loadSession(mockSessionId);
+
+      expect(result).toEqual(sessionData);
+      expect(result!.messages[1].reasoning).toBe(
+        sessionData.messages[1].reasoning,
+      );
+    });
+
+    it("should handle session with missing reasoning field", async () => {
+      const sessionData = {
+        sessionId: mockSessionId,
+        messages: [
+          { role: "user", content: "Hello" },
+          { role: "assistant", content: "Hi there!" }, // No reasoning field
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+      const filePath = path.join(tmpDir, `${mockSessionId}.json`);
+      await fs.writeJSON(filePath, sessionData, { spaces: 2 });
+
+      const result = await loadSession(mockSessionId);
+
+      expect(result).toEqual(sessionData);
+      expect(result!.messages[1].reasoning).toBeUndefined();
+    });
+
+    it("should filter out messages with missing required fields", async () => {
+      const sessionData = {
+        sessionId: mockSessionId,
+        messages: [
+          { role: "user", content: "Hello" }, // Valid
+          { role: "assistant" }, // Missing content
+          { content: "Hi there!" }, // Missing role
+          { role: "assistant", content: "Good!" }, // Valid
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+      const filePath = path.join(tmpDir, `${mockSessionId}.json`);
+      await fs.writeJSON(filePath, sessionData, { spaces: 2 });
+
+      const result = await loadSession(mockSessionId);
+
+      // Should only return valid messages
+      expect(result).not.toBeNull();
+      expect(result!.messages).toHaveLength(2);
+      expect(result!.messages[0]).toEqual({ role: "user", content: "Hello" });
+      expect(result!.messages[1]).toEqual({
+        role: "assistant",
+        content: "Good!",
+      });
+    });
+
+    it("should handle session with invalid messages format", async () => {
+      const sessionData = {
+        sessionId: mockSessionId,
+        messages: "not an array", // Invalid messages format
+        updatedAt: new Date().toISOString(),
+      };
+      const filePath = path.join(tmpDir, `${mockSessionId}.json`);
+      await fs.writeJSON(filePath, sessionData, { spaces: 2 });
+
+      const result = await loadSession(mockSessionId);
+
+      expect(result).toBeNull();
+    });
+
+    it("should handle session with missing sessionId and updatedAt", async () => {
+      const sessionData = {
+        messages: [
+          { role: "user", content: "Hello" },
+          { role: "assistant", content: "Hi there!" },
+        ],
+      };
+      const filePath = path.join(tmpDir, `${mockSessionId}.json`);
+      await fs.writeJSON(filePath, sessionData, { spaces: 2 });
+
+      const result = await loadSession(mockSessionId);
+
+      expect(result).not.toBeNull();
+      expect(result!.sessionId).toBe(mockSessionId); // Fallback to provided sessionId
+      expect(result!.updatedAt).toBeDefined(); // Should have generated timestamp
+    });
+
+    it("should preserve original sessionId if present", async () => {
+      const sessionId = "original-session-id";
+      const sessionData = {
+        sessionId,
+        messages: [
+          { role: "user", content: "Hello" },
+          { role: "assistant", content: "Hi there!" },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
+      const filePath = path.join(tmpDir, `${mockSessionId}.json`);
+      await fs.writeJSON(filePath, sessionData, { spaces: 2 });
+
+      const result = await loadSession(mockSessionId);
+
+      expect(result).not.toBeNull();
+      expect(result!.sessionId).toBe(sessionId); // Should preserve original sessionId
+    });
   });
 
   describe("listSessions", () => {
