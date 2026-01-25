@@ -79,10 +79,33 @@ export async function runRepl() {
         spinner.stop();
         process.stdout.write(chalk.cyan.bold("Assistant:\n"));
 
+        let assistantReasoning = "";
+        let isThinking = false;
+
         for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta?.content || "";
-          assistantContent += delta;
-          process.stdout.write(delta);
+          const delta = chunk.choices[0]?.delta as any;
+          const reasoning = delta?.reasoning_content || "";
+          const content = delta?.content || "";
+
+          // Handle Reasoning Chunk
+          if (reasoning) {
+            if (!isThinking) {
+              process.stdout.write(chalk.dim.italic("> Thought:\n"));
+              isThinking = true;
+            }
+            assistantReasoning += reasoning;
+            process.stdout.write(chalk.dim(reasoning));
+          }
+
+          // Handle Content Chunk
+          if (content) {
+            if (isThinking) {
+              process.stdout.write("\n\n"); // Close the thought block
+              isThinking = false;
+            }
+            assistantContent += content;
+            process.stdout.write(content);
+          }
         }
         process.stdout.write("\n\n");
         success = true;
