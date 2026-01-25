@@ -64,6 +64,7 @@ export async function runRepl() {
     }
 
     let assistantContent = "";
+    let assistantReasoning = "";
     let success = false;
 
     while (!success) {
@@ -79,7 +80,6 @@ export async function runRepl() {
         spinner.stop();
         process.stdout.write(chalk.cyan.bold("Assistant:\n"));
 
-        let assistantReasoning = "";
         let isThinking = false;
 
         for await (const chunk of stream) {
@@ -114,6 +114,7 @@ export async function runRepl() {
 
         // Reset assistant buffer on failure to prevent duplicate partial content
         assistantContent = "";
+        assistantReasoning = "";
 
         const retryChoice = await select({
           message: "AI service unavailable. What would you like to do?",
@@ -128,7 +129,11 @@ export async function runRepl() {
       }
     }
 
-    messages.push({ role: "assistant", content: assistantContent });
+    messages.push({
+      role: "assistant",
+      content: assistantContent,
+      reasoning: assistantReasoning || undefined,
+    });
     await saveSession(sessionId, messages);
 
     const toolCalls = parseToolCalls(assistantContent);
