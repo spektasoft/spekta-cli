@@ -33,9 +33,15 @@ export const callAI = async (
 ): Promise<string> => {
   const client = clientOverride || getAIClient(apiKey);
 
+  // Strip reasoning field from history
+  const sanitizedMessages = messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+  }));
+
   const response = await client.chat.completions.create({
     model,
-    messages,
+    messages: sanitizedMessages,
     ...config,
   });
 
@@ -94,9 +100,15 @@ export const callAIStream = async (
 ): Promise<AsyncIterable<ChatCompletionChunk>> => {
   const client = clientOverride || getAIClient(apiKey);
 
+  // Strip reasoning field from history
+  const sanitizedMessages = messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+  }));
+
   return await client.chat.completions.create({
     model,
-    messages,
+    messages: sanitizedMessages,
     stream: true,
     ...config,
   });
