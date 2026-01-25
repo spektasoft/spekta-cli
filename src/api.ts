@@ -20,6 +20,8 @@ export interface Message {
   reasoning?: string;
 }
 
+type SanitizedMessage = Omit<Message, "reasoning">;
+
 const clientMap = new Map<string, OpenAI>();
 
 export const getAIClient = (apiKey: string): OpenAI => {
@@ -45,7 +47,9 @@ export const callAI = async (
   const client = clientOverride || getAIClient(apiKey);
 
   // Use destructuring to exclude reasoning while preserving all other fields
-  const sanitizedMessages = messages.map(({ reasoning, ...rest }) => rest);
+  const sanitizedMessages: SanitizedMessage[] = messages.map(
+    ({ reasoning, ...rest }) => rest,
+  );
 
   const response = await client.chat.completions.create({
     model,
@@ -109,7 +113,9 @@ export const callAIStream = async (
   const client = clientOverride || getAIClient(apiKey);
 
   // Use destructuring to exclude reasoning while preserving all other fields
-  const sanitizedMessages = messages.map(({ reasoning, ...rest }) => rest);
+  const sanitizedMessages: SanitizedMessage[] = messages.map(
+    ({ reasoning, ...rest }) => rest,
+  );
 
   return await client.chat.completions.create({
     model,
