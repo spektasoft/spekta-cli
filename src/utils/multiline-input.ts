@@ -58,9 +58,7 @@ export async function getUserMessage(): Promise<InputResult> {
         const instruction = chalk.green.dim(
           "Controls: 'e' (editor) | 's' (send) | 'c' (cancel) | 'q' (quit)",
         );
-        const lineCount = currentBuffer
-          .split("\n")
-          .filter((l) => l.length > 0).length;
+        const lineCount = currentBuffer.split("\n").length;
         const promptText =
           lineCount === 0 ? `${instruction}\n1> ` : `${lineCount + 1}> `;
         rl.question(promptText, async (input) => {
