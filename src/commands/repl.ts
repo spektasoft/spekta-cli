@@ -84,7 +84,7 @@ export async function runRepl() {
 
         for await (const chunk of stream) {
           const delta = chunk.choices[0]?.delta as any;
-          const reasoning = delta?.reasoning_content || "";
+          const reasoning = delta?.reasoning_details?.[0]?.text || "";
           const content = delta?.content || "";
 
           // Handle Reasoning Chunk
@@ -138,6 +138,9 @@ export async function runRepl() {
 
     const toolCalls = parseToolCalls(assistantContent);
     if (toolCalls.length > 0) {
+      // Ensure we aren't stuck in dimmed style if the model went straight to tools
+      process.stdout.write(chalk.reset(""));
+
       console.log(
         boxen(
           toolCalls
