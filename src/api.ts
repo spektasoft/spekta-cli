@@ -6,6 +6,7 @@ import { Stream } from "openai/streaming";
 export interface Message {
   role: "system" | "user" | "assistant";
   content: string;
+  reasoning?: string;
 }
 
 const clientMap = new Map<string, OpenAI>();
@@ -78,7 +79,7 @@ export const fetchFreeModels = async (
         Number(p.request) === 0
       );
     });
-    } finally {
+  } finally {
     clearTimeout(timeout);
   }
 };
