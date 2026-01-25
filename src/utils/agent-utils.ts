@@ -54,12 +54,28 @@ export function parseToolCalls(text: string): ToolCall[] {
  * Must be within the current working directory.
  */
 export function validateFilePath(filePath: string): boolean {
-  // Resolve to absolute path and ensure it's within current working directory
-  const resolvedPath = path.resolve(filePath);
+  // 1. Block any attempt to use backslashes on POSIX or mixed separators
+  // This prevents bypasses like "src/..\\..\\etc/passwd"
+  if (filePath.includes("\\") && process.platform !== "win32") {
+    return false;
+  }
+
+  // 2. Normalize and resolve to absolute path
+  const normalizedPath = path.normalize(filePath);
+  const resolvedPath = path.resolve(normalizedPath);
   const cwd = process.cwd();
 
-  // Check if resolved path is within current working directory
-  return resolvedPath.startsWith(cwd + path.sep) || resolvedPath === cwd;
+  // 3. Ensure the path is not the same as CWD and starts with CWD
+  // Adding path.sep ensures we don't match "project-dir-secret" when CWD is "project-dir"
+  const isInsideCwd = resolvedPath.startsWith(cwd + path.sep);
+  const isCwdItself = resolvedPath === cwd;
+
+  // 4. Block hidden system directories (e.g., .git, .env)
+  const isHidden = resolvedPath
+    .split(path.sep)
+    .some((part) => part.startsWith("."));
+
+  return (isInsideCwd || isCwdItself) && !isHidden;
 }
 
 export async function executeTool(call: ToolCall): Promise<string> {
