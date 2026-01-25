@@ -198,7 +198,6 @@ export async function runRepl() {
             toolResults.push(
               `### Tool: ${call.type} on ${call.path}\nStatus: Error\n${err.message}`,
             );
-            hasAnyExecution = true;
             process.stdout.write(
               chalk.red(
                 `✗ Failed ${call.type} on ${call.path}: ${err.message}\n`,
