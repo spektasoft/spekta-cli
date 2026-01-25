@@ -33,10 +33,7 @@ export async function runRepl() {
     if (!shouldAutoTriggerAI) {
       const userInput = await getUserMessage();
 
-      if (userInput === null) {
-        // cancelled → just loop again
-        continue;
-      }
+      if (userInput === null) continue;
 
       if (userInput.toLowerCase() === "exit") {
         // Best practice: if there are pending rejections, save them before exiting
@@ -47,43 +44,30 @@ export async function runRepl() {
         break;
       }
 
-      if (userInput.trim() === "") {
-        continue; // safety net – should not happen
-      }
-
-      // Prepend pending tool results if they exist
+      // Combine previous tool results (failures/rejections) with manual user input
       const finalMessageContent = pendingToolResults
         ? `${pendingToolResults}\n\n${userInput}`
         : userInput;
 
-      // Clear buffer after consumption
-      pendingToolResults = "";
-
-      process.stdout.write(chalk.green.bold("\n"));
-      process.stdout.write(chalk.green.bold("You:\n"));
-      console.log(
-        boxen(finalMessageContent, {
-          borderColor: "green",
-        }),
-      );
-
+      pendingToolResults = ""; // Clear buffer
       messages.push({ role: "user", content: finalMessageContent });
       await saveSession(sessionId, messages);
+
+      process.stdout.write(chalk.green.bold("\nYou:\n"));
+      console.log(boxen(finalMessageContent, { borderColor: "green" }));
     } else {
-      shouldAutoTriggerAI = false; // Reset for next iteration
+      // Automatic progression: Commit successful results before AI call
+      messages.push({ role: "user", content: pendingToolResults });
+      await saveSession(sessionId, messages);
+      pendingToolResults = "";
+      shouldAutoTriggerAI = false;
     }
 
     let assistantContent = "";
-    process.stdout.write("\n");
-
-    const spinner = ora("Assistant thinking...").start();
-    let hasContent = false;
-
-    let retryAttempts = 0;
-    const maxRetries = 3;
     let success = false;
 
-    while (retryAttempts <= maxRetries) {
+    while (!success) {
+      const spinner = ora("Assistant thinking...").start();
       try {
         const stream = await callAIStream(
           env.OPENROUTER_API_KEY,
@@ -93,70 +77,39 @@ export async function runRepl() {
         );
 
         spinner.stop();
-        success = true;
         process.stdout.write(chalk.cyan.bold("Assistant:\n"));
 
         for await (const chunk of stream) {
-          if (!hasContent) {
-            hasContent = true;
-          }
           const delta = chunk.choices[0]?.delta?.content || "";
           assistantContent += delta;
           process.stdout.write(delta);
         }
         process.stdout.write("\n\n");
-        break; // Success, exit retry loop
+        success = true;
       } catch (error: any) {
-        retryAttempts++;
-        Logger.error(
-          `AI call failed (attempt ${retryAttempts}): ${error.message}`,
-        );
+        spinner.fail(`AI call failed: ${error.message}`);
 
-        if (retryAttempts > maxRetries) {
-          spinner.fail("AI request failed after multiple attempts");
+        // Reset assistant buffer on failure to prevent duplicate partial content
+        assistantContent = "";
 
-          // Save pending state before offering exit choice
-          if (pendingToolResults) {
-            messages.push({ role: "user", content: pendingToolResults });
-            await saveSession(sessionId, messages);
-            pendingToolResults = "";
-          }
+        const retryChoice = await select({
+          message: "AI service unavailable. What would you like to do?",
+          choices: [
+            { name: "Retry", value: "retry" },
+            { name: "Exit REPL", value: "exit" },
+          ],
+        });
 
-          // Final failure - ask user what to do
-          const retryChoice = await select({
-            message: "AI service unavailable. What would you like to do?",
-            choices: [
-              { name: "Retry", value: "retry" },
-              { name: "Exit REPL", value: "exit" },
-            ],
-          });
-
-          if (retryChoice === "retry") {
-            retryAttempts = 0; // Reset and try again
-            spinner.start("Assistant thinking...");
-            continue;
-          } else {
-            Logger.info("Exiting REPL due to AI service failure");
-            return; // Exit the REPL function
-          }
-        }
-
-        // Brief pause before retry
-        await new Promise((resolve) =>
-          setTimeout(resolve, 1000 * retryAttempts),
-        );
+        if (retryChoice === "exit") return;
+        // If retry, loop continues, spinner restarts
       }
     }
-
-    if (!success) continue;
 
     messages.push({ role: "assistant", content: assistantContent });
     await saveSession(sessionId, messages);
 
     const toolCalls = parseToolCalls(assistantContent);
-
     if (toolCalls.length > 0) {
-      // 1. Show Plan Summary
       console.log(
         boxen(
           toolCalls
@@ -170,7 +123,6 @@ export async function runRepl() {
         ),
       );
 
-      // 2. Individual Selection
       const selectedTools = await checkbox({
         message: "Select tools to execute:",
         choices: toolCalls.map((c, i) => ({
@@ -211,24 +163,18 @@ export async function runRepl() {
         }
       }
 
-      // 3. Aggregate all results into pending buffer for next user message
       if (toolResults.length > 0) {
-        const aggregatedContent = toolResults.join("\n");
-        process.stdout.write("\n");
-
+        pendingToolResults = toolResults.join("\n");
         console.log(
-          boxen(aggregatedContent, {
+          boxen(pendingToolResults, {
             title: "Tools Result",
             borderColor: "cyan",
           }),
         );
 
-        // Store in pending buffer instead of immediately committing
-        pendingToolResults = aggregatedContent;
-
         if (hasAnyExecution) {
           shouldAutoTriggerAI = true;
-          continue;
+          continue; // Jump to start of loop to commit results and hit AI
         }
       }
     }
