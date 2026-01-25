@@ -138,7 +138,7 @@ export async function runRepl() {
         const call = toolCalls[i];
         if (selectedTools.includes(i)) {
           try {
-            const result = await executeTool(call);
+            const result = (await executeTool(call)).trim();
             toolResults.push(
               `### Tool: ${call.type} on ${call.path}\nStatus: Success\nOutput:\n${result}`,
             );
@@ -164,7 +164,8 @@ export async function runRepl() {
       }
 
       if (toolResults.length > 0) {
-        pendingToolResults = toolResults.join("\n");
+        pendingToolResults = toolResults.join("\n\n");
+        process.stdout.write("\n");
         console.log(
           boxen(pendingToolResults, {
             title: "Tools Result",
