@@ -13,6 +13,7 @@ import { runWrite } from "./commands/write";
 import { bootstrap } from "./config";
 import { runMcpServer } from "./mcp-server";
 import { parseFilePathWithRange } from "./utils/read-utils";
+import { runRepl } from "./commands/repl";
 
 interface CommandDefinition {
   name: string;
@@ -24,6 +25,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
   commit: {
     name: "Generate Commit Message",
     run: runCommit,
+  },
+  repl: {
+    name: "Start Refactoring REPL",
+    run: runRepl,
   },
   plan: {
     name: "Generate Implementation Plan",

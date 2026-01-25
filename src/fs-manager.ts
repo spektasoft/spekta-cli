@@ -5,6 +5,11 @@ const getSpektaBase = () => path.join(process.cwd(), "spekta");
 const getReviewsBasePath = () => path.join(getSpektaBase(), "docs", "reviews");
 const getPlansBasePath = () =>
   path.join(getSpektaBase(), "docs", "implementations");
+export const getSessionsPath = async () => {
+  const basePath = path.join(getSpektaBase(), "sessions");
+  await ensureIgnoredDir(basePath);
+  return basePath;
+};
 
 export const generateId = (): string => {
   const now = new Date();
@@ -24,7 +29,7 @@ export const generateId = (): string => {
 
 export const ensureIgnoredDir = async (
   dir: string,
-  root: string = getSpektaBase()
+  root: string = getSpektaBase(),
 ) => {
   await fs.ensureDir(dir);
   await fs.ensureDir(root);
@@ -56,7 +61,7 @@ export const listReviewFolders = async (): Promise<string[]> => {
 
 export const getReviewDir = async (
   isInitial: boolean,
-  folderId?: string
+  folderId?: string,
 ): Promise<{ dir: string; id: string }> => {
   const reviewsPath = getReviewsBasePath();
   if (isInitial) {

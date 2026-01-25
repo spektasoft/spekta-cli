@@ -6,6 +6,7 @@ import {
   getTokenCount,
   parseFilePathWithRange,
   parseRange,
+  tokenizeQuotedPaths,
   validateFileRange,
 } from "./read-utils";
 
@@ -123,8 +124,12 @@ describe("read-utils", () => {
       expect(resultFull.valid).toBe(false);
       expect(resultFull.message).toContain("Full file exceeds token limit");
 
-      const mockStreamRange = Readable.from("word1\nword2\nword3\nword4\nword5");
-      vi.mocked(fs.createReadStream).mockReturnValueOnce(mockStreamRange as any);
+      const mockStreamRange = Readable.from(
+        "word1\nword2\nword3\nword4\nword5",
+      );
+      vi.mocked(fs.createReadStream).mockReturnValueOnce(
+        mockStreamRange as any,
+      );
 
       const resultRange = await validateFileRange(
         "large-file.ts",
@@ -134,5 +139,30 @@ describe("read-utils", () => {
       expect(resultRange.valid).toBe(false);
       expect(resultRange.message).toContain("Range exceeds token limit");
     });
+  });
+});
+
+describe("tokenizeQuotedPaths", () => {
+  it("handles simple unquoted paths", () => {
+    expect(tokenizeQuotedPaths("a.ts b.ts")).toEqual(["a.ts", "b.ts"]);
+  });
+
+  it("handles quoted paths with spaces", () => {
+    expect(tokenizeQuotedPaths(`a.ts "b file.ts" 'c file.ts'`)).toEqual([
+      "a.ts",
+      "b file.ts",
+      "c file.ts",
+    ]);
+  });
+
+  it("handles ranged paths inside quotes", () => {
+    expect(tokenizeQuotedPaths(`"file.ts[1,10]" normal.ts[5,$]`)).toEqual([
+      "file.ts[1,10]",
+      "normal.ts[5,$]",
+    ]);
+  });
+
+  it("handles empty input", () => {
+    expect(tokenizeQuotedPaths("")).toEqual([]);
   });
 });

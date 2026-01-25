@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 import { OpenRouterModel } from "./config";
+import { ChatCompletionChunk } from "openai/resources/chat/completions";
+import { Stream } from "openai/streaming";
 
 export interface Message {
   role: "system" | "user" | "assistant";
@@ -76,7 +78,25 @@ export const fetchFreeModels = async (
         Number(p.request) === 0
       );
     });
-  } finally {
+    } finally {
     clearTimeout(timeout);
   }
+};
+
+export const callAIStream = async (
+  apiKey: string,
+  model: string,
+  messages: Message[],
+  config: Record<string, any> = {},
+  // Best practice: Allow injection for testing
+  clientOverride?: OpenAI,
+): Promise<AsyncIterable<ChatCompletionChunk>> => {
+  const client = clientOverride || getAIClient(apiKey);
+
+  return await client.chat.completions.create({
+    model,
+    messages,
+    stream: true,
+    ...config,
+  });
 };

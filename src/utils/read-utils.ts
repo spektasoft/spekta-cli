@@ -122,3 +122,70 @@ export const validateFileRange = async (
     suggestedMaxLines,
   };
 };
+
+/**
+ * Splits a string into tokens, respecting single and double quotes.
+ * Supports escaping quotes with backslashes (though not required for basic use).
+ * Example: `a.ts "b file.ts[1,5]" 'c.ts'` → [`a.ts`, `b file.ts[1,5]`, `c.ts`]
+ */
+export function tokenizeQuotedPaths(input: string): string[] {
+  const tokens: string[] = [];
+  let current = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let i = 0;
+
+  while (i < input.length) {
+    const char = input[i];
+    const nextChar = i + 1 < input.length ? input[i + 1] : "";
+
+    if (
+      char === "\\" &&
+      (nextChar === "'" || nextChar === '"' || nextChar === "\\")
+    ) {
+      // Handle escaped quotes or backslashes
+      current += nextChar;
+      i += 2;
+      continue;
+    }
+
+    if (!inSingleQuote && !inDoubleQuote && char === " ") {
+      if (current !== "") {
+        tokens.push(current);
+        current = "";
+      }
+      i++;
+      continue;
+    }
+
+    if (char === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      i++;
+      continue;
+    }
+
+    if (char === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      i++;
+      continue;
+    }
+
+    current += char;
+    i++;
+  }
+
+  if (current !== "") {
+    tokens.push(current);
+  }
+
+  // Strip enclosing quotes from each token if present and matched
+  return tokens.map((token) => {
+    if (
+      (token.startsWith("'") && token.endsWith("'")) ||
+      (token.startsWith('"') && token.endsWith('"'))
+    ) {
+      return token.slice(1, -1);
+    }
+    return token;
+  });
+}
