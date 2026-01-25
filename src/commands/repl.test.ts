@@ -39,6 +39,8 @@ vi.mock("@inquirer/prompts", async () => {
   return {
     ...actual,
     select: vi.fn().mockResolvedValue("accept"),
+    // Mock checkbox to always select the first option ([0]) so execution proceeds
+    checkbox: vi.fn().mockResolvedValue([0]),
   };
 });
 

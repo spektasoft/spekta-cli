@@ -35,6 +35,6 @@ describe("Agent Read Tool Security - E2E", () => {
     expect(validateFilePath("../outside/file.ts")).toBe(false);
     expect(validateFilePath("/absolute/path/file.ts")).toBe(false);
     expect(validateFilePath("/etc/passwd")).toBe(false);
-    expect(validateFilePath("..\\secret\\file.ts")).toBe(true);
+    expect(validateFilePath("..\\secret\\file.ts")).toBe(false);
   });
 });
