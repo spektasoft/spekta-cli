@@ -87,34 +87,38 @@ export async function runRepl() {
 
         let isThinking = false;
 
-        for await (const chunk of stream) {
-          const delta = (chunk as ChatCompletionChunkWithReasoning).choices[0]
-            ?.delta;
-          const reasoning = delta?.reasoning_details?.[0]?.text || "";
-          const content = delta?.content || "";
+        try {
+          for await (const chunk of stream) {
+            const delta = (chunk as ChatCompletionChunkWithReasoning).choices[0]
+              ?.delta;
+            const reasoning = delta?.reasoning_details?.[0]?.text || "";
+            const content = delta?.content || "";
 
-          // Handle Reasoning Chunk
-          if (reasoning) {
-            if (!isThinking) {
-              process.stdout.write("\n");
-              process.stdout.write(chalk.cyan.italic.dim("Thought:\n"));
-              isThinking = true;
+            // Handle Reasoning Chunk
+            if (reasoning) {
+              if (!isThinking) {
+                process.stdout.write("\n");
+                process.stdout.write(chalk.cyan.italic.dim("Thought:\n"));
+                isThinking = true;
+              }
+              assistantReasoning += reasoning;
+              process.stdout.write(chalk.italic.dim(reasoning));
             }
-            assistantReasoning += reasoning;
-            process.stdout.write(chalk.italic.dim(reasoning));
-          }
 
-          // Handle Content Chunk
-          if (content) {
-            if (isThinking) {
-              process.stdout.write("\n\n"); // Close the thought block
-              isThinking = false;
+            // Handle Content Chunk
+            if (content) {
+              if (isThinking) {
+                process.stdout.write(chalk.reset("\n\n")); // Explicitly reset style on transition
+                isThinking = false;
+              }
+              assistantContent += content;
+              process.stdout.write(content);
             }
-            assistantContent += content;
-            process.stdout.write(content);
           }
+        } finally {
+          // Ensure style is reset after stream completion or error
+          process.stdout.write(chalk.reset("\n\n"));
         }
-        process.stdout.write("\n\n");
         success = true;
       } catch (error: any) {
         spinner.fail(`AI call failed: ${error.message}`);
