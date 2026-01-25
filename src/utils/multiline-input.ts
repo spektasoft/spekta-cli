@@ -56,12 +56,13 @@ export async function getUserMessage(): Promise<InputResult> {
 
       const askForLine = () => {
         const instruction = chalk.green.dim(
-          "Type your message. 'e' to edit in external editor, 's'/'send'/'.'/';;' to submit, 'c'/'cancel' to abort, 'q'/'quit' to exit",
+          "Controls: 'e' (editor) | 's' (send) | 'c' (cancel) | 'q' (quit)",
         );
+        const lineCount = currentBuffer
+          .split("\n")
+          .filter((l) => l.length > 0).length;
         const promptText =
-          currentBuffer === ""
-            ? `${instruction}\n1> `
-            : `${currentBuffer.split("\n").length + 1}> `;
+          lineCount === 0 ? `${instruction}\n1> ` : `${lineCount + 1}> `;
         rl.question(promptText, async (input) => {
           const trimmed = input.trim().toLowerCase();
 
