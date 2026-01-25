@@ -11,11 +11,17 @@ export async function saveSession(
 ): Promise<void> {
   const dir = await getSessionsPath();
   const filePath = path.join(dir, `${sessionId}.json`);
+  const tmpFilePath = path.join(dir, `${sessionId}.json.tmp`);
+
+  // Write to a temporary file first
   await fs.writeJSON(
-    filePath,
+    tmpFilePath,
     { sessionId, messages, updatedAt: new Date().toISOString() },
     { spaces: 2 },
   );
+
+  // Atomically replace the existing file
+  await fs.rename(tmpFilePath, filePath);
 }
 
 export async function loadSession(sessionId: string): Promise<{
