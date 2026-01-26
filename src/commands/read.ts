@@ -22,7 +22,7 @@ export async function getReadContent(requests: FileRequest[]): Promise<string> {
     throw new Error("At least one file path is required.");
 
   const env = await getEnv();
-  const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "2000", 10);
+  const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "1000", 10);
   const compactThreshold = 500;
   let combinedOutput = "";
   let anyCompacted = false;
@@ -46,8 +46,7 @@ export async function getReadContent(requests: FileRequest[]): Promise<string> {
     let isCompacted = false;
 
     if (!isRangeRequest) {
-      const CHAR_THRESHOLD = compactThreshold * 4;
-      if (content.length > CHAR_THRESHOLD) {
+      if (content.length > compactThreshold) {
         const result = compactFile(req.path, content, startLineOffset);
         if (result.isCompacted) {
           content = result.content;
@@ -60,9 +59,9 @@ export async function getReadContent(requests: FileRequest[]): Promise<string> {
     tokens = getTokenCount(content);
 
     if (isRangeRequest && tokens > tokenLimit) {
-      const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}). This should have been caught during interactive selection.`;
+      const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`;
       Logger.error(errorMessage);
-      combinedOutput += `\n--- ${req.path} ERROR ---\nError: ${errorMessage}\n`;
+      combinedOutput += `#### ${req.path} ERROR\nError: ${errorMessage}\n\n`;
       continue;
     }
 
