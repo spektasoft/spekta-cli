@@ -183,23 +183,26 @@ export const validateParentDirForCreate = async (
 
   // 2. Find the deepest existing ancestor directory
   const existingAncestor = await findExistingAncestor(parentDir);
-  const relativeAncestor = path.relative(process.cwd(), existingAncestor);
 
-  // 3. Verify the existing ancestor is within project bounds
-  if (relativeAncestor.startsWith("..") || path.isAbsolute(relativeAncestor)) {
+  // 3. Resolve the real (physical) path to handle symlinks safely
+  const realAncestor = await fs.realpath(existingAncestor);
+  const relativeReal = path.relative(process.cwd(), realAncestor);
+
+  // 4. Verify the real ancestor is within project bounds
+  if (relativeReal.startsWith("..") || path.isAbsolute(relativeReal)) {
     throw new Error(
-      `Existing ancestor directory is outside project root: ${existingAncestor}`,
+      `Real path of ancestor (after symlink resolution) is outside project root: ${realAncestor}`,
     );
   }
 
-  // 4. Verify we are inside a git repository
+  // 5. Verify we are inside a git repository using the real path
   try {
     await execa("git", ["rev-parse", "--is-inside-work-tree"], {
-      cwd: existingAncestor,
+      cwd: realAncestor,
     });
   } catch {
     throw new Error(
-      `Not in a git repository. Ancestor directory: ${existingAncestor}`,
+      `Not in a git repository. Real ancestor directory: ${realAncestor}`,
     );
   }
 };
