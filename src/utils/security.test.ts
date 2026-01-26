@@ -36,7 +36,10 @@ describe("Security Validation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default happy path setups
-    vi.mocked(fs.stat).mockResolvedValue({ size: 1024 } as any);
+    vi.mocked(fs.stat).mockResolvedValue({
+      size: 1024,
+      isDirectory: () => false, // Default to file, not directory
+    } as any);
     // @ts-ignore
     vi.mocked(fs.pathExists).mockResolvedValue(true); // Default: directories exist
     vi.mocked(getIgnorePatterns).mockResolvedValue([]);
@@ -183,9 +186,12 @@ describe("validatePathAccessForWrite and validateParentDirForCreate", () => {
 
 describe("validateParentDirForCreate", () => {
   it("should permit write to new file in git repository", async () => {
-    // Mock parent directory exists
+    // Mock parent directory exists and is a directory
     // @ts-ignore
     vi.mocked(fs.pathExists).mockResolvedValue(true);
+    vi.mocked(fs.stat).mockResolvedValue({
+      isDirectory: () => true,
+    } as any);
 
     // Mock git rev-parse to succeed (we are inside a git repository)
     vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
@@ -196,16 +202,19 @@ describe("validateParentDirForCreate", () => {
   });
 
   it("should deny write to new file outside git repository", async () => {
-    // Mock parent directory exists
+    // Mock parent directory exists and is a directory
     // @ts-ignore
     vi.mocked(fs.pathExists).mockResolvedValue(true);
+    vi.mocked(fs.stat).mockResolvedValue({
+      isDirectory: () => true,
+    } as any);
 
     // Mock git rev-parse to fail (not inside a git repository)
     vi.mocked(execa).mockRejectedValue(new Error());
 
     await expect(
       validateParentDirForCreate("src/new-feature.ts"),
-    ).rejects.toThrow("Parent directory is not in a git repository");
+    ).rejects.toThrow("Not in a git repository. Ancestor directory:");
   });
 });
 
@@ -213,6 +222,8 @@ describe("validateParentDirForCreate (new tests)", () => {
   const testDir = path.join(process.cwd(), "test-temp-validate");
 
   beforeEach(async () => {
+    // Clear mocks between each test
+    vi.clearAllMocks();
     await fs.ensureDir(testDir);
   });
 
@@ -222,6 +233,22 @@ describe("validateParentDirForCreate (new tests)", () => {
 
   it("should allow creation in nested non-existent directories", async () => {
     const targetFile = path.join(testDir, "new", "nested", "file.ts");
+    const targetDir = path.dirname(targetFile);
+
+    // Mock findExistingAncestor to return the existing testDir
+    vi.mocked(fs.pathExists).mockImplementation(async (p) => {
+      if (p === testDir) return true;
+      if (p === path.join(testDir, "new")) return false;
+      if (p === targetDir) return false;
+      return false;
+    });
+
+    vi.mocked(fs.stat).mockResolvedValue({
+      isDirectory: () => true,
+    } as any);
+
+    // Mock git rev-parse to succeed (we're in a git repository)
+    vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
 
     // Should not throw
     await expect(validateParentDirForCreate(targetFile)).resolves.not.toThrow();
