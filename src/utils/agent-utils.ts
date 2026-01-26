@@ -114,7 +114,7 @@ export async function executeTool(call: ToolCall): Promise<string> {
 
     const request: ReplaceRequest = {
       path: call.path,
-      blocks: [], // will be parsed from content
+      blocks: [],
     };
 
     const { message, appliedCount } = await executeSafeReplace(
@@ -122,7 +122,8 @@ export async function executeTool(call: ToolCall): Promise<string> {
       call.content,
     );
 
-    return `${message}\nApplied ${appliedCount} change(s).`;
+    // Return minimal summary only - no additional context appending
+    return `${message}`;
   }
   throw new Error("Unknown tool");
 }
