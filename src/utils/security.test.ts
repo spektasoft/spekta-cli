@@ -209,6 +209,33 @@ describe("validateParentDirForCreate", () => {
   });
 });
 
+describe("validateParentDirForCreate (new tests)", () => {
+  const testDir = path.join(process.cwd(), "test-temp-validate");
+
+  beforeEach(async () => {
+    await fs.ensureDir(testDir);
+  });
+
+  afterEach(async () => {
+    await fs.remove(testDir);
+  });
+
+  it("should allow creation in nested non-existent directories", async () => {
+    const targetFile = path.join(testDir, "new", "nested", "file.ts");
+
+    // Should not throw
+    await expect(validateParentDirForCreate(targetFile)).resolves.not.toThrow();
+  });
+
+  it("should reject paths outside project root", async () => {
+    const outsidePath = path.join(process.cwd(), "..", "outside", "file.ts");
+
+    await expect(validateParentDirForCreate(outsidePath)).rejects.toThrow(
+      "outside project root",
+    );
+  });
+});
+
 describe("findExistingAncestor", () => {
   const testDir = path.join(process.cwd(), "test-temp-ancestor");
   const existingPath = path.join(testDir, "existing");
