@@ -64,7 +64,7 @@ function hello() {
 
   it("generates minimal summary for single replacement", async () => {
     const mockContent = "line1\nline2\nline3\nline4\nline5";
-    const filePath = "test.txt";
+    const filePath = path.join(sandboxDir, "test.txt");
     await fs.writeFile(filePath, mockContent);
 
     const request: any = {
