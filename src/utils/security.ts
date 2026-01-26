@@ -151,10 +151,23 @@ export const validateEditAccess = async (filePath: string): Promise<void> => {
 
 /**
  * Validates that a file can be safely created at the given path.
- * Uses two-phase validation:
- * 1. Finds the deepest existing ancestor directory
+ *
+ * Two-phase validation approach:
+ * 1. Finds the deepest existing ancestor directory by walking up the tree
  * 2. Validates that ancestor is within project bounds and git-tracked
- * This allows creation of nested directory structures while maintaining security.
+ *
+ * This allows creation of nested directory structures (e.g., src/new/feature/file.ts)
+ * while maintaining security guarantees that the file will be created within
+ * a safe, tracked location.
+ *
+ * @param filePath - The path where a new file will be created
+ * @throws Error if path is outside project root
+ * @throws Error if not within a git repository
+ *
+ * @example
+ * // Assuming project root has 'src/' directory
+ * await validateParentDirForCreate('src/new/nested/file.ts'); // ✓ Valid
+ * await validateParentDirForCreate('../outside/file.ts');     // ✗ Throws
  */
 export const validateParentDirForCreate = async (
   filePath: string,

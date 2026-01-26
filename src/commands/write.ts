@@ -13,9 +13,10 @@ export async function getWriteContent(
 
   // 1. Security checks FIRST (prevent information leakage)
   await validatePathAccessForWrite(filePath);
+  // 2. Validate parent directory ancestry (allows creation of nested dirs)
   await validateParentDirForCreate(filePath);
 
-  // 2. Cannot already exist (safe to check after security validation)
+  // 3. Cannot already exist (safe to check after security validation)
   if (await fs.pathExists(absolutePath)) {
     return {
       success: false,
@@ -23,7 +24,7 @@ export async function getWriteContent(
     };
   }
 
-  // 3. Format content (consistency with replace)
+  // 4. Format content (consistency with replace)
   let formattedContent: string;
   try {
     formattedContent = await formatFile(filePath, content);
@@ -34,7 +35,7 @@ export async function getWriteContent(
     formattedContent = content;
   }
 
-  // 4. Write
+  // 5. Write
   await fs.ensureDir(path.dirname(absolutePath));
   await fs.writeFile(absolutePath, formattedContent, "utf-8");
 
