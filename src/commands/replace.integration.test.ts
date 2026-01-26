@@ -1,8 +1,6 @@
-import { describe, it, beforeEach, afterEach, expect, vi } from "vitest";
 import fs from "fs-extra";
-import path from "path";
-import { ToolCall } from "../utils/agent-utils";
-import { executeTool } from "../utils/agent-utils";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { executeTool, ToolCall } from "../utils/agent-utils";
 
 // Mock security at the module level for integration tests
 vi.mock("../utils/security", () => ({
@@ -65,5 +63,33 @@ updated line 25
     const updated = await fs.readFile(fileName, "utf-8");
     expect(updated).toContain("updated line 25");
     expect(updated.split(/\r?\n/).length).toBe(50);
+  });
+
+  it("rejects overlapping blocks", async () => {
+    const fileName = "overlap.ts";
+    await fs.writeFile(fileName, "line1\nline2\nline3");
+
+    const toolCall: ToolCall = {
+      type: "replace",
+      path: fileName,
+      content: `<<<<<<< SEARCH
+line2
+=======
+updated2
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+line2
+=======
+updated2-again
+>>>>>>> REPLACE`,
+      raw: JSON.stringify({
+        type: "replace",
+        path: fileName,
+        content:
+          "<<<<<<< SEARCH\nline2\n=======\nupdated2\n>>>>>>> REPLACE\n<<<<<<< SEARCH\nline2\n=======\nupdated2-again\n>>>>>>> REPLACE",
+      }),
+    };
+
+    await expect(executeTool(toolCall)).rejects.toThrow(/Overlapping/);
   });
 });
