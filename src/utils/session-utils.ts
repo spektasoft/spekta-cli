@@ -36,7 +36,50 @@ export async function loadSession(sessionId: string): Promise<{
     return null;
   }
 
-  return await fs.readJSON(filePath);
+  const data = await fs.readJSON(filePath);
+
+  // Validate that messages conform to the Message interface
+  if (!data.messages || !Array.isArray(data.messages)) {
+    console.warn(`Invalid messages format in session ${sessionId}`);
+    return null;
+  }
+
+  // Ensure each message has the required fields and handle optional reasoning
+  const validatedMessages = data.messages
+    .map((message: any) => {
+      if (!message.role || !message.content) {
+        console.warn(
+          `Invalid message format in session ${sessionId}: missing required fields`,
+        );
+        return null;
+      }
+
+      // Create a new message object with validated structure
+      const validatedMessage: Message = {
+        role: message.role,
+        content: message.content,
+      };
+
+      // Add reasoning field if present (it's optional)
+      if (message.reasoning !== undefined) {
+        validatedMessage.reasoning = message.reasoning;
+      }
+
+      return validatedMessage;
+    })
+    .filter(Boolean); // Filter out any null messages
+
+  if (validatedMessages.length !== data.messages.length) {
+    console.warn(
+      `Some messages in session ${sessionId} were invalid and removed`,
+    );
+  }
+
+  return {
+    sessionId: data.sessionId || sessionId,
+    messages: validatedMessages,
+    updatedAt: data.updatedAt || new Date().toISOString(),
+  };
 }
 
 export async function listSessions(): Promise<string[]> {

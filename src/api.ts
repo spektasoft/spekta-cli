@@ -1,12 +1,26 @@
 import OpenAI from "openai";
-import { OpenRouterModel } from "./config";
 import { ChatCompletionChunk } from "openai/resources/chat/completions";
-import { Stream } from "openai/streaming";
+import { OpenRouterModel } from "./config";
+
+// Extension interface for OpenAI streaming chunk with reasoning_details
+export interface ChatCompletionChunkWithReasoning {
+  choices: Array<{
+    delta: {
+      reasoning_details?: Array<{
+        text?: string;
+      }>;
+      content: string;
+    };
+  }>;
+}
 
 export interface Message {
   role: "system" | "user" | "assistant";
   content: string;
+  reasoning?: string;
 }
+
+type SanitizedMessage = Omit<Message, "reasoning">;
 
 const clientMap = new Map<string, OpenAI>();
 
@@ -32,9 +46,14 @@ export const callAI = async (
 ): Promise<string> => {
   const client = clientOverride || getAIClient(apiKey);
 
+  // Use destructuring to exclude reasoning while preserving all other fields
+  const sanitizedMessages: SanitizedMessage[] = messages.map(
+    ({ reasoning, ...rest }) => rest,
+  );
+
   const response = await client.chat.completions.create({
     model,
-    messages,
+    messages: sanitizedMessages,
     ...config,
   });
 
@@ -78,7 +97,7 @@ export const fetchFreeModels = async (
         Number(p.request) === 0
       );
     });
-    } finally {
+  } finally {
     clearTimeout(timeout);
   }
 };
@@ -93,9 +112,14 @@ export const callAIStream = async (
 ): Promise<AsyncIterable<ChatCompletionChunk>> => {
   const client = clientOverride || getAIClient(apiKey);
 
+  // Use destructuring to exclude reasoning while preserving all other fields
+  const sanitizedMessages: SanitizedMessage[] = messages.map(
+    ({ reasoning, ...rest }) => rest,
+  );
+
   return await client.chat.completions.create({
     model,
-    messages,
+    messages: sanitizedMessages,
     stream: true,
     ...config,
   });

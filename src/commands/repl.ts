@@ -2,7 +2,11 @@ import { checkbox, select } from "@inquirer/prompts";
 import boxen from "boxen";
 import chalk from "chalk";
 import ora from "ora";
-import { callAIStream, Message } from "../api";
+import {
+  callAIStream,
+  ChatCompletionChunkWithReasoning,
+  Message,
+} from "../api";
 import { getEnv, getPromptContent, getProviders } from "../config";
 import { promptReplProviderSelection } from "../ui/repl";
 import { executeTool, parseToolCalls } from "../utils/agent-utils";
@@ -55,6 +59,7 @@ export async function runRepl() {
 
       process.stdout.write(chalk.green.bold("\nYou:\n"));
       console.log(boxen(finalMessageContent, { borderColor: "green" }));
+      process.stdout.write("\n");
     } else {
       // Automatic progression: Commit successful results before AI call
       messages.push({ role: "user", content: pendingToolResults });
@@ -64,10 +69,11 @@ export async function runRepl() {
     }
 
     let assistantContent = "";
+    let assistantReasoning = "";
     let success = false;
 
     while (!success) {
-      const spinner = ora("Assistant thinking...").start();
+      const spinner = ora("Calling assistant...\n").start();
       try {
         const stream = await callAIStream(
           env.OPENROUTER_API_KEY,
@@ -79,18 +85,47 @@ export async function runRepl() {
         spinner.stop();
         process.stdout.write(chalk.cyan.bold("Assistant:\n"));
 
-        for await (const chunk of stream) {
-          const delta = chunk.choices[0]?.delta?.content || "";
-          assistantContent += delta;
-          process.stdout.write(delta);
+        let isThinking = false;
+
+        try {
+          for await (const chunk of stream) {
+            const delta = (chunk as ChatCompletionChunkWithReasoning).choices[0]
+              ?.delta;
+            const reasoning = delta?.reasoning_details?.[0]?.text || "";
+            const content = delta?.content || "";
+
+            // Handle Reasoning Chunk
+            if (reasoning) {
+              if (!isThinking) {
+                process.stdout.write("\n");
+                process.stdout.write(chalk.cyan.italic.dim("Thought:\n"));
+                isThinking = true;
+              }
+              assistantReasoning += reasoning;
+              process.stdout.write(chalk.italic.dim(reasoning));
+            }
+
+            // Handle Content Chunk
+            if (content) {
+              if (isThinking) {
+                process.stdout.write(chalk.reset("\n\n")); // Explicitly reset style on transition
+                isThinking = false;
+              }
+              assistantContent += content;
+              process.stdout.write(content);
+            }
+          }
+        } finally {
+          // Ensure style is reset after stream completion or error
+          process.stdout.write(chalk.reset("\n\n"));
         }
-        process.stdout.write("\n\n");
         success = true;
       } catch (error: any) {
         spinner.fail(`AI call failed: ${error.message}`);
 
         // Reset assistant buffer on failure to prevent duplicate partial content
         assistantContent = "";
+        assistantReasoning = "";
 
         const retryChoice = await select({
           message: "AI service unavailable. What would you like to do?",
@@ -105,11 +140,18 @@ export async function runRepl() {
       }
     }
 
-    messages.push({ role: "assistant", content: assistantContent });
+    messages.push({
+      role: "assistant",
+      content: assistantContent,
+      reasoning: assistantReasoning || undefined,
+    });
     await saveSession(sessionId, messages);
 
     const toolCalls = parseToolCalls(assistantContent);
     if (toolCalls.length > 0) {
+      // Ensure we aren't stuck in dimmed style if the model went straight to tools
+      process.stdout.write(chalk.reset(""));
+
       console.log(
         boxen(
           toolCalls

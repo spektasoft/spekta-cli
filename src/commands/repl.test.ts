@@ -79,7 +79,7 @@ it("shows loading spinner during AI streaming and stops it when stream starts", 
 
   const oraMock = vi.mocked(ora);
   // Note: The actual code uses "Assistant thinking..." so we match that
-  expect(oraMock).toHaveBeenCalledWith("Assistant thinking...");
+  expect(oraMock).toHaveBeenCalledWith("Calling assistant...\n");
 
   const spinnerInstance = oraMock.mock.results[0].value;
   expect(spinnerInstance.start).toHaveBeenCalled();
