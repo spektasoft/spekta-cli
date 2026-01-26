@@ -17,6 +17,8 @@ function test() {
   it("detects test blocks", () => {
     const content = `it("should work", () => {
   expect(1).toBe(1);
+  expect(2).toBe(2);
+  expect(3).toBe(3);
 });`;
     const result = compactFile("test.test.ts", content, 1);
     expect(result.isCompacted).toBe(true);
@@ -51,6 +53,8 @@ describe("SemanticCompactor", () => {
     const content = `describe("suite", () => {
   it("test 1", () => {
     expect(1).toBe(1);
+    expect(2).toBe(2);
+    expect(3).toBe(3);
   });
 
   it("test 2", () => {
@@ -130,5 +134,80 @@ describe("agent-utils", () => {
     expect(result.content).toContain('it("parses tool calls"');
     expect(result.content).toContain("// ... [lines");
     expect(result.isCompacted).toBe(true);
+  });
+});
+
+describe("object literal compaction", () => {
+  it("collapses object literals in expect statements", () => {
+    const content = `it("test", () => {
+  expect(result).toEqual({
+    type: "read",
+    path: "file.ts",
+    raw: "data"
+  });
+});`;
+    const result = compactFile("test.test.ts", content, 1);
+    expect(result.content).toContain("expect(result).toEqual({");
+    expect(result.content).toContain("// ... [lines");
+  });
+});
+
+describe("edge cases", () => {
+  it("preserves single-line arrow functions", () => {
+    const content = `const fn = () => { return 1; };`;
+    const result = compactFile("test.ts", content, 1);
+    expect(result.content).toBe(content);
+    expect(result.isCompacted).toBe(false);
+  });
+
+  it("handles deeply nested structures", () => {
+    const content = `function outer() {
+  function middle() {
+    function inner() {
+      return 1;
+    }
+    return inner();
+  }
+  return middle();
+}`;
+    const result = compactFile("test.ts", content, 1);
+    expect(result.isCompacted).toBe(true);
+    // Should have multiple collapse markers
+    expect(
+      (result.content.match(/collapsed/g) || []).length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe("performance and integration", () => {
+  it("handles small files efficiently", () => {
+    const content = `function small() {\n  return 1;\n}`;
+    const start = Date.now();
+    const result = compactFile("test.ts", content, 1);
+    const duration = Date.now() - start;
+
+    expect(duration).toBeLessThan(10); // Should be nearly instant
+  });
+
+  it("compacts large files within reasonable time", () => {
+    // Generate a large test file
+    const tests = Array.from(
+      { length: 100 },
+      (_, i) =>
+        `it("test ${i}", () => {\n  expect(${i}).toBe(${i});\n expect(${i}).toBe(${i}); \n expect(${i}).toBe(${i});});`,
+    ).join("\n\n");
+    const content = `describe("suite", () => {\n${tests}\n});`;
+
+    const start = Date.now();
+    const result = compactFile("large.test.ts", content, 1);
+    const duration = Date.now() - start;
+
+    expect(duration).toBeLessThan(100); // Should complete quickly
+    expect(result.isCompacted).toBe(true);
+
+    // Verify reduction
+    const originalLines = content.split("\n").length;
+    const compactedLines = result.content.split("\n").length;
+    expect(compactedLines).toBeLessThan(originalLines);
   });
 });
