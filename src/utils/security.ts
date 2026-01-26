@@ -150,8 +150,11 @@ export const validateEditAccess = async (filePath: string): Promise<void> => {
 };
 
 /**
- * Validates that the parent directory of a path exists and is git-tracked.
- * Used for safe creation of new files.
+ * Validates that a file can be safely created at the given path.
+ * Uses two-phase validation:
+ * 1. Finds the deepest existing ancestor directory
+ * 2. Validates that ancestor is within project bounds and git-tracked
+ * This allows creation of nested directory structures while maintaining security.
  */
 export const validateParentDirForCreate = async (
   filePath: string,
@@ -160,22 +163,30 @@ export const validateParentDirForCreate = async (
   const parentDir = path.dirname(absolutePath);
   const relativeParent = path.relative(process.cwd(), parentDir);
 
-  // Must be inside project root
+  // 1. Must be inside project root
   if (relativeParent.startsWith("..") || path.isAbsolute(relativeParent)) {
     throw new Error(`Parent directory is outside project root: ${parentDir}`);
   }
 
-  // Directory must exist
-  if (!(await fs.pathExists(parentDir))) {
-    throw new Error(`Parent directory does not exist: ${parentDir}`);
+  // 2. Find the deepest existing ancestor directory
+  const existingAncestor = await findExistingAncestor(parentDir);
+  const relativeAncestor = path.relative(process.cwd(), existingAncestor);
+
+  // 3. Verify the existing ancestor is within project bounds
+  if (relativeAncestor.startsWith("..") || path.isAbsolute(relativeAncestor)) {
+    throw new Error(
+      `Existing ancestor directory is outside project root: ${existingAncestor}`,
+    );
   }
 
-  // Verify we are inside a git repository
+  // 4. Verify we are inside a git repository
   try {
-    await execa("git", ["rev-parse", "--is-inside-work-tree"]);
+    await execa("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd: existingAncestor,
+    });
   } catch {
     throw new Error(
-      `Parent directory is not in a git repository: ${parentDir}`,
+      `Not in a git repository. Ancestor directory: ${existingAncestor}`,
     );
   }
 };
