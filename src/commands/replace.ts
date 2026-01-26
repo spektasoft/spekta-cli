@@ -54,23 +54,23 @@ export async function getReplaceContent(
     // Apply replacements
     const result = await applyReplacements(request.path, blocks);
 
-    const ext = path.extname(request.path).slice(1) || "txt";
     let message = "";
-    const PADDING = 3; // Reduced from 5 to 3 for less verbosity
+    const MAX_RANGES_TO_DISPLAY = 5;
 
-    for (const block of result.appliedBlocks) {
-      const contextStart = Math.max(1, block.startLine - PADDING);
-      const contextEnd = Math.min(result.totalLines, block.endLine + PADDING);
+    if (result.appliedBlocks.length > 0) {
+      const ranges = result.appliedBlocks
+        .slice(0, MAX_RANGES_TO_DISPLAY)
+        .map((block) => `${block.startLine}-${block.endLine}`)
+        .join(", ");
 
-      message += `#### ${request.path} (lines ${contextStart}-${contextEnd} of ${result.totalLines})\n`;
-      message += `**Updated Context:**\n\`\`\`${ext}\n`;
-      message += getContextWindow(
-        result.content,
-        block.startLine,
-        block.endLine,
-        PADDING,
-      );
-      message += `\n\`\`\`\n\n`;
+      message = `Replaced ${result.appliedBlocks.length} block(s) in ${request.path}`;
+      if (result.appliedBlocks.length <= MAX_RANGES_TO_DISPLAY) {
+        message += `\nLine ranges: ${ranges}`;
+      } else {
+        message += `\nFirst ${MAX_RANGES_TO_DISPLAY} line ranges: ${ranges} (and ${result.appliedBlocks.length - MAX_RANGES_TO_DISPLAY} more)`;
+      }
+    } else {
+      message = "No changes applied (blocks matched nothing)";
     }
 
     return {
