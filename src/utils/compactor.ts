@@ -41,7 +41,15 @@ function getBlockType(
   line: string,
   lineIdx: number,
   lines: string[],
-): "test" | "function" | "method" | "arrow" | "class" | "brace" | null {
+):
+  | "test"
+  | "function"
+  | "method"
+  | "arrow"
+  | "class"
+  | "object"
+  | "brace"
+  | null {
   const trimmed = line.trim();
 
   if (TEST_BLOCK_PATTERN.test(trimmed)) return "test";
@@ -49,6 +57,18 @@ function getBlockType(
   if (FUNCTION_DECLARATION.test(trimmed)) return "function";
   if (ARROW_FUNCTION.test(trimmed)) return "arrow";
   if (METHOD_DECLARATION.test(trimmed)) return "method";
+
+  // Detect object literals in expect statements
+  if (
+    trimmed.includes(".toEqual({") ||
+    trimmed.includes(".toMatchObject({") ||
+    (trimmed.endsWith("{") &&
+      lineIdx > 0 &&
+      lines[lineIdx - 1].includes("expect("))
+  ) {
+    return "object";
+  }
+
   if (trimmed.endsWith("{") && !hasQuotes(trimmed)) return "brace";
 
   return null;
@@ -58,7 +78,7 @@ interface BraceMatch {
   openLine: number;
   closeLine: number;
   depth: number;
-  type: "test" | "function" | "method" | "arrow" | "class" | "brace";
+  type: "test" | "function" | "method" | "arrow" | "class" | "object" | "brace";
 }
 
 /**
@@ -189,6 +209,7 @@ class SemanticCompactor implements CompactionStrategy {
         (match.type === "function" && bodyLines > 0) ||
         (match.type === "method" && bodyLines > 0) ||
         (match.type === "arrow" && bodyLines > 0) ||
+        (match.type === "object" && bodyLines > 0) || // Add object literal collapsing
         (match.type === "brace" && bodyLines > 1);
 
       if (shouldCollapse) {
