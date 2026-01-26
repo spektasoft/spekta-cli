@@ -59,7 +59,7 @@ export async function runMcpServer() {
     },
     async ({ path, blocks }) => {
       try {
-        const request = { path, blocks: [] }; // blocks parsed later
+        const request = { path, blocks: [] };
 
         const { message, appliedCount } = await executeSafeReplace(
           request,
@@ -70,7 +70,7 @@ export async function runMcpServer() {
           content: [
             {
               type: "text",
-              text: `${message}\nApplied ${appliedCount} replacement(s).`,
+              text: message,
             },
           ],
         };
