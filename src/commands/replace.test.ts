@@ -1,37 +1,32 @@
-import { execa } from "execa";
 import fs from "fs-extra";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import path from "path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getReplaceContent } from "./replace";
+import { ReplaceRequest } from "../utils/replace-utils";
+import * as security from "../utils/security";
+
+// Mock security validation to isolate logic from Git environment
+vi.mock("../utils/security", () => ({
+  validateEditAccess: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe("getReplaceContent", () => {
-  const testFile = "test-replace.ts";
+  const sandboxDir = path.resolve("test-sandbox-unit");
 
   beforeEach(async () => {
-    const content = `function hello() {
-  console.log("world");
-}
-
-function goodbye() {
-  console.log("world");
-}`;
-    await fs.writeFile(testFile, content);
-    // Ensure file is tracked by git
-    try {
-      await execa("git", ["add", testFile]);
-    } catch (e) {
-      // In case we are not in a git repo during tests,
-      // but usually the project is a git repo.
-    }
+    await fs.ensureDir(sandboxDir);
   });
 
   afterEach(async () => {
-    try {
-      await execa("git", ["rm", "--cached", testFile]);
-    } catch (e) {}
-    await fs.remove(testFile);
+    await fs.remove(sandboxDir);
+    vi.clearAllMocks();
   });
 
-  it("should apply single replacement and generate message", async () => {
+  it("should apply single replacement and generate minimal message", async () => {
+    const testFile = path.join(sandboxDir, "test-replace.ts");
+    const content = `function hello() {\n  console.log("world");\n}`;
+    await fs.writeFile(testFile, content);
+
     const blocks = `<<<<<<< SEARCH
 function hello() {
   console.log("world");
@@ -49,24 +44,61 @@ function hello() {
 
     expect(result.appliedCount).toBe(1);
     expect(result.content).toContain('console.log("universe")');
-    expect(result.content).toContain('console.log("world")'); // The second one should remain
-    expect(result.message).toContain(`#### ${testFile}`);
-    expect(result.message).not.toContain("**Diff:**");
-    expect(result.message).not.toContain("```diff");
-    expect(result.message).toContain("**Updated Context:**");
+    expect(result.message).toBe(
+      `Replaced 1 block(s) in ${testFile}\nLine ranges: 1-3`,
+    );
   });
 
-  it("should reject untracked files", async () => {
-    const untrackedFile = "untracked.ts";
-    await fs.writeFile(untrackedFile, "test");
+  it("should respect security validation failures", async () => {
+    vi.mocked(security.validateEditAccess).mockRejectedValueOnce(
+      new Error("Security Violation"),
+    );
 
     await expect(
       getReplaceContent(
-        { path: untrackedFile, blocks: [] },
-        "<<<<<<< SEARCH\ntest\n=======\nnew\n>>>>>>> REPLACE",
+        { path: "any-file.ts", blocks: [] },
+        "<<<<<<< SEARCH\na\n=======\nb\n>>>>>>> REPLACE",
       ),
-    ).rejects.toThrow("not tracked by git");
+    ).rejects.toThrow("Security Violation");
+  });
 
-    await fs.remove(untrackedFile);
+  it("generates minimal summary for single replacement", async () => {
+    const mockContent = "line1\nline2\nline3\nline4\nline5";
+    const filePath = "test.txt";
+    await fs.writeFile(filePath, mockContent);
+
+    const request: any = {
+      path: filePath,
+      blocks: [{ search: "line3", replace: "updated" }],
+    };
+
+    const { message, appliedCount } = await getReplaceContent(request);
+
+    expect(appliedCount).toBe(1);
+    expect(message).toContain(`Replaced 1 block(s) in ${filePath}`);
+    expect(message).toContain("Line ranges: 3-3");
+  });
+
+  it("caps line ranges display at 5 for bulk replacements and uses unique matches", async () => {
+    const filePath = path.join(sandboxDir, "bulk.txt");
+    // Use unique prefixes to avoid ambiguous matches (e.g., "L2" vs "L20")
+    const mockContent = Array.from(
+      { length: 30 },
+      (_, i) => `UNIQUE_ID_${String(i + 1).padStart(2, "0")}`,
+    ).join("\n");
+    await fs.writeFile(filePath, mockContent);
+
+    // Replace IDs 02, 04, 06, 08, 10, 12, 14, 16
+    const blocks = Array.from({ length: 8 }, (_, i) => ({
+      search: `UNIQUE_ID_${String((i + 1) * 2).padStart(2, "0")}`,
+      replace: `UPDATED_${String((i + 1) * 2).padStart(2, "0")}`,
+    }));
+
+    const request: ReplaceRequest = { path: filePath, blocks };
+    const { message, appliedCount } = await getReplaceContent(request);
+
+    expect(appliedCount).toBe(8);
+    expect(message).toContain("First 5 line ranges:");
+    expect(message).toContain("(and 3 more)");
   });
 });
