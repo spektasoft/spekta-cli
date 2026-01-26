@@ -301,6 +301,12 @@ export function compactFile(
   const strategy = COMPACTORS.find((s) => s.canHandle(ext));
   if (!strategy) return { content, isCompacted: false };
 
+  // Early exit for small files (< 20 lines)
+  const lineCount = content.split("\n").length;
+  if (lineCount < 20) {
+    return { content, isCompacted: false };
+  }
+
   const lines = content.split("\n");
   const { content: compacted, didCompact } = strategy.compact(lines, startLine);
   return {
