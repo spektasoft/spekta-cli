@@ -72,7 +72,8 @@ updated line 25
     const toolCall: ToolCall = {
       type: "replace",
       path: fileName,
-      content: `<<<<<<< SEARCH
+      content: `
+<<<<<<< SEARCH
 line2
 =======
 updated2
@@ -91,5 +92,43 @@ updated2-again
     };
 
     await expect(executeTool(toolCall)).rejects.toThrow(/Overlapping/);
+  });
+
+  it("rejects excessive block count (>50)", async () => {
+    const fileName = "excessive-blocks.txt";
+    await fs.writeFile(fileName, "a\na\na");
+
+    // Create content with 51 blocks
+    const blocks = Array.from({ length: 51 }, (_, i) => ({
+      search: "a",
+      replace: `b${i}`,
+    }));
+
+    // Build the content string manually since we're testing the integration path
+    let content = "";
+    for (const block of blocks) {
+      content += `
+<<<<<<< SEARCH
+${block.search}
+=======
+${block.replace}
+>>>>>>> REPLACE
+`;
+    }
+
+    const toolCall: ToolCall = {
+      type: "replace",
+      path: fileName,
+      content,
+      raw: JSON.stringify({
+        type: "replace",
+        path: fileName,
+        content,
+      }),
+    };
+
+    await expect(executeTool(toolCall)).rejects.toThrow(
+      /Too many replacement blocks/,
+    );
   });
 });
