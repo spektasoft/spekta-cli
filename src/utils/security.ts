@@ -7,6 +7,30 @@ import { getIgnorePatterns } from "../config";
 export const RESTRICTED_FILES = [".env", ".gitignore", ".spektaignore"];
 const MAX_FILE_SIZE_MB = 10;
 
+/**
+ * Finds the deepest existing ancestor directory for a given path.
+ * Walks up the directory tree until an existing directory is found.
+ * Returns the absolute path of the existing ancestor.
+ */
+export async function findExistingAncestor(
+  targetPath: string,
+): Promise<string> {
+  let currentPath = path.resolve(targetPath);
+
+  while (currentPath !== path.parse(currentPath).root) {
+    if (await fs.pathExists(currentPath)) {
+      const stats = await fs.stat(currentPath);
+      if (stats.isDirectory()) {
+        return currentPath;
+      }
+    }
+    currentPath = path.dirname(currentPath);
+  }
+
+  // If we reach the filesystem root, return it
+  return currentPath;
+}
+
 export const validatePathAccess = async (filePath: string): Promise<void> => {
   const absolutePath = path.resolve(filePath);
   const fileName = path.basename(absolutePath);
