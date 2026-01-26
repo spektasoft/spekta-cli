@@ -11,28 +11,10 @@ const hasQuotes = (line: string): boolean =>
 const IMPORT_PATTERN = /^\s*(import\s+.*from|import\s*{|import\s+type)/;
 const TEST_BLOCK_PATTERN =
   /^\s*(it|test|beforeEach|afterEach|beforeAll|afterAll)\s*\(/;
-const DESCRIBE_PATTERN = /^\s*describe\s*\(/;
 const FUNCTION_DECLARATION = /^\s*(export\s+)?(async\s+)?function\s+\w+/;
 const METHOD_DECLARATION = /^\s*(\w+)\s*\([^)]*\)\s*[:{]/;
 const ARROW_FUNCTION = /^\s*(const|let|var)\s+\w+\s*=\s*(\([^)]*\))?\s*=>/;
 const CLASS_DECLARATION = /^\s*(export\s+)?(abstract\s+)?class\s+\w+/;
-
-/**
- * Detect if a line is part of the import block at top of file
- */
-function isInImportBlock(lineIdx: number, lines: string[]): boolean {
-  // Scan backwards to see if we're in import zone
-  for (let i = lineIdx; i >= 0; i--) {
-    const trimmed = lines[i].trim();
-    if (trimmed === "" || trimmed.startsWith("//") || trimmed.startsWith("/*"))
-      continue;
-    if (IMPORT_PATTERN.test(trimmed)) return true;
-    // If we hit non-import code, we're past import block
-    if (trimmed && !IMPORT_PATTERN.test(trimmed) && !trimmed.startsWith("*"))
-      return false;
-  }
-  return false;
-}
 
 /**
  * Check if line starts a collapsible block
@@ -88,9 +70,20 @@ function isSingleLineLogical(
   openLine: number,
   closeLine: number,
   lines: string[],
+  type: BraceMatch["type"],
 ): boolean {
   // If opening and closing are on same line, it's single-line
   if (openLine === closeLine) return true;
+
+  // Types that should ALWAYS collapse if multi-line, regardless of density
+  if (
+    type === "test" ||
+    type === "function" ||
+    type === "method" ||
+    type === "object"
+  ) {
+    return false;
+  }
 
   // If it's just "{ ... }" on consecutive lines with no actual content
   if (closeLine - openLine === 1) return true;
@@ -113,12 +106,30 @@ function findBraceMatches(lines: string[]): Map<number, BraceMatch> {
   }[] = [];
   let currentDepth = 0;
 
+  // Track if we are still in the initial import block
+  let inImportBlock = true;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
 
-    // Skip import lines
-    if (isInImportBlock(i, lines)) continue;
+    // Handle import block skipping
+    if (inImportBlock) {
+      if (
+        trimmed === "" ||
+        trimmed.startsWith("//") ||
+        trimmed.startsWith("/*")
+      ) {
+        // Still potentially in import block (comments/empty)
+        continue;
+      }
+      if (IMPORT_PATTERN.test(trimmed)) {
+        // Definitely an import
+        continue;
+      }
+      // First non-import/non-comment line found
+      inImportBlock = false;
+    }
 
     // Count braces
     const openCount = (line.match(/{/g) || []).length;
@@ -214,8 +225,31 @@ class SemanticCompactor implements CompactionStrategy {
       if (usedLines.has(match.openLine)) continue;
 
       // Check if it's a single-line logical unit
-      if (isSingleLineLogical(match.openLine, match.closeLine, lines)) {
-        continue; // Don't collapse single-line logical units
+      if (
+        isSingleLineLogical(match.openLine, match.closeLine, lines, match.type)
+      ) {
+        continue;
+      }
+
+      // Special Case: Object Literal Visibility
+      // If this is a 'test' block, check if it contains a collapsible 'object' literal.
+      // If so, we SKIP collapsing the test block so the object assertion remains visible.
+      if (match.type === "test") {
+        const hasCollapsibleObjectChild = sortedMatches.some(
+          (child) =>
+            child.openLine > match.openLine &&
+            child.closeLine < match.closeLine &&
+            child.type === "object" &&
+            !isSingleLineLogical(
+              child.openLine,
+              child.closeLine,
+              lines,
+              child.type,
+            ),
+        );
+        if (hasCollapsibleObjectChild) {
+          continue;
+        }
       }
 
       const bodyLines = match.closeLine - match.openLine - 1;
@@ -233,7 +267,7 @@ class SemanticCompactor implements CompactionStrategy {
         (match.type === "function" && bodyLines > 0) ||
         (match.type === "method" && bodyLines > 0) ||
         (match.type === "arrow" && bodyLines > 0) ||
-        (match.type === "object" && bodyLines > 0) || // Add object literal collapsing
+        (match.type === "object" && bodyLines > 0) ||
         (match.type === "brace" && bodyLines > 1);
 
       if (shouldCollapse) {
@@ -300,12 +334,6 @@ export function compactFile(
   const ext = path.extname(filePath);
   const strategy = COMPACTORS.find((s) => s.canHandle(ext));
   if (!strategy) return { content, isCompacted: false };
-
-  // Early exit for small files (< 20 lines)
-  const lineCount = content.split("\n").length;
-  if (lineCount < 20) {
-    return { content, isCompacted: false };
-  }
 
   const lines = content.split("\n");
   const { content: compacted, didCompact } = strategy.compact(lines, startLine);
