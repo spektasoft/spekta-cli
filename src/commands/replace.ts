@@ -1,6 +1,5 @@
 import crypto from "crypto";
 import fs from "fs-extra";
-import path from "path";
 import { formatFile } from "../utils/format-utils";
 import { Logger } from "../utils/logger";
 import {
@@ -9,21 +8,6 @@ import {
   ReplaceRequest,
 } from "../utils/replace-utils";
 import { validateEditAccess } from "../utils/security";
-
-/**
- * Extracts a window of lines around the change for context.
- */
-function getContextWindow(
-  content: string,
-  startLine: number,
-  endLine: number,
-  padding: number = 5,
-): string {
-  const lines = content.split(/\r?\n/);
-  const windowStart = Math.max(0, startLine - padding - 1);
-  const windowEnd = Math.min(lines.length, endLine + padding);
-  return lines.slice(windowStart, windowEnd).join("\n");
-}
 
 /**
  * Core logic for applying replacements to a file.
