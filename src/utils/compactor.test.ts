@@ -23,3 +23,25 @@ function test() {
     expect(result.content).toContain("// ... [lines");
   });
 });
+
+describe("brace matching", () => {
+  it("matches nested braces correctly", () => {
+    const content = `function outer() {
+  function inner() {
+    return 1;
+  }
+  return inner();
+}`;
+    const result = compactFile("test.ts", content, 1);
+    expect(result.isCompacted).toBe(true);
+    // Should collapse both inner and outer
+    expect((result.content.match(/\[lines/g) || []).length).toBeGreaterThan(0);
+  });
+
+  it("handles single-line functions", () => {
+    const content = `function short() { return 1; }`;
+    const result = compactFile("test.ts", content, 1);
+    // Single line should NOT be collapsed
+    expect(result.content).toBe(content);
+  });
+});

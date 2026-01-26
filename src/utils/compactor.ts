@@ -54,6 +54,62 @@ function getBlockType(
   return null;
 }
 
+interface BraceMatch {
+  openLine: number;
+  closeLine: number;
+  depth: number;
+  type: "test" | "function" | "method" | "arrow" | "class" | "brace";
+}
+
+/**
+ * Find all matching brace pairs in the code
+ * Returns map of opening line -> closing line with metadata
+ */
+function findBraceMatches(lines: string[]): Map<number, BraceMatch> {
+  const matches = new Map<number, BraceMatch>();
+  const stack: {
+    lineIdx: number;
+    depth: number;
+    type: ReturnType<typeof getBlockType>;
+  }[] = [];
+  let currentDepth = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Skip import lines
+    if (isInImportBlock(i, lines)) continue;
+
+    // Count braces
+    const openCount = (line.match(/{/g) || []).length;
+    const closeCount = (line.match(/}/g) || []).length;
+
+    // Detect block opening
+    const blockType = getBlockType(line, i, lines);
+    if (blockType && trimmed.endsWith("{")) {
+      stack.push({ lineIdx: i, depth: currentDepth, type: blockType });
+    }
+
+    currentDepth += openCount - closeCount;
+
+    // Match closing braces
+    while (stack.length > 0 && currentDepth <= stack[stack.length - 1].depth) {
+      const top = stack.pop()!;
+      if (i > top.lineIdx && top.type) {
+        matches.set(top.lineIdx, {
+          openLine: top.lineIdx,
+          closeLine: i,
+          depth: top.depth,
+          type: top.type,
+        });
+      }
+    }
+  }
+
+  return matches;
+}
+
 export interface CompactionResult {
   content: string;
   isCompacted: boolean;
