@@ -17,6 +17,7 @@ vi.mock("fs-extra", () => ({
   default: {
     stat: vi.fn(),
     pathExists: vi.fn(),
+    realpath: vi.fn(),
     ensureDir: vi.fn(),
     remove: vi.fn(),
   },
@@ -193,6 +194,12 @@ describe("validateParentDirForCreate", () => {
       isDirectory: () => true,
     } as any);
 
+    // Mock fs.realpath to return the same path (no symlink resolution needed)
+    vi.mocked(fs.realpath).mockResolvedValue(
+      // @ts-ignore
+      path.resolve(process.cwd(), "src"),
+    );
+
     // Mock git rev-parse to succeed (we are inside a git repository)
     vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
 
@@ -209,12 +216,18 @@ describe("validateParentDirForCreate", () => {
       isDirectory: () => true,
     } as any);
 
+    // Mock fs.realpath to return the same path (no symlink resolution needed)
+    vi.mocked(fs.realpath).mockResolvedValue(
+      // @ts-ignore
+      path.resolve(process.cwd(), "src"),
+    );
+
     // Mock git rev-parse to fail (not inside a git repository)
     vi.mocked(execa).mockRejectedValue(new Error());
 
     await expect(
       validateParentDirForCreate("src/new-feature.ts"),
-    ).rejects.toThrow("Not in a git repository. Ancestor directory:");
+    ).rejects.toThrow("Not in a git repository. Real ancestor directory:");
   });
 });
 
@@ -247,6 +260,10 @@ describe("validateParentDirForCreate (new tests)", () => {
       isDirectory: () => true,
     } as any);
 
+    // Mock fs.realpath to return the testDir (no symlink resolution)
+    // @ts-ignore
+    vi.mocked(fs.realpath).mockResolvedValue(testDir);
+
     // Mock git rev-parse to succeed (we're in a git repository)
     vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
 
@@ -259,6 +276,20 @@ describe("validateParentDirForCreate (new tests)", () => {
 
     await expect(validateParentDirForCreate(outsidePath)).rejects.toThrow(
       "outside project root",
+    );
+  });
+
+  it("rejects symlink ancestor pointing outside project root", async () => {
+    const targetFile = path.join(testDir, "symlink-dir", "file.txt");
+
+    vi.mocked(fs.pathExists).mockImplementation(async (p) => p === testDir);
+    vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => true } as any);
+    // @ts-ignore
+    vi.mocked(fs.realpath).mockResolvedValue("/outside/dangerous");
+    vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
+
+    await expect(validateParentDirForCreate(targetFile)).rejects.toThrow(
+      /Real path of ancestor.*outside project root/,
     );
   });
 });
@@ -295,7 +326,8 @@ describe("findExistingAncestor", () => {
     const ancestor = await findExistingAncestor(path.dirname(targetPath));
 
     expect(ancestor).toBe(path.join(testDir, "existing"));
-    expect(fs.stat).toHaveBeenCalledTimes(1);
+    // fs.stat is called twice: once for testDir/existing and once for testDir
+    expect(fs.stat).toHaveBeenCalledTimes(2);
   });
 
   it("should return the directory itself if it exists", async () => {
