@@ -46,4 +46,25 @@ describe("write command integration", () => {
     expect(result.success).toBe(true);
     expect(await fs.pathExists(targetFile)).toBe(true);
   });
+
+  it("rejects write to path containing restricted directory", async () => {
+    const targetFile = path.join(testDir, ".gitignore", "extra", "config.ts");
+    const content = "console.log('should not reach here');";
+
+    let result;
+    let error: any;
+
+    try {
+      result = await getWriteContent(targetFile, content);
+    } catch (err) {
+      error = err;
+    }
+
+    // If getWriteContent throws an error, that's the expected behavior
+    expect(error).toBeDefined();
+    expect(error.message).toMatch(
+      /Cannot create file or directories under restricted path segment: \.gitignore/,
+    );
+    expect(await fs.pathExists(targetFile)).toBe(false);
+  });
 });
