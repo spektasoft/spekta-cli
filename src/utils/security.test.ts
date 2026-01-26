@@ -1,8 +1,10 @@
 import { execa } from "execa";
 import fs from "fs-extra";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getIgnorePatterns } from "../config";
 import {
+  findExistingAncestor,
   validateEditAccess,
   validateGitTracked,
   validateParentDirForCreate,
@@ -15,6 +17,8 @@ vi.mock("fs-extra", () => ({
   default: {
     stat: vi.fn(),
     pathExists: vi.fn(),
+    ensureDir: vi.fn(),
+    remove: vi.fn(),
   },
 }));
 
@@ -202,5 +206,60 @@ describe("validateParentDirForCreate", () => {
     await expect(
       validateParentDirForCreate("src/new-feature.ts"),
     ).rejects.toThrow("Parent directory is not in a git repository");
+  });
+});
+
+describe("findExistingAncestor", () => {
+  const testDir = path.join(process.cwd(), "test-temp-ancestor");
+  const existingPath = path.join(testDir, "existing");
+
+  beforeEach(async () => {
+    // Mock ensureDir to do nothing
+    vi.mocked(fs.ensureDir).mockImplementation(() => Promise.resolve());
+
+    // Mock remove to do nothing
+    vi.mocked(fs.remove).mockImplementation(() => Promise.resolve());
+  });
+
+  it("should find existing parent when nested path does not exist", async () => {
+    // Setup: non-existent path -> testDir/existing exists -> testDir exists -> root
+    vi.mocked(fs.pathExists)
+      // @ts-ignore
+      .mockResolvedValueOnce(false) // testDir/existing/new/nested
+      // @ts-ignore
+      .mockResolvedValueOnce(true) // testDir/existing
+      // @ts-ignore
+      .mockResolvedValueOnce(true) // testDir
+      // @ts-ignore
+      .mockResolvedValueOnce(true); // root (/)
+
+    vi.mocked(fs.stat)
+      .mockResolvedValueOnce({ isDirectory: () => true } as any) // testDir/existing
+      .mockResolvedValueOnce({ isDirectory: () => true } as any); // testDir
+
+    const targetPath = path.join(testDir, "existing", "nested", "file.ts");
+    const ancestor = await findExistingAncestor(path.dirname(targetPath));
+
+    expect(ancestor).toBe(path.join(testDir, "existing"));
+    expect(fs.stat).toHaveBeenCalledTimes(1);
+  });
+
+  it("should return the directory itself if it exists", async () => {
+    // Setup: existingPath exists -> testDir exists -> root
+    vi.mocked(fs.pathExists)
+      // @ts-ignore
+      .mockResolvedValueOnce(true) // existingPath
+      // @ts-ignore
+      .mockResolvedValueOnce(true) // testDir
+      // @ts-ignore
+      .mockResolvedValueOnce(true); // root (/)
+
+    vi.mocked(fs.stat).mockResolvedValueOnce({
+      isDirectory: () => true,
+    } as any); // existingPath
+
+    const ancestor = await findExistingAncestor(existingPath);
+
+    expect(ancestor).toBe(existingPath);
   });
 });
