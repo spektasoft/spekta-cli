@@ -154,20 +154,22 @@ export const validateEditAccess = async (filePath: string): Promise<void> => {
  *
  * Two-phase validation approach:
  * 1. Finds the deepest existing ancestor directory by walking up the tree
- * 2. Validates that ancestor is within project bounds and git-tracked
+ * 2. Resolves its real (physical) path to handle symlinks
+ * 3. Validates that the real path is within project bounds and git-tracked
+ * 4. Ensures no restricted directory names (.env, .gitignore, etc.) appear in path segments
  *
- * This allows creation of nested directory structures (e.g., src/new/feature/file.ts)
- * while maintaining security guarantees that the file will be created within
- * a safe, tracked location.
+ * This allows creation of nested directory structures while preventing writes
+ * outside the project (even via symlinks) or in restricted locations.
  *
  * @param filePath - The path where a new file will be created
- * @throws Error if path is outside project root
+ * @throws Error if real path is outside project root
  * @throws Error if not within a git repository
+ * @throws Error if path includes restricted directory names
  *
  * @example
- * // Assuming project root has 'src/' directory
- * await validateParentDirForCreate('src/new/nested/file.ts'); // ✓ Valid
- * await validateParentDirForCreate('../outside/file.ts');     // ✗ Throws
+ * await validateParentDirForCreate('src/new/feature/file.ts'); // ✓ Valid
+ * await validateParentDirForCreate('../outside/file.ts');      // ✗ Throws
+ * await validateParentDirForCreate('src/.env/new.ts');         // ✗ Throws (restricted)
  */
 export const validateParentDirForCreate = async (
   filePath: string,
