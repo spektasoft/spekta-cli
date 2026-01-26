@@ -123,6 +123,9 @@ export interface CompactionStrategy {
   ): { content: string; didCompact: boolean };
 }
 
+/**
+ * @deprecated Use SemanticCompactor instead
+ */
 class BraceCompactor implements CompactionStrategy {
   canHandle(ext: string): boolean {
     return [
@@ -199,6 +202,9 @@ class BraceCompactor implements CompactionStrategy {
   }
 }
 
+/**
+ * @deprecated Use SemanticCompactor instead
+ */
 class IndentationCompactor implements CompactionStrategy {
   canHandle(ext: string): boolean {
     return [".py", ".yml", ".yaml"].includes(ext);
@@ -256,6 +262,9 @@ class IndentationCompactor implements CompactionStrategy {
   }
 }
 
+/**
+ * @deprecated Use SemanticCompactor instead
+ */
 class TagCompactor implements CompactionStrategy {
   canHandle(ext: string): boolean {
     return [".html", ".blade.php", ".xml"].includes(ext);
@@ -309,11 +318,129 @@ class TagCompactor implements CompactionStrategy {
   }
 }
 
-export const COMPACTORS: CompactionStrategy[] = [
-  new BraceCompactor(),
-  new IndentationCompactor(),
-  new TagCompactor(),
-];
+class SemanticCompactor implements CompactionStrategy {
+  canHandle(ext: string): boolean {
+    // Handle all code file types
+    return [
+      ".ts",
+      ".js",
+      ".tsx",
+      ".jsx",
+      ".py",
+      ".php",
+      ".html",
+      ".blade.php",
+      ".xml",
+      ".css",
+      ".scss",
+      ".json",
+      ".yml",
+      ".yaml",
+    ].includes(ext);
+  }
+
+  compact(
+    lines: string[],
+    startLine: number,
+  ): { content: string; didCompact: boolean } {
+    // Pass 1: Find all brace matches
+    const braceMatches = findBraceMatches(lines);
+
+    // Pass 2: Identify collapsible regions
+    const collapseRegions = this.identifyCollapseRegions(lines, braceMatches);
+
+    // Pass 3: Build output with collapsed sections
+    return this.buildCompactedOutput(lines, collapseRegions, startLine);
+  }
+
+  private identifyCollapseRegions(
+    lines: string[],
+    braceMatches: Map<number, BraceMatch>,
+  ): BraceMatch[] {
+    const regions: BraceMatch[] = [];
+    const usedLines = new Set<number>();
+
+    // Sort by line number for sequential processing
+    const sortedMatches = Array.from(braceMatches.values()).sort(
+      (a, b) => a.openLine - b.openLine,
+    );
+
+    for (const match of sortedMatches) {
+      // Skip if already inside a collapsed region
+      if (usedLines.has(match.openLine)) continue;
+
+      const bodyLines = match.closeLine - match.openLine - 1;
+
+      // Aggressive collapsing rules:
+      // - Test blocks: always collapse if >0 lines
+      // - Functions/methods: collapse if >0 lines
+      // - Classes: never collapse (only their methods)
+      // - Generic braces: collapse if >1 lines
+
+      if (match.type === "class") continue; // Never collapse class declarations
+
+      const shouldCollapse =
+        (match.type === "test" && bodyLines > 0) ||
+        (match.type === "function" && bodyLines > 0) ||
+        (match.type === "method" && bodyLines > 0) ||
+        (match.type === "arrow" && bodyLines > 0) ||
+        (match.type === "brace" && bodyLines > 1);
+
+      if (shouldCollapse) {
+        regions.push(match);
+        // Mark all lines in this region as used
+        for (let i = match.openLine; i <= match.closeLine; i++) {
+          usedLines.add(i);
+        }
+      }
+    }
+
+    return regions;
+  }
+
+  private buildCompactedOutput(
+    lines: string[],
+    regions: BraceMatch[],
+    startLine: number,
+  ): { content: string; didCompact: boolean } {
+    if (regions.length === 0) {
+      return { content: lines.join("\n"), didCompact: false };
+    }
+
+    const result: string[] = [];
+    const collapsedLines = new Set<number>();
+
+    // Mark lines that will be collapsed
+    for (const region of regions) {
+      for (let i = region.openLine + 1; i < region.closeLine; i++) {
+        collapsedLines.add(i);
+      }
+    }
+
+    // Build output
+    for (let i = 0; i < lines.length; i++) {
+      if (collapsedLines.has(i)) {
+        // Check if this is the first collapsed line in a region
+        const region = regions.find((r) => i === r.openLine + 1);
+        if (region) {
+          const absStart = startLine + region.openLine + 1;
+          const absEnd = startLine + region.closeLine - 1;
+          const indent = lines[region.openLine].match(/^\s*/)?.[0] || "";
+          result.push(
+            `${indent}  // ... [lines ${absStart}-${absEnd} collapsed]`,
+          );
+        }
+        // Skip all other collapsed lines
+        continue;
+      }
+      result.push(lines[i]);
+    }
+
+    return { content: result.join("\n"), didCompact: true };
+  }
+}
+
+export const COMPACTORS: CompactionStrategy[] = [new SemanticCompactor()];
 
 export function compactFile(
   filePath: string,
