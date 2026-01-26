@@ -82,6 +82,25 @@ interface BraceMatch {
 }
 
 /**
+ * Check if a multi-line statement should be treated as single logical unit
+ */
+function isSingleLineLogical(
+  openLine: number,
+  closeLine: number,
+  lines: string[],
+): boolean {
+  // If opening and closing are on same line, it's single-line
+  if (openLine === closeLine) return true;
+
+  // If it's just "{ ... }" on consecutive lines with no actual content
+  if (closeLine - openLine === 1) return true;
+
+  // Check if all content fits visually on ~80 chars when unwrapped
+  const content = lines.slice(openLine, closeLine + 1).join(" ");
+  return content.length < 80;
+}
+
+/**
  * Find all matching brace pairs in the code
  * Returns map of opening line -> closing line with metadata
  */
@@ -193,6 +212,11 @@ class SemanticCompactor implements CompactionStrategy {
     for (const match of sortedMatches) {
       // Skip if already inside a collapsed region
       if (usedLines.has(match.openLine)) continue;
+
+      // Check if it's a single-line logical unit
+      if (isSingleLineLogical(match.openLine, match.closeLine, lines)) {
+        continue; // Don't collapse single-line logical units
+      }
 
       const bodyLines = match.closeLine - match.openLine - 1;
 
