@@ -292,6 +292,21 @@ describe("validateParentDirForCreate (new tests)", () => {
       /Real path of ancestor.*outside project root/,
     );
   });
+
+  it("rejects creation under restricted directory name", async () => {
+    const targetFile = path.join(testDir, ".env", "secrets", "newfile.txt");
+
+    // @ts-ignore
+    vi.mocked(fs.pathExists).mockResolvedValue(true);
+    vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => true } as any);
+    // @ts-ignore
+    vi.mocked(fs.realpath).mockResolvedValue(testDir);
+    vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
+
+    await expect(validateParentDirForCreate(targetFile)).rejects.toThrow(
+      /Cannot create.*restricted path segment/,
+    );
+  });
 });
 
 describe("findExistingAncestor", () => {

@@ -205,4 +205,16 @@ export const validateParentDirForCreate = async (
       `Not in a git repository. Real ancestor directory: ${realAncestor}`,
     );
   }
+
+  // 6. Check for restricted directory names in the path
+  const relativePathForCheck = path.relative(process.cwd(), parentDir);
+  const segments = relativePathForCheck.split(path.sep).filter(Boolean);
+
+  for (const segment of segments) {
+    if (RESTRICTED_FILES.includes(segment)) {
+      throw new Error(
+        `Cannot create file or directories under restricted path segment: ${segment}`,
+      );
+    }
+  }
 };
