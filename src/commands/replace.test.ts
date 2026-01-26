@@ -101,4 +101,30 @@ function hello() {
     expect(message).toContain("First 5 line ranges:");
     expect(message).toContain("(and 3 more)");
   });
+
+  it("rejects excessive block count", async () => {
+    const manyBlocks = Array.from({ length: 51 }, () => ({
+      search: "a",
+      replace: "b",
+    }));
+
+    await expect(
+      getReplaceContent({ path: "test.txt", blocks: manyBlocks }, ""),
+    ).rejects.toThrow(/Too many replacement blocks/);
+  });
+
+  it("generates correct message when nothing matches", async () => {
+    const testFile = path.join(sandboxDir, "test-no-match.txt");
+    const content = `line1\nline2\nline3`;
+    await fs.writeFile(testFile, content);
+
+    await expect(
+      getReplaceContent(
+        { path: testFile, blocks: [{ search: "nonexistent", replace: "x" }] },
+        undefined,
+      ),
+    ).rejects.toThrow(
+      /The SEARCH block could not be found. Ensure the search text matches the file content exactly, including indentation./,
+    );
+  });
 });
