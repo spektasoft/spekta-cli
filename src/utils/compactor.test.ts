@@ -98,3 +98,37 @@ describe("SemanticCompactor", () => {
     expect(result.content).toContain("method1()");
   });
 });
+
+describe("full file compaction", () => {
+  it("matches expected output for agent-utils test file", () => {
+    const content = `import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getReadContent } from "../commands/read";
+import {
+  executeTool,
+  parseToolCalls,
+  ToolCall,
+  validateFilePath,
+} from "./agent-utils";
+
+describe("agent-utils", () => {
+  describe("parseToolCalls", () => {
+    it("parses tool calls", () => {
+      const text = "test";
+      const calls = parseToolCalls(text);
+      expect(calls).toHaveLength(2);
+    });
+  });
+});`;
+
+    const result = compactFile("agent-utils.test.ts", content, 1);
+
+    // Verify imports are preserved
+    expect(result.content).toContain("import { beforeEach");
+    expect(result.content).toContain("import { getReadContent");
+
+    // Verify test body is collapsed
+    expect(result.content).toContain('it("parses tool calls"');
+    expect(result.content).toContain("// ... [lines");
+    expect(result.isCompacted).toBe(true);
+  });
+});
