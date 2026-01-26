@@ -7,6 +7,53 @@ const hasQuotes = (line: string): boolean =>
   line.includes("`") ||
   line.includes("/");
 
+// Pattern matchers for semantic analysis
+const IMPORT_PATTERN = /^\s*(import\s+.*from|import\s*{|import\s+type)/;
+const TEST_BLOCK_PATTERN =
+  /^\s*(it|test|beforeEach|afterEach|beforeAll|afterAll)\s*\(/;
+const DESCRIBE_PATTERN = /^\s*describe\s*\(/;
+const FUNCTION_DECLARATION = /^\s*(export\s+)?(async\s+)?function\s+\w+/;
+const METHOD_DECLARATION = /^\s*(\w+)\s*\([^)]*\)\s*[:{]/;
+const ARROW_FUNCTION = /^\s*(const|let|var)\s+\w+\s*=\s*(\([^)]*\))?\s*=>/;
+const CLASS_DECLARATION = /^\s*(export\s+)?(abstract\s+)?class\s+\w+/;
+
+/**
+ * Detect if a line is part of the import block at top of file
+ */
+function isInImportBlock(lineIdx: number, lines: string[]): boolean {
+  // Scan backwards to see if we're in import zone
+  for (let i = lineIdx; i >= 0; i--) {
+    const trimmed = lines[i].trim();
+    if (trimmed === "" || trimmed.startsWith("//") || trimmed.startsWith("/*"))
+      continue;
+    if (IMPORT_PATTERN.test(trimmed)) return true;
+    // If we hit non-import code, we're past import block
+    if (trimmed && !IMPORT_PATTERN.test(trimmed) && !trimmed.startsWith("*"))
+      return false;
+  }
+  return false;
+}
+
+/**
+ * Check if line starts a collapsible block
+ */
+function getBlockType(
+  line: string,
+  lineIdx: number,
+  lines: string[],
+): "test" | "function" | "method" | "arrow" | "class" | "brace" | null {
+  const trimmed = line.trim();
+
+  if (TEST_BLOCK_PATTERN.test(trimmed)) return "test";
+  if (CLASS_DECLARATION.test(trimmed)) return "class";
+  if (FUNCTION_DECLARATION.test(trimmed)) return "function";
+  if (ARROW_FUNCTION.test(trimmed)) return "arrow";
+  if (METHOD_DECLARATION.test(trimmed)) return "method";
+  if (trimmed.endsWith("{") && !hasQuotes(trimmed)) return "brace";
+
+  return null;
+}
+
 export interface CompactionResult {
   content: string;
   isCompacted: boolean;
