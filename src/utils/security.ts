@@ -7,6 +7,30 @@ import { getIgnorePatterns } from "../config";
 export const RESTRICTED_FILES = [".env", ".gitignore", ".spektaignore"];
 const MAX_FILE_SIZE_MB = 10;
 
+/**
+ * Finds the deepest existing ancestor directory for a given path.
+ * Walks up the directory tree until an existing directory is found.
+ * Returns the absolute path of the existing ancestor.
+ */
+export async function findExistingAncestor(
+  targetPath: string,
+): Promise<string> {
+  let currentPath = path.resolve(targetPath);
+
+  while (currentPath !== path.parse(currentPath).root) {
+    if (await fs.pathExists(currentPath)) {
+      const stats = await fs.stat(currentPath);
+      if (stats.isDirectory()) {
+        return currentPath;
+      }
+    }
+    currentPath = path.dirname(currentPath);
+  }
+
+  // If we reach the filesystem root, return it
+  return currentPath;
+}
+
 export const validatePathAccess = async (filePath: string): Promise<void> => {
   const absolutePath = path.resolve(filePath);
   const fileName = path.basename(absolutePath);
@@ -126,8 +150,26 @@ export const validateEditAccess = async (filePath: string): Promise<void> => {
 };
 
 /**
- * Validates that the parent directory of a path exists and is git-tracked.
- * Used for safe creation of new files.
+ * Validates that a file can be safely created at the given path.
+ *
+ * Two-phase validation approach:
+ * 1. Finds the deepest existing ancestor directory by walking up the tree
+ * 2. Resolves its real (physical) path to handle symlinks
+ * 3. Validates that the real path is within project bounds and git-tracked
+ * 4. Ensures no restricted directory names (.env, .gitignore, etc.) appear in path segments
+ *
+ * This allows creation of nested directory structures while preventing writes
+ * outside the project (even via symlinks) or in restricted locations.
+ *
+ * @param filePath - The path where a new file will be created
+ * @throws Error if real path is outside project root
+ * @throws Error if not within a git repository
+ * @throws Error if path includes restricted directory names
+ *
+ * @example
+ * await validateParentDirForCreate('src/new/feature/file.ts'); // ✓ Valid
+ * await validateParentDirForCreate('../outside/file.ts');      // ✗ Throws
+ * await validateParentDirForCreate('src/.env/new.ts');         // ✗ Throws (restricted)
  */
 export const validateParentDirForCreate = async (
   filePath: string,
@@ -136,22 +178,45 @@ export const validateParentDirForCreate = async (
   const parentDir = path.dirname(absolutePath);
   const relativeParent = path.relative(process.cwd(), parentDir);
 
-  // Must be inside project root
+  // 1. Must be inside project root
   if (relativeParent.startsWith("..") || path.isAbsolute(relativeParent)) {
     throw new Error(`Parent directory is outside project root: ${parentDir}`);
   }
 
-  // Directory must exist
-  if (!(await fs.pathExists(parentDir))) {
-    throw new Error(`Parent directory does not exist: ${parentDir}`);
+  // 2. Find the deepest existing ancestor directory
+  const existingAncestor = await findExistingAncestor(parentDir);
+
+  // 3. Resolve the real (physical) path to handle symlinks safely
+  const realAncestor = await fs.realpath(existingAncestor);
+  const relativeReal = path.relative(process.cwd(), realAncestor);
+
+  // 4. Verify the real ancestor is within project bounds
+  if (relativeReal.startsWith("..") || path.isAbsolute(relativeReal)) {
+    throw new Error(
+      `Real path of ancestor (after symlink resolution) is outside project root: ${realAncestor}`,
+    );
   }
 
-  // Verify we are inside a git repository
+  // 5. Verify we are inside a git repository using the real path
   try {
-    await execa("git", ["rev-parse", "--is-inside-work-tree"]);
+    await execa("git", ["rev-parse", "--is-inside-work-tree"], {
+      cwd: realAncestor,
+    });
   } catch {
     throw new Error(
-      `Parent directory is not in a git repository: ${parentDir}`,
+      `Not in a git repository. Real ancestor directory: ${realAncestor}`,
     );
+  }
+
+  // 6. Check for restricted directory names in the path
+  const relativePathForCheck = path.relative(process.cwd(), parentDir);
+  const segments = relativePathForCheck.split(path.sep).filter(Boolean);
+
+  for (const segment of segments) {
+    if (RESTRICTED_FILES.includes(segment)) {
+      throw new Error(
+        `Cannot create file or directories under restricted path segment: ${segment}`,
+      );
+    }
   }
 };
