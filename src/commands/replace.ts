@@ -1,6 +1,5 @@
 import crypto from "crypto";
 import fs from "fs-extra";
-import path from "path";
 import { formatFile } from "../utils/format-utils";
 import { Logger } from "../utils/logger";
 import {
@@ -8,22 +7,9 @@ import {
   parseReplaceBlocks,
   ReplaceRequest,
 } from "../utils/replace-utils";
-import { validateEditAccess } from "../utils/security";
 
-/**
- * Extracts a window of lines around the change for context.
- */
-function getContextWindow(
-  content: string,
-  startLine: number,
-  endLine: number,
-  padding: number = 5,
-): string {
-  const lines = content.split(/\r?\n/);
-  const windowStart = Math.max(0, startLine - padding - 1);
-  const windowEnd = Math.min(lines.length, endLine + padding);
-  return lines.slice(windowStart, windowEnd).join("\n");
-}
+const MAX_BLOCKS_PER_REPLACE = 50;
+import { validateEditAccess } from "../utils/security";
 
 /**
  * Core logic for applying replacements to a file.
@@ -51,26 +37,32 @@ export async function getReplaceContent(
       throw new Error("No replacement blocks provided or parsed.");
     }
 
+    if (blocks.length > MAX_BLOCKS_PER_REPLACE) {
+      throw new Error(
+        `Too many replacement blocks (${blocks.length} > ${MAX_BLOCKS_PER_REPLACE} max)`,
+      );
+    }
+
     // Apply replacements
     const result = await applyReplacements(request.path, blocks);
 
-    const ext = path.extname(request.path).slice(1) || "txt";
     let message = "";
-    const PADDING = 3; // Reduced from 5 to 3 for less verbosity
+    const MAX_RANGES_TO_DISPLAY = 5;
 
-    for (const block of result.appliedBlocks) {
-      const contextStart = Math.max(1, block.startLine - PADDING);
-      const contextEnd = Math.min(result.totalLines, block.endLine + PADDING);
+    if (result.appliedBlocks.length > 0) {
+      const ranges = result.appliedBlocks
+        .slice(0, MAX_RANGES_TO_DISPLAY)
+        .map((block) => `${block.startLine}-${block.endLine}`)
+        .join(", ");
 
-      message += `#### ${request.path} (lines ${contextStart}-${contextEnd} of ${result.totalLines})\n`;
-      message += `**Updated Context:**\n\`\`\`${ext}\n`;
-      message += getContextWindow(
-        result.content,
-        block.startLine,
-        block.endLine,
-        PADDING,
-      );
-      message += `\n\`\`\`\n\n`;
+      message = `Replaced ${result.appliedBlocks.length} block(s) in ${request.path}`;
+      if (result.appliedBlocks.length <= MAX_RANGES_TO_DISPLAY) {
+        message += `\nLine ranges: ${ranges}`;
+      } else {
+        message += `\nFirst ${MAX_RANGES_TO_DISPLAY} line ranges: ${ranges} (and ${result.appliedBlocks.length - MAX_RANGES_TO_DISPLAY} more)`;
+      }
+    } else {
+      message = "0 blocks applied - no search regions matched";
     }
 
     return {
@@ -84,9 +76,9 @@ export async function getReplaceContent(
 
     // Truncate or simplify common matching errors
     if (cleanMessage.includes("search block was not found")) {
-      cleanMessage = `The SEARCH block could not be found in ${request.path}. Ensure the search text matches the file content exactly, including indentation.`;
+      cleanMessage = `The SEARCH block could not be found. Ensure the search text matches the file content exactly, including indentation.`;
     } else if (cleanMessage.includes("Ambiguous match")) {
-      cleanMessage = `Multiple occurrences of the SEARCH block were found in ${request.path}. Please provide more context lines to ensure a unique match.`;
+      cleanMessage = `Multiple occurrences of the SEARCH block were found. Please provide more context lines to ensure a unique match.`;
     } else if (cleanMessage.includes("No SEARCH/REPLACE blocks found")) {
       cleanMessage =
         "No valid SEARCH/REPLACE blocks were found. Make sure to use the correct format with `<<<<<<< SEARCH\n{old_string}\n=======\n{new_string}\n>>>>>>> REPLACE` markers.";

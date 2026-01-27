@@ -113,6 +113,39 @@ describe("applyReplacements Integration", () => {
     const result = await applyReplacements(tempFile, blocks);
     expect(result.content).toBe("updated 1\r\nline 2");
   });
+
+  it("should throw error when any search block is not found (atomic behavior)", async () => {
+    const content = `line1\nline2\nline3\nline4\nline5`;
+    await fs.writeFile(tempFile, content);
+
+    const blocks = [
+      { search: "line1", replace: "modified1" }, // This will match
+      { search: "nonexistent", replace: "x" }, // This won't match
+    ];
+
+    await expect(applyReplacements(tempFile, blocks)).rejects.toThrow(
+      "search block was not found",
+    );
+
+    // Verify no changes were made to the file
+    const finalContent = await fs.readFile(tempFile, "utf-8");
+    expect(finalContent).toBe(content);
+  });
+
+  it("should apply all replacements when all blocks match", async () => {
+    const content = `line1\nline2\nline3\nline4\nline5`;
+    await fs.writeFile(tempFile, content);
+
+    const blocks = [
+      { search: "line1", replace: "modified1" },
+      { search: "line3", replace: "modified3" },
+    ];
+
+    const result = await applyReplacements(tempFile, blocks);
+
+    expect(result.content).toBe("modified1\nline2\nmodified3\nline4\nline5");
+    expect(result.appliedBlocks).toHaveLength(2);
+  });
 });
 
 describe("normalizeWhitespace", () => {

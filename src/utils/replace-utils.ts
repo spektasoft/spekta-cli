@@ -235,36 +235,90 @@ export const applyReplacements = async (
   appliedBlocks: AppliedBlock[];
   totalLines: number;
 }> => {
-  let fileContent = await fs.readFile(filePath, "utf-8");
+  const originalContent = await fs.readFile(filePath, "utf-8");
+  const lineEnding = detectLineEnding(originalContent);
+  const lines = originalContent.split(/\r?\n/);
+  const totalLines = lines.length;
 
-  const lineEnding = detectLineEnding(fileContent);
-  const appliedBlocks: AppliedBlock[] = [];
+  // 1. Find all matches with offsets (on original content)
+  const matches: Array<{
+    block: ReplaceBlock;
+    startOffset: number;
+    endOffset: number;
+    startLine: number;
+    endLine: number;
+  }> = [];
 
   for (const block of blocks) {
-    const match = findUniqueMatch(fileContent, block.search);
-    const startLine = getLineNumberFromOffset(fileContent, match.start);
-    const endLine = getLineNumberFromOffset(fileContent, match.end);
-    const originalText = fileContent.substring(match.start, match.end);
+    const match = findUniqueMatch(originalContent, block.search);
+    if (!match) {
+      // Recommendation: Throwing here ensures the entire transaction is rejected
+      throw new Error("search block was not found");
+    }
 
-    // Ensure replacement uses the correct line endings
-    const replace = block.replace.replace(/\r?\n/g, lineEnding);
+    const startLine = getLineNumberFromOffset(originalContent, match.start);
+    const endLine = getLineNumberFromOffset(originalContent, match.end);
 
-    appliedBlocks.push({
+    matches.push({
+      block,
+      startOffset: match.start,
+      endOffset: match.end,
       startLine,
       endLine,
-      originalText,
-      replacementText: replace,
     });
+  }
 
-    fileContent =
-      fileContent.substring(0, match.start) +
-      replace +
-      fileContent.substring(match.end);
+  // 2. Detect overlaps
+  matches.sort((a, b) => a.startOffset - b.startOffset);
+  for (let i = 1; i < matches.length; i++) {
+    if (matches[i].startOffset < matches[i - 1].endOffset) {
+      throw new Error(
+        `Overlapping replacement blocks detected between lines ` +
+          `${matches[i - 1].startLine}-${matches[i - 1].endLine} and ` +
+          `${matches[i].startLine}-${matches[i].endLine}`,
+      );
+    }
+  }
+
+  // 3. Apply from left to right, tracking offset changes
+  let mutated = originalContent;
+  const appliedBlocks: AppliedBlock[] = [];
+
+  // Track the current offset difference caused by previous replacements
+  let offsetDiff = 0;
+
+  for (const match of matches) {
+    const adjustedStartOffset = match.startOffset + offsetDiff;
+    const adjustedEndOffset = match.endOffset + offsetDiff;
+
+    const replacement = match.block.replace.replace(/\r?\n/g, lineEnding);
+    const replacementLength = replacement.length;
+    const originalLength = match.endOffset - match.startOffset;
+    const lengthDiff = replacementLength - originalLength;
+
+    // Apply the replacement at the adjusted position
+    mutated =
+      mutated.slice(0, adjustedStartOffset) +
+      replacement +
+      mutated.slice(adjustedEndOffset);
+
+    // Update offset difference for next replacements
+    offsetDiff += lengthDiff;
+
+    appliedBlocks.push({
+      startLine: match.startLine,
+      endLine: match.endLine,
+      originalText: originalContent.substring(
+        match.startOffset,
+        match.endOffset,
+      ),
+      replacementText: replacement,
+    });
   }
 
   return {
-    content: fileContent,
+    content: mutated,
     appliedBlocks,
-    totalLines: getTotalLines(fileContent),
+    totalLines, // original total lines
   };
 };
