@@ -153,6 +153,9 @@ export async function runRepl() {
             success = true;
           } catch (streamError: any) {
             if (streamError.name === "AbortError") {
+              if (!firstTokenReceived) {
+                spinner.stop(); // Stop spinner immediately if no tokens arrived
+              }
               process.stdout.write(
                 chalk.yellow.bold("\n\n[Interrupted by user]\n"),
               );
@@ -182,17 +185,43 @@ export async function runRepl() {
         }
       }
 
-      // Only save if we actually received some content or reasoning
-      if (assistantContent || assistantReasoning) {
+      // Always commit assistant message to maintain role alternation integrity
+      const shouldCommitMessage = true; // Always commit per requirement #3
+
+      if (shouldCommitMessage) {
+        // Preserve raw content integrity: append marker ONLY if content exists
+        // Empty messages get metadata via reasoning field
+        let finalContent = assistantContent;
+        let finalReasoning = assistantReasoning || "";
+
         if (isUserInterrupted) {
-          assistantContent =
-            assistantContent.trim() + "... (interrupted by user).";
+          if (assistantContent.trim() !== "") {
+            // Append marker ONLY to non-empty content to avoid tool-call corruption
+            // Place marker after content but before potential tool-call syntax
+            finalContent =
+              assistantContent.trim() + "\n\n[Response interrupted by user]";
+          }
+          // For empty content, use reasoning field for metadata
+          if (
+            assistantContent.trim() === "" &&
+            assistantReasoning.trim() === ""
+          ) {
+            finalReasoning = "[INTERRUPTED BEFORE TOKENS ARRIVED]";
+          } else if (
+            isUserInterrupted &&
+            !assistantReasoning.includes("[INTERRUPTED]")
+          ) {
+            finalReasoning =
+              finalReasoning.trim() +
+              (finalReasoning.trim() ? "\n" : "") +
+              "[INTERRUPTED DURING STREAMING]";
+          }
         }
 
         messages.push({
           role: "assistant",
-          content: assistantContent,
-          reasoning: assistantReasoning || undefined,
+          content: finalContent,
+          reasoning: finalReasoning || undefined,
         });
 
         await saveSession(sessionId, messages);
@@ -204,7 +233,20 @@ export async function runRepl() {
         continue; // Jump to next user input
       }
 
-      const toolCalls = parseToolCalls(assistantContent);
+      // Sanitize content before tool parsing to avoid marker corruption
+      let sanitizedAssistantContent = assistantContent;
+      if (
+        isUserInterrupted &&
+        assistantContent.includes("[Response interrupted by user]")
+      ) {
+        // Remove interruption marker BEFORE tool parsing to prevent JSON corruption
+        sanitizedAssistantContent = assistantContent.replace(
+          /\n\n\[Response interrupted by user\]$/,
+          "",
+        );
+      }
+
+      const toolCalls = parseToolCalls(sanitizedAssistantContent);
       if (toolCalls.length > 0) {
         // Ensure we aren't stuck in dimmed style if the model went straight to tools
         process.stdout.write(chalk.reset(""));
