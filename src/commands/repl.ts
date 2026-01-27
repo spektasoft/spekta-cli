@@ -74,7 +74,7 @@ export async function runRepl() {
     let userInterrupted = false;
 
     while (!success && !userInterrupted) {
-      const spinner = ora("Calling assistant...").start();
+      const spinner = ora("Calling assistant...\n").start();
       const controller = new AbortController();
 
       const handleInterrupt = () => {
