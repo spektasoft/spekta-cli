@@ -120,7 +120,7 @@ export async function runRepl() {
                 spinner.stop();
                 process.stdout.write(chalk.cyan.bold("Assistant:\n"));
                 process.stdout.write(
-                  chalk.dim("  (Press Ctrl+C to interrupt)\n\n"),
+                  chalk.dim("(Press Ctrl+C to interrupt)\n"),
                 );
                 firstTokenReceived = true;
               }
@@ -168,6 +168,10 @@ export async function runRepl() {
 
           // Check if we should offer retry (only if not interrupted)
           if (!isUserInterrupted) {
+            // Reset buffers to prevent duplicate content on retry
+            assistantContent = "";
+            assistantReasoning = "";
+
             const retryChoice = await select({
               message: "AI service unavailable. What would you like to do?",
               choices: [
