@@ -168,12 +168,27 @@ export async function runRepl() {
       }
     }
 
-    messages.push({
-      role: "assistant",
-      content: assistantContent,
-      reasoning: assistantReasoning || undefined,
-    });
-    await saveSession(sessionId, messages);
+    // Only save if we actually received some content or reasoning
+    if (assistantContent || assistantReasoning) {
+      if (userInterrupted) {
+        assistantContent =
+          assistantContent.trim() + "... (interrupted by user).";
+      }
+
+      messages.push({
+        role: "assistant",
+        content: assistantContent,
+        reasoning: assistantReasoning || undefined,
+      });
+
+      await saveSession(sessionId, messages);
+    }
+
+    // Reset loop state
+    if (userInterrupted) {
+      shouldAutoTriggerAI = false;
+      continue; // Jump to next user input
+    }
 
     const toolCalls = parseToolCalls(assistantContent);
     if (toolCalls.length > 0) {
