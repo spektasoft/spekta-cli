@@ -71,72 +71,100 @@ export async function runRepl() {
     let assistantContent = "";
     let assistantReasoning = "";
     let success = false;
+    let userInterrupted = false;
 
-    while (!success) {
-      const spinner = ora("Calling assistant...\n").start();
+    while (!success && !userInterrupted) {
+      const spinner = ora("Calling assistant...").start();
+      const controller = new AbortController();
+
+      const handleInterrupt = () => {
+        userInterrupted = true;
+        controller.abort();
+      };
+
+      process.on("SIGINT", handleInterrupt);
+
       try {
         const stream = await callAIStream(
           env.OPENROUTER_API_KEY,
           provider.model,
           messages,
           provider.config ?? {},
+          undefined,
+          controller.signal,
         );
 
-        spinner.stop();
-        process.stdout.write(chalk.cyan.bold("Assistant:\n"));
+        // Note: spinner.stop() is moved inside the stream consumption to
+        // ensure it stays visible until the first token arrives.
 
         let isThinking = false;
+        let firstTokenReceived = false;
 
         try {
           for await (const chunk of stream) {
+            if (!firstTokenReceived) {
+              spinner.stop();
+              process.stdout.write(chalk.cyan.bold("Assistant:\n"));
+              process.stdout.write(
+                chalk.dim("  (Press Ctrl+C to interrupt)\n\n"),
+              );
+              firstTokenReceived = true;
+            }
+
             const delta = (chunk as ChatCompletionChunkWithReasoning).choices[0]
               ?.delta;
             const reasoning = delta?.reasoning_details?.[0]?.text || "";
             const content = delta?.content || "";
 
-            // Handle Reasoning Chunk
             if (reasoning) {
               if (!isThinking) {
-                process.stdout.write("\n");
-                process.stdout.write(chalk.cyan.italic.dim("Thought:\n"));
+                process.stdout.write(
+                  "\n" + chalk.cyan.italic.dim("Thought:\n"),
+                );
                 isThinking = true;
               }
               assistantReasoning += reasoning;
               process.stdout.write(chalk.italic.dim(reasoning));
             }
 
-            // Handle Content Chunk
             if (content) {
               if (isThinking) {
-                process.stdout.write(chalk.reset("\n\n")); // Explicitly reset style on transition
+                process.stdout.write(chalk.reset("\n\n"));
                 isThinking = false;
               }
               assistantContent += content;
               process.stdout.write(content);
             }
           }
-        } finally {
-          // Ensure style is reset after stream completion or error
-          process.stdout.write(chalk.reset("\n\n"));
+          success = true;
+        } catch (streamError: any) {
+          if (streamError.name === "AbortError") {
+            process.stdout.write(
+              chalk.yellow.bold("\n\n[Interrupted by user]\n"),
+            );
+          } else {
+            throw streamError; // Rethrow to be caught by the outer retry handler
+          }
         }
-        success = true;
       } catch (error: any) {
         spinner.fail(`AI call failed: ${error.message}`);
 
-        // Reset assistant buffer on failure to prevent duplicate partial content
-        assistantContent = "";
-        assistantReasoning = "";
+        // Check if we should offer retry (only if not interrupted)
+        if (!userInterrupted) {
+          const retryChoice = await select({
+            message: "AI service unavailable. What would you like to do?",
+            choices: [
+              { name: "Retry", value: "retry" },
+              { name: "Exit REPL", value: "exit" },
+            ],
+          });
 
-        const retryChoice = await select({
-          message: "AI service unavailable. What would you like to do?",
-          choices: [
-            { name: "Retry", value: "retry" },
-            { name: "Exit REPL", value: "exit" },
-          ],
-        });
-
-        if (retryChoice === "exit") return;
-        // If retry, loop continues, spinner restarts
+          if (retryChoice === "exit") return;
+        }
+      } finally {
+        spinner.stop();
+        process.off("SIGINT", handleInterrupt);
+        process.stdout.write(chalk.reset(""));
       }
     }
 
