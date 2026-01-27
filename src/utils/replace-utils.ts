@@ -251,7 +251,10 @@ export const applyReplacements = async (
 
   for (const block of blocks) {
     const match = findUniqueMatch(originalContent, block.search);
-    if (!match) continue; // skip non-matching
+    if (!match) {
+      // Recommendation: Throwing here ensures the entire transaction is rejected
+      throw new Error("search block was not found");
+    }
 
     const startLine = getLineNumberFromOffset(originalContent, match.start);
     const endLine = getLineNumberFromOffset(originalContent, match.end);
@@ -280,9 +283,6 @@ export const applyReplacements = async (
   // 3. Apply from left to right, tracking offset changes
   let mutated = originalContent;
   const appliedBlocks: AppliedBlock[] = [];
-
-  // Sort matches by their original position
-  matches.sort((a, b) => a.startOffset - b.startOffset);
 
   // Track the current offset difference caused by previous replacements
   let offsetDiff = 0;
