@@ -195,6 +195,8 @@ export class ReplSession {
               process.stdout.write(content);
             }
           }
+          // Added: Ensure the message is "closed" in the terminal
+          process.stdout.write("\n\n");
           success = true;
         } catch (streamError: any) {
           if (streamError.name === "AbortError") {
@@ -227,9 +229,11 @@ export class ReplSession {
           }
         }
       } finally {
+        if (this.currentAbortController) {
+          this.currentAbortController = null;
+        }
+        // Only stop the spinner if it was never stopped by the first token
         spinner.stop();
-        this.currentAbortController = null;
-        process.stdout.write(chalk.reset(""));
       }
     }
 

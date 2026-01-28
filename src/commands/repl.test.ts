@@ -244,3 +244,40 @@ it("resets buffers when a non-abort error occurs during streaming", async () => 
 
   expect((session as any).lastAssistantContent).toBe("");
 });
+
+it("ensures session is saved even if the loop breaks via exitRequested", async () => {
+  const session = new ReplSession();
+  await session.initialize();
+  (session as any).exitRequested = true;
+  (session as any).pendingToolResults = "Final Check";
+
+  await session.start();
+
+  expect(saveSession).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.arrayContaining([
+      expect.objectContaining({ content: "Final Check" }),
+    ]),
+  );
+});
+
+it("prints a newline after the stream finishes successfully", async () => {
+  vi.mocked(getUserMessage).mockResolvedValueOnce("hello");
+
+  const mockStream = {
+    [Symbol.asyncIterator]: async function* () {
+      yield { choices: [{ delta: { content: "AI Response" } }] };
+    },
+  };
+  vi.mocked(callAIStream).mockResolvedValue(mockStream as any);
+
+  // Spy on stdout.write to capture what gets written
+  const writeSpy = vi.spyOn(process.stdout, "write");
+
+  const session = new ReplSession();
+  await session.initialize();
+  await (session as any).handleAssistantTurn();
+
+  // Verify that a newline was written after the stream completed
+  expect(writeSpy).toHaveBeenCalledWith("\n\n");
+});
