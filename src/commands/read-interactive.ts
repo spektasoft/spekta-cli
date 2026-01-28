@@ -79,7 +79,6 @@ export async function runReadInteractive() {
 
       const env = await getEnv();
       const editor = env.SPEKTA_EDITOR;
-      const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "1000", 10);
 
       const startInput = await input({
         message: "Start line (o: open, f: full, c: cancel):",
@@ -100,21 +99,10 @@ export async function runReadInteractive() {
       }
 
       let range: LineRange | undefined;
-      let tokensMessage = "";
 
       if (startInput.toLowerCase() === "f") {
-        const validation = await validateFileRange(
-          filePath,
-          { start: 1, end: "$" },
-          tokenLimit,
-        );
-        tokensMessage = ` (${validation.tokens} tokens)`;
-        if (!validation.valid) {
-          console.warn(`Warning: ${validation.message}`);
-        } else {
-          console.log(`Full file will be added${tokensMessage}`);
-        }
         // Full file: no range
+        console.log(`Full file will be added`);
       } else {
         const endInput = await input({
           message: "End line (c: cancel):",
@@ -128,19 +116,12 @@ export async function runReadInteractive() {
           start: isNaN(start) ? 1 : start,
           end: isNaN(end as number) && end !== "$" ? "$" : end,
         };
-        const validation = await validateFileRange(filePath, range, tokenLimit);
-        tokensMessage = ` (${validation.tokens} tokens)`;
-        if (!validation.valid) {
-          console.warn(`Warning: ${validation.message}`);
-        } else {
-          console.log(`Range will be added${tokensMessage}`);
-        }
+        console.log(`Range will be added`);
       }
 
       selectedRequests.push({ path: filePath, range });
-      // Always add
       console.log(
-        `Added ${filePath}${range ? ` [${range.start},${range.end}]` : ""}${tokensMessage}`,
+        `Added ${filePath}${range ? ` [${range.start},${range.end}]` : ""}`,
       );
     }
 
