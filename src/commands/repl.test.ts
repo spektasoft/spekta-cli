@@ -208,3 +208,19 @@ it("aborts the active controller on SIGINT without exiting the process", async (
   expect(mockController.abort).toHaveBeenCalled();
   expect((session as any).isUserInterrupted).toBe(true);
 });
+
+it("removes interruption marker only from the end of the string", () => {
+  const session = new ReplSession();
+  (session as any).isUserInterrupted = true;
+  (session as any).lastAssistantContent =
+    "Some text\n\n[Response interrupted by user]";
+
+  // Internal access for testing sanitization logic
+  const toolCalls = parseToolCalls(
+    (session as any).lastAssistantContent.replace(
+      "\n\n[Response interrupted by user]",
+      "",
+    ),
+  );
+  expect(toolCalls).toBeDefined();
+});

@@ -274,14 +274,12 @@ export class ReplSession {
 
   private async handleToolCalls() {
     let sanitizedContent = this.lastAssistantContent;
-    if (
-      this.isUserInterrupted &&
-      this.lastAssistantContent.includes("[Response interrupted by user]")
-    ) {
-      sanitizedContent = this.lastAssistantContent.replace(
-        /\n\n\[Response interrupted by user\]$/,
-        "",
-      );
+    if (this.isUserInterrupted) {
+      // Use a precise marker match to avoid accidental content loss
+      const marker = "\n\n[Response interrupted by user]";
+      if (sanitizedContent.endsWith(marker)) {
+        sanitizedContent = sanitizedContent.slice(0, -marker.length);
+      }
     }
 
     const toolCalls = parseToolCalls(sanitizedContent);
