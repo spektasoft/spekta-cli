@@ -54,17 +54,22 @@ export class ReplSession {
     if (this.boundHandleInterrupt) {
       process.off("SIGINT", this.boundHandleInterrupt);
     }
+    // Reset any global terminal state if necessary
+    process.stdout.write(chalk.reset(""));
   }
 
   private handleInterrupt() {
-    this.isUserInterrupted = true;
     if (this.currentAbortController) {
+      // Situation: AI is currently generating text
+      // Action: Cancel the stream but allow the REPL to continue
+      this.isUserInterrupted = true;
       this.currentAbortController.abort();
+      process.stdout.write(chalk.yellow.bold("\n[Stream Interrupted]\n"));
     } else {
-      process.stdout.write(
-        chalk.yellow.bold("\n\n[Interrupted. Exiting REPL...]\n"),
-      );
+      // Situation: Application is idle/waiting for input
+      // Action: Trigger a graceful exit
       this.exitRequested = true;
+      process.stdout.write(chalk.yellow.bold("\n[Exiting REPL...]\n"));
     }
   }
 
@@ -215,8 +220,8 @@ export class ReplSession {
             ],
           });
           if (retryChoice === "exit") {
-            this.cleanup();
-            process.exit(0);
+            this.exitRequested = true;
+            return; // Exit the function to allow the main loop to handle cleanup
           }
         }
       } finally {

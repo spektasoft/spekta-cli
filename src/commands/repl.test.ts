@@ -197,3 +197,14 @@ it("breaks the main loop and saves session when exitRequested is true", async ()
     ]),
   );
 });
+
+it("aborts the active controller on SIGINT without exiting the process", async () => {
+  const session = new ReplSession();
+  const mockController = { abort: vi.fn() };
+  (session as any).currentAbortController = mockController;
+
+  (session as any).handleInterrupt();
+
+  expect(mockController.abort).toHaveBeenCalled();
+  expect((session as any).isUserInterrupted).toBe(true);
+});
