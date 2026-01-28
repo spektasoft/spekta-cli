@@ -79,7 +79,7 @@ export async function runReadInteractive() {
 
       const env = await getEnv();
       const editor = env.SPEKTA_EDITOR;
-      const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "2000", 10);
+      const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "1000", 10);
 
       let validRequest = false;
       while (!validRequest) {
