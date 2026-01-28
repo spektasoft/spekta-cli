@@ -1,10 +1,10 @@
 import dotenv from "dotenv";
-import path from "path";
-import os from "os";
 import fs from "fs-extra";
+import os from "os";
+import path from "path";
 import { fileURLToPath } from "url";
+import { readYaml, writeYaml } from "./utils/yaml";
 import { fetchFreeModels } from "./api";
-import { readYaml } from "./utils/yaml";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -212,12 +212,10 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
 export const syncFreeModels = async (apiKey: string) => {
   const models = await fetchFreeModels(apiKey);
 
-  // Validate that we received valid models
   if (!models || !Array.isArray(models) || models.length === 0) {
     throw new Error("No free models found on OpenRouter.");
   }
 
-  // Validate each model has required properties
   const validModels = models.filter(
     (m) => m && typeof m.id === "string" && typeof m.name === "string",
   );
@@ -231,11 +229,7 @@ export const syncFreeModels = async (apiKey: string) => {
     model: m.id,
   }));
 
-  // Validate that we have providers to write
-  if (providers.length === 0) {
-    throw new Error("No valid providers could be created from the models.");
-  }
-
-  await fs.writeJSON(HOME_PROVIDERS_FREE, { providers }, { spaces: 2 });
+  // Save as YAML
+  await writeYaml(HOME_PROVIDERS_FREE, { providers });
   return providers.length;
 };
