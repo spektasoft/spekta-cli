@@ -224,3 +224,23 @@ it("removes interruption marker only from the end of the string", () => {
   );
   expect(toolCalls).toBeDefined();
 });
+
+it("resets buffers when a non-abort error occurs during streaming", async () => {
+  const session = new ReplSession();
+  (session as any).env = { OPENROUTER_API_KEY: "test" };
+  (session as any).provider = { model: "test" };
+
+  // Mock a failing stream
+  vi.mocked(callAIStream).mockRejectedValueOnce(new Error("Network Error"));
+  // Mock the retry choice to exit
+  const { select } = await import("@inquirer/prompts");
+  vi.mocked(select).mockResolvedValueOnce("exit");
+
+  try {
+    await (session as any).handleAssistantTurn();
+  } catch (e) {
+    // Expected exit
+  }
+
+  expect((session as any).lastAssistantContent).toBe("");
+});

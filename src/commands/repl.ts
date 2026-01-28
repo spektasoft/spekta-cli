@@ -210,8 +210,10 @@ export class ReplSession {
       } catch (error: any) {
         spinner.fail(`AI call failed: ${error.message}`);
         if (!this.isUserInterrupted) {
+          // Reset the buffers on non-interruption failures
           assistantContent = "";
           assistantReasoning = "";
+          this.lastAssistantContent = "";
           const retryChoice = await select({
             message: "AI service unavailable. What would you like to do?",
             choices: [
