@@ -1,5 +1,6 @@
 import fs from "fs-extra";
 import YAML from "yaml";
+import path from "path";
 
 /**
  * Reads a YAML file and parses it into a typed object.
@@ -25,6 +26,6 @@ export async function writeYaml(filePath: string, data: any): Promise<void> {
     indent: 2,
     blockQuote: "literal",
   });
-  await fs.ensureDir(require("path").dirname(filePath));
+  await fs.ensureDir(path.dirname(filePath));
   await fs.writeFile(filePath, content, "utf8");
 }
