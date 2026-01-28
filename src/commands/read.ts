@@ -1,8 +1,8 @@
 import path from "path";
-import { getEnv } from "../config";
+import { getReadTokenLimit } from "../config";
 import { processOutput } from "../editor-utils";
-import { Logger } from "../utils/logger";
 import { compactFile } from "../utils/compactor";
+import { Logger } from "../utils/logger";
 import { FileRequest, getFileLines, getTokenCount } from "../utils/read-utils";
 import { validatePathAccess } from "../utils/security";
 
@@ -24,8 +24,7 @@ export async function getReadContent(
   if (!requests || requests.length === 0)
     throw new Error("At least one file path is required.");
 
-  const env = await getEnv();
-  const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "1000", 10);
+  const tokenLimit = getReadTokenLimit();
   const compactThreshold = 500;
   let combinedOutput = "";
   let anyCompacted = false;
