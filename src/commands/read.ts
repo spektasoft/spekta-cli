@@ -23,31 +23,26 @@ export async function getReadContent(
 ): Promise<string> {
   if (!requests || requests.length === 0)
     throw new Error("At least one file path is required.");
-
   const env = await getEnv();
   const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "1000", 10);
   const compactThreshold = 500;
   let combinedOutput = "";
   let anyCompacted = false;
-
   for (const req of requests) {
     await validatePathAccess(req.path);
     const { lines, total } = await getFileLines(
       req.path,
       req.range || { start: 1, end: "$" },
     );
-
     const startLineOffset = req.range
       ? typeof req.range.start === "number"
         ? req.range.start
         : 1
       : 1;
-
     const isRangeRequest = !!req.range;
     let content = lines.join("\n");
     let tokens = 0;
     let isCompacted = false;
-
     if (!isRangeRequest) {
       if (content.length > compactThreshold) {
         const result = compactFile(req.path, content, startLineOffset);
@@ -58,20 +53,21 @@ export async function getReadContent(
         }
       }
     }
-
     tokens = getTokenCount(content);
 
-    if (isRangeRequest && tokens > tokenLimit) {
+    let exceedLabel = "";
+    if (tokens > tokenLimit) {
+      Logger.warn(
+        `${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`,
+      );
+      exceedLabel = " [EXCEEDS TOKEN LIMIT]";
+    }
+
+    if (!interactive && isRangeRequest && tokens > tokenLimit) {
       const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`;
       Logger.error(errorMessage);
       combinedOutput += `#### ${req.path} ERROR\nError: ${errorMessage}\n\n`;
       continue;
-    }
-
-    if (tokens > tokenLimit && !isCompacted) {
-      Logger.warn(
-        `${req.path} exceeds token limit (${tokens} > ${tokenLimit}) and could not be compacted.`,
-      );
     }
 
     const ext = path.extname(req.path).slice(1) || "txt";
@@ -79,10 +75,8 @@ export async function getReadContent(
       ? `${req.range!.start}-${req.range!.end === "$" ? total : req.range!.end} of ${total}`
       : `1-${total} (Full File)`;
     const compactLabel = isCompacted ? " [COMPACTED OVERVIEW]" : "";
-
-    combinedOutput += `#### ${req.path} (lines ${rangeLabel})${compactLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
+    combinedOutput += `#### ${req.path} (lines ${rangeLabel})${compactLabel}${exceedLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
   }
-
   return anyCompacted
     ? `${COMPACTION_ADVISORY}\n\n${combinedOutput}`
     : combinedOutput;
