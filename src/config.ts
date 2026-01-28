@@ -4,6 +4,7 @@ import os from "os";
 import fs from "fs-extra";
 import { fileURLToPath } from "url";
 import { fetchFreeModels } from "./api";
+import { readYaml } from "./utils/yaml";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -171,14 +172,12 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   const env = await getEnv();
   const disableFree = env.SPEKTA_DISABLE_FREE_MODELS === "true";
 
-  const safeRead = async (filePath: string) => {
-    if (!(await fs.pathExists(filePath))) return { providers: [] };
+  const safeRead = async (filePath: string): Promise<ProvidersConfig> => {
     try {
-      return await fs.readJSON(filePath);
+      const data = await readYaml<ProvidersConfig>(filePath);
+      return data || { providers: [] };
     } catch (err: any) {
-      console.warn(
-        `Warning: Failed to parse ${path.basename(filePath)}: ${err.message}`,
-      );
+      console.warn(`Warning: ${err.message}`);
       return { providers: [] };
     }
   };
