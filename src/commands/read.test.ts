@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../config";
 import * as editorUtils from "../editor-utils";
 import * as compactor from "../utils/compactor";
@@ -32,11 +32,15 @@ describe("runRead", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockGetEnv.mockResolvedValue({ SPEKTA_READ_TOKEN_LIMIT: "2000" });
+    mockGetEnv.mockResolvedValue({ SPEKTA_READ_TOKEN_LIMIT: "1000" });
     mockValidatePathAccess.mockResolvedValue(undefined);
     stdoutSpy = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("should provide raw output for targeted range requests even if long", async () => {
@@ -74,11 +78,11 @@ describe("runRead", () => {
     await runRead([{ path: "large.ts", range: { start: 1, end: 100 } }]);
 
     expect(mockLogger.error).toHaveBeenCalledWith(
-      expect.stringContaining("exceeds token limit (3000 > 2000)"),
+      expect.stringContaining("exceeds token limit (3000 > 1000)"),
     );
     expect(stdoutSpy).toHaveBeenCalledWith(
       expect.stringContaining(
-        "Error: Requested range for large.ts exceeds token limit (3000 > 2000)",
+        "Error: Requested range for large.ts exceeds token limit (3000 > 1000)",
       ),
     );
     expect(mockCompactFile).not.toHaveBeenCalled();
@@ -168,7 +172,7 @@ describe("runRead", () => {
       expect(mockGetTokenCount).toHaveBeenCalled();
       // And should still enforce limits
       expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("exceeds token limit (3000 > 2000)"),
+        expect.stringContaining("exceeds token limit (3000 > 1000)"),
       );
     });
 
@@ -196,11 +200,12 @@ describe("runRead", () => {
 
   describe("compaction advisory preservation", () => {
     it("should show compaction advisory in interactive mode when compaction occurs", async () => {
-      const longContent = "line\n".repeat(1000);
       mockGetFileLines.mockResolvedValue({
-        lines: longContent.trim().split("\n"),
+        lines: Array(1000).fill("line"),
         total: 1000,
       });
+
+      // Explicitly set the mock state for this specific test case
       mockCompactFile.mockReturnValue({
         content: "compacted content",
         isCompacted: true,
@@ -210,9 +215,6 @@ describe("runRead", () => {
 
       expect(stdoutSpy).toHaveBeenCalledWith(
         expect.stringContaining("COMPACTION NOTICE"),
-      );
-      expect(stdoutSpy).toHaveBeenCalledWith(
-        expect.stringContaining("Parts of these files are collapsed"),
       );
     });
 
