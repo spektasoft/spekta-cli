@@ -91,11 +91,7 @@ export const fetchFreeModels = async (
       const p = m.pricing;
       if (!p || typeof p !== "object") return false;
 
-      return (
-        Number(p.prompt) === 0 &&
-        Number(p.completion) === 0 &&
-        Number(p.request) === 0
-      );
+      return Number(p.prompt) === 0 && Number(p.completion) === 0;
     });
   } finally {
     clearTimeout(timeout);
