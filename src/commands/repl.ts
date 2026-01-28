@@ -58,18 +58,21 @@ export class ReplSession {
     process.stdout.write(chalk.reset(""));
   }
 
-  private handleInterrupt() {
+  private async handleInterrupt() {
     if (this.currentAbortController) {
-      // Situation: AI is currently generating text
-      // Action: Cancel the stream but allow the REPL to continue
       this.isUserInterrupted = true;
       this.currentAbortController.abort();
       process.stdout.write(chalk.yellow.bold("\n[Stream Interrupted]\n"));
     } else {
-      // Situation: Application is idle/waiting for input
-      // Action: Trigger a graceful exit
       this.exitRequested = true;
       process.stdout.write(chalk.yellow.bold("\n[Exiting REPL...]\n"));
+
+      // Explicitly handle persistence if we are blocked by an inquirer prompt
+      if (this.pendingToolResults) {
+        this.messages.push({ role: "user", content: this.pendingToolResults });
+        await saveSession(this.sessionId, this.messages);
+      }
+      process.exit(0);
     }
   }
 

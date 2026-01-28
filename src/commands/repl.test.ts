@@ -281,3 +281,22 @@ it("prints a newline after the stream finishes successfully", async () => {
   // Verify that a newline was written after the stream completed
   expect(writeSpy).toHaveBeenCalledWith("\n\n");
 });
+
+it("saves session data immediately when SIGINT is received while idle", async () => {
+  const session = new ReplSession();
+  (session as any).pendingToolResults = "Immediate Exit Data";
+
+  const exitSpy = vi
+    .spyOn(process, "exit")
+    .mockImplementation(() => undefined as never);
+
+  await (session as any).handleInterrupt();
+
+  expect(saveSession).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.arrayContaining([
+      expect.objectContaining({ content: "Immediate Exit Data" }),
+    ]),
+  );
+  expect(exitSpy).toHaveBeenCalledWith(0);
+});
