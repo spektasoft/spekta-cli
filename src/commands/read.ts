@@ -1,5 +1,5 @@
 import path from "path";
-import { getReadTokenLimit } from "../config";
+import { getReadTokenLimit, getCompactThreshold } from "../config";
 import { processOutput } from "../editor-utils";
 import { compactFile } from "../utils/compactor";
 import { Logger } from "../utils/logger";
@@ -25,7 +25,7 @@ export async function getReadContent(
     throw new Error("At least one file path is required.");
 
   const tokenLimit = getReadTokenLimit();
-  const compactThreshold = 500;
+  const compactThreshold = getCompactThreshold();
   let combinedOutput = "";
   let anyCompacted = false;
 

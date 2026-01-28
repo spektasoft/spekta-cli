@@ -140,6 +140,18 @@ export function getReadTokenLimit(): number {
   return parsed;
 }
 
+export function getCompactThreshold(): number {
+  const raw = getEnvValue("SPEKTA_COMPACT_THRESHOLD", "500");
+  const parsed = parseInt(raw, 10);
+  if (isNaN(parsed) || parsed < 0) {
+    console.warn(
+      `Invalid SPEKTA_COMPACT_THRESHOLD value "${raw}", falling back to 500`,
+    );
+    return 500;
+  }
+  return parsed;
+}
+
 export const getIgnorePatterns = async (): Promise<string[]> => {
   const workspaceIgnore = path.join(process.cwd(), ".spektaignore");
   const targetFile = (await fs.pathExists(workspaceIgnore))
