@@ -80,7 +80,12 @@ export class ReplSession {
     try {
       await this.initialize();
       this.boundHandleInterrupt = this.handleInterrupt.bind(this);
-      process.on("SIGINT", this.boundHandleInterrupt);
+      process.on("SIGINT", () => {
+        this.handleInterrupt().catch((err) => {
+          console.error("Failed to shutdown gracefully:", err);
+          process.exit(1);
+        });
+      });
 
       while (!this.exitRequested) {
         if (!this.shouldAutoTriggerAI) {
