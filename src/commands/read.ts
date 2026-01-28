@@ -17,7 +17,10 @@ Parts of these files are collapsed. Line numbers in comments are **absolute**; d
  * Core logic for reading files, applying compaction, and calculating tokens.
  * This function returns the formatted string directly.
  */
-export async function getReadContent(requests: FileRequest[]): Promise<string> {
+export async function getReadContent(
+  requests: FileRequest[],
+  interactive = false,
+): Promise<string> {
   if (!requests || requests.length === 0)
     throw new Error("At least one file path is required.");
 
@@ -87,10 +90,13 @@ export async function getReadContent(requests: FileRequest[]): Promise<string> {
 
 export async function runRead(
   requests: FileRequest[],
-  options: { save?: boolean } = {},
+  options: { save?: boolean; interactive?: boolean } = {},
 ) {
   try {
-    const finalContent = await getReadContent(requests);
+    const finalContent = await getReadContent(
+      requests,
+      options.interactive ?? false,
+    );
 
     if (options.save) {
       await processOutput(finalContent, "spekta-read");

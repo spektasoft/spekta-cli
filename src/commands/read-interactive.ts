@@ -174,5 +174,5 @@ export async function runReadInteractive() {
   }
 
   // Logic to execute immediately after loop break
-  await runRead(selectedRequests, { save: true });
+  await runRead(selectedRequests, { save: true, interactive: true });
 }
