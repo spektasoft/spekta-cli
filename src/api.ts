@@ -109,6 +109,7 @@ export const callAIStream = async (
   config: Record<string, any> = {},
   // Best practice: Allow injection for testing
   clientOverride?: OpenAI,
+  signal?: AbortSignal, // Add signal parameter
 ): Promise<AsyncIterable<ChatCompletionChunk>> => {
   const client = clientOverride || getAIClient(apiKey);
 
@@ -117,10 +118,13 @@ export const callAIStream = async (
     ({ reasoning, ...rest }) => rest,
   );
 
-  return await client.chat.completions.create({
-    model,
-    messages: sanitizedMessages,
-    stream: true,
-    ...config,
-  });
+  return await client.chat.completions.create(
+    {
+      model,
+      messages: sanitizedMessages,
+      stream: true,
+      ...config,
+    },
+    { signal },
+  );
 };
