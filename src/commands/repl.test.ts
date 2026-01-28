@@ -181,3 +181,19 @@ it("runRepl initializes session successfully", async () => {
   vi.mocked(getUserMessage).mockResolvedValueOnce("exit");
   await expect(runRepl()).resolves.not.toThrow();
 });
+
+it("breaks the main loop and saves session when exitRequested is true", async () => {
+  const session = new ReplSession();
+  await session.initialize();
+  (session as any).exitRequested = true;
+  (session as any).pendingToolResults = "Leftover result";
+
+  await session.start();
+
+  expect(saveSession).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.arrayContaining([
+      expect.objectContaining({ content: "Leftover result" }),
+    ]),
+  );
+});

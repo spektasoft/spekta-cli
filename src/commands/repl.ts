@@ -26,6 +26,7 @@ export class ReplSession {
   private currentAbortController: AbortController | null = null;
   private lastAssistantContent: string = "";
   private boundHandleInterrupt: (() => void) | undefined;
+  private exitRequested: boolean = false;
 
   constructor() {
     this.sessionId = generateSessionId();
@@ -63,7 +64,7 @@ export class ReplSession {
       process.stdout.write(
         chalk.yellow.bold("\n\n[Interrupted. Exiting REPL...]\n"),
       );
-      process.exit(0);
+      this.exitRequested = true;
     }
   }
 
@@ -73,10 +74,10 @@ export class ReplSession {
       this.boundHandleInterrupt = this.handleInterrupt.bind(this);
       process.on("SIGINT", this.boundHandleInterrupt);
 
-      while (true) {
+      while (!this.exitRequested) {
         if (!this.shouldAutoTriggerAI) {
           const shouldContinue = await this.handleUserTurn();
-          if (!shouldContinue) break;
+          if (!shouldContinue || this.exitRequested) break;
         } else {
           this.messages.push({
             role: "user",
@@ -88,8 +89,17 @@ export class ReplSession {
         }
 
         await this.handleAssistantTurn();
+
+        // If we were interrupted during the assistant turn,
+        // reset the flag for the next user input cycle.
+        this.isUserInterrupted = false;
       }
     } finally {
+      // Final state persistence for pending tools before shutdown
+      if (this.pendingToolResults) {
+        this.messages.push({ role: "user", content: this.pendingToolResults });
+        await saveSession(this.sessionId, this.messages);
+      }
       this.cleanup();
     }
   }
