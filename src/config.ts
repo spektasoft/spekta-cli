@@ -120,6 +120,38 @@ export const getEnv = async () => {
   return process.env;
 };
 
+export function getEnvValue(key: string, fallback?: string): string {
+  const value = process.env[key] ?? fallback;
+  if (value === undefined) {
+    throw new Error(`Environment variable ${key} is required`);
+  }
+  return value;
+}
+
+export function getReadTokenLimit(): number {
+  const raw = getEnvValue("SPEKTA_READ_TOKEN_LIMIT", "1000");
+  const parsed = parseInt(raw, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    console.warn(
+      `Invalid SPEKTA_READ_TOKEN_LIMIT value "${raw}", falling back to 1000`,
+    );
+    return 1000;
+  }
+  return parsed;
+}
+
+export function getCompactThreshold(): number {
+  const raw = getEnvValue("SPEKTA_COMPACT_THRESHOLD", "500");
+  const parsed = parseInt(raw, 10);
+  if (isNaN(parsed) || parsed < 0) {
+    console.warn(
+      `Invalid SPEKTA_COMPACT_THRESHOLD value "${raw}", falling back to 500`,
+    );
+    return 500;
+  }
+  return parsed;
+}
+
 export const getIgnorePatterns = async (): Promise<string[]> => {
   const workspaceIgnore = path.join(process.cwd(), ".spektaignore");
   const targetFile = (await fs.pathExists(workspaceIgnore))

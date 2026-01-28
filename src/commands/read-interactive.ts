@@ -6,7 +6,7 @@ import path from "path";
 import { getEnv, getIgnorePatterns } from "../config";
 import { openEditor } from "../editor-utils";
 import { NAV_BACK, isCancel } from "../ui";
-import { FileRequest, LineRange, validateFileRange } from "../utils/read-utils";
+import { FileRequest, LineRange } from "../utils/read-utils";
 import { RESTRICTED_FILES } from "../utils/security";
 import { runRead } from "./read";
 
@@ -31,7 +31,9 @@ export async function runReadInteractive() {
 
   console.log("\nInteractive File Reader");
   console.log("Files will open in your editor if SPEKTA_EDITOR is configured.");
-  console.log("Token limits are validated before adding files.\n");
+  console.log(
+    "Note: Token limits are bypassed in interactive mode for flexibility with large files.\n",
+  );
 
   const selectedRequests: FileRequest[] = [];
 
@@ -79,75 +81,50 @@ export async function runReadInteractive() {
 
       const env = await getEnv();
       const editor = env.SPEKTA_EDITOR;
-      const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "2000", 10);
 
-      let validRequest = false;
-      while (!validRequest) {
-        const startInput = await input({
-          message: "Start line (o: open, f: full, c: cancel):",
-          default: "1",
-        });
+      const startInput = await input({
+        message: "Start line (o: open, f: full, c: cancel):",
+        default: "1",
+      });
+      if (isCancel(startInput)) continue;
 
-        if (isCancel(startInput)) break;
-
-        // Shortcut: Open Editor
-        if (startInput.toLowerCase() === "o") {
-          if (editor) {
-            console.log(`Opening ${filePath} in editor...`);
-            // Run in background to maintain terminal focus
-            openEditor(editor, filePath).catch((err) => {
-              console.warn(`Could not open editor: ${err.message}`);
-            });
-          } else {
-            console.warn("SPEKTA_EDITOR not configured.");
-          }
-          continue; // Re-prompt for line numbers
+      if (startInput.toLowerCase() === "o") {
+        if (editor) {
+          console.log(`Opening ${filePath} in editor...`);
+          openEditor(editor, filePath).catch((err) => {
+            console.warn(`Could not open editor: ${err.message}`);
+          });
+        } else {
+          console.warn("SPEKTA_EDITOR not configured.");
         }
+        continue;
+      }
 
-        // Shortcut: Full File
-        if (startInput.toLowerCase() === "f") {
-          const validation = await validateFileRange(
-            filePath,
-            { start: 1, end: "$" },
-            tokenLimit,
-          );
-          if (validation.valid) {
-            selectedRequests.push({ path: filePath }); // Omit range for full file
-            console.log(`✓ Full file added (${validation.tokens} tokens)`);
-            validRequest = true;
-          } else {
-            console.error(`\n✗ ${validation.message}\n`);
-          }
-          continue;
-        }
+      let range: LineRange | undefined;
 
+      if (startInput.toLowerCase() === "f") {
+        // Full file: no range
+        console.log(`Full file will be added`);
+      } else {
         const endInput = await input({
           message: "End line (c: cancel):",
           default: "$",
         });
-
-        if (isCancel(endInput)) break;
+        if (isCancel(endInput)) continue;
 
         const start = parseInt(startInput, 10);
         const end = endInput === "$" ? "$" : parseInt(endInput, 10);
-
-        const range: LineRange = {
+        range = {
           start: isNaN(start) ? 1 : start,
           end: isNaN(end as number) && end !== "$" ? "$" : end,
         };
-
-        const validation = await validateFileRange(filePath, range, tokenLimit);
-
-        if (validation.valid) {
-          selectedRequests.push({ path: filePath, range });
-          validRequest = true;
-          console.log(`Range added (${validation.tokens} tokens)`);
-        } else {
-          console.error(`\n✗ ${validation.message}\n`);
-        }
+        console.log(`Range will be added`);
       }
-      // If user cancelled during validation loop, continue to main menu
-      continue;
+
+      selectedRequests.push({ path: filePath, range });
+      console.log(
+        `Added ${filePath}${range ? ` [${range.start},${range.end}]` : ""}`,
+      );
     }
 
     if (action === "remove") {
@@ -180,5 +157,5 @@ export async function runReadInteractive() {
   }
 
   // Logic to execute immediately after loop break
-  await runRead(selectedRequests, { save: true });
+  await runRead(selectedRequests, { save: true, interactive: true });
 }
