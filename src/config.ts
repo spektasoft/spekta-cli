@@ -31,8 +31,8 @@ const GET_HOME_DIR = () =>
   process.env.SPEKTA_HOME_OVERRIDE || path.join(os.homedir(), ".spekta");
 
 export let HOME_DIR = GET_HOME_DIR();
-export let HOME_PROVIDERS_USER = path.join(HOME_DIR, "providers.json");
-export let HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.json");
+export let HOME_PROVIDERS_USER = path.join(HOME_DIR, "providers.yaml");
+export let HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.yaml");
 export let HOME_PROMPTS = path.join(HOME_DIR, "prompts");
 export let HOME_IGNORE = path.join(HOME_DIR, ".spektaignore");
 
@@ -41,8 +41,8 @@ const ASSET_PROMPTS = path.join(ASSET_ROOT, "prompts");
 
 export const refreshPaths = () => {
   HOME_DIR = GET_HOME_DIR();
-  HOME_PROVIDERS_USER = path.join(HOME_DIR, "providers.json");
-  HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.json");
+  HOME_PROVIDERS_USER = path.join(HOME_DIR, "providers.yaml");
+  HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.yaml");
   HOME_PROMPTS = path.join(HOME_DIR, "prompts");
   HOME_IGNORE = path.join(HOME_DIR, ".spektaignore");
 };
