@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runReadInteractive } from "./read-interactive";
-import { input, select } from "@inquirer/prompts";
+import { checkbox, input, select } from "@inquirer/prompts";
 import autocomplete from "inquirer-autocomplete-standalone";
 import * as readCmd from "./read";
+import { openEditor } from "../editor-utils";
 
 vi.mock("@inquirer/prompts");
 vi.mock("inquirer-autocomplete-standalone");
+vi.mock("../editor-utils", () => ({
+  openEditor: vi.fn(),
+}));
 vi.mock("./read", () => ({
   runRead: vi.fn(),
 }));
@@ -13,6 +17,37 @@ vi.mock("./read", () => ({
 describe("runReadInteractive", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("should support removing added files before finalizing", async () => {
+    vi.mocked(select)
+      .mockResolvedValueOnce("add")
+      .mockResolvedValueOnce("remove")
+      .mockResolvedValueOnce("done");
+
+    vi.mocked(autocomplete).mockResolvedValueOnce("test.ts");
+    vi.mocked(input).mockResolvedValueOnce("f");
+    vi.mocked(checkbox).mockResolvedValueOnce([0]); // Remove the only selected item
+
+    await runReadInteractive();
+
+    expect(readCmd.runRead).not.toHaveBeenCalled();
+  });
+
+  it("should handle range ending at end-of-file using $", async () => {
+    vi.mocked(select)
+      .mockResolvedValueOnce("add")
+      .mockResolvedValueOnce("done");
+
+    vi.mocked(autocomplete).mockResolvedValueOnce("example.ts");
+    vi.mocked(input).mockResolvedValueOnce("10").mockResolvedValueOnce("$");
+
+    await runReadInteractive();
+
+    expect(readCmd.runRead).toHaveBeenCalledWith(
+      [{ path: "example.ts", range: { start: 10, end: "$" } }],
+      { save: true, interactive: true },
+    );
   });
 
   it("should process a full file selection without token validation", async () => {
@@ -114,6 +149,11 @@ describe("runReadInteractive", () => {
   });
 
   it("should handle done without selecting any files", async () => {
+    vi.mocked(select).mockResolvedValueOnce("done");
+
+    await runReadInteractive();
+
+    expect(readCmd.runRead).not.toHaveBeenCalled();
     // Mock the menu to select done immediately
     vi.mocked(select).mockResolvedValueOnce("done");
 
