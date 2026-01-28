@@ -131,4 +131,121 @@ describe("runRead", () => {
       expect.stringContaining("#### small.ts (lines 1-2 (Full File))"),
     );
   });
+
+  describe("interactive mode behavior", () => {
+    it("should skip token counting entirely in interactive mode", async () => {
+      // Test that interactive mode doesn't call getTokenCount at all
+      const longContent = "line\n".repeat(1000);
+      mockGetFileLines.mockResolvedValue({
+        lines: longContent.trim().split("\n"),
+        total: 1000,
+      });
+      // Don't mock getTokenCount - if it's called, the test will fail
+      mockGetTokenCount.mockReturnValue(3000);
+
+      await runRead([{ path: "large.ts" }], { interactive: true });
+
+      // In interactive mode, getTokenCount should NOT be called
+      expect(mockGetTokenCount).not.toHaveBeenCalled();
+    });
+
+    it("should retain token counting and enforcement in non-interactive mode", async () => {
+      // Test that non-interactive mode still calls getTokenCount and enforces limits
+      mockGetFileLines.mockResolvedValue({
+        lines: ["large content"],
+        total: 100,
+      });
+      mockGetTokenCount.mockReturnValue(3000);
+
+      await runRead([{ path: "large.ts" }], { interactive: false });
+
+      // Non-interactive mode MUST call getTokenCount
+      expect(mockGetTokenCount).toHaveBeenCalled();
+      // And should still enforce limits
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining("exceeds token limit (3000 > 2000)"),
+      );
+    });
+
+    it("should still apply compaction in interactive mode", async () => {
+      // Test that compaction works in interactive mode
+      const longContent = "line\n".repeat(1000);
+      mockGetFileLines.mockResolvedValue({
+        lines: longContent.trim().split("\n"),
+        total: 1000,
+      });
+      mockCompactFile.mockReturnValue({
+        content: "compacted content",
+        isCompacted: true,
+      });
+      // Don't mock getTokenCount for interactive mode
+
+      await runRead([{ path: "large.ts" }], { interactive: true });
+
+      // Compaction should still happen
+      expect(mockCompactFile).toHaveBeenCalled();
+      // But token counting should not
+      expect(mockGetTokenCount).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("compaction advisory preservation", () => {
+    it("should show compaction advisory in interactive mode when compaction occurs", async () => {
+      const longContent = "line\n".repeat(1000);
+      mockGetFileLines.mockResolvedValue({
+        lines: longContent.trim().split("\n"),
+        total: 1000,
+      });
+      mockCompactFile.mockReturnValue({
+        content: "compacted content",
+        isCompacted: true,
+      });
+
+      await runRead([{ path: "large.ts" }], { interactive: true });
+
+      expect(stdoutSpy).toHaveBeenCalledWith(
+        expect.stringContaining("COMPACTION NOTICE"),
+      );
+      expect(stdoutSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Parts of these files are collapsed"),
+      );
+    });
+
+    it("should not show compaction advisory when no compaction occurs", async () => {
+      const smallContent = "line 1\nline 2";
+      mockGetFileLines.mockResolvedValue({
+        lines: smallContent.trim().split("\n"),
+        total: 2,
+      });
+      mockCompactFile.mockReturnValue({
+        content: smallContent,
+        isCompacted: false,
+      });
+
+      await runRead([{ path: "small.ts" }], { interactive: true });
+
+      expect(stdoutSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining("COMPACTION NOTICE"),
+      );
+    });
+
+    it("should show compaction advisory in non-interactive mode when compaction occurs", async () => {
+      const longContent = "line\n".repeat(1000);
+      mockGetFileLines.mockResolvedValue({
+        lines: longContent.trim().split("\n"),
+        total: 1000,
+      });
+      mockCompactFile.mockReturnValue({
+        content: "compacted content",
+        isCompacted: true,
+      });
+      mockGetTokenCount.mockReturnValue(50);
+
+      await runRead([{ path: "large.ts" }], { interactive: false });
+
+      expect(stdoutSpy).toHaveBeenCalledWith(
+        expect.stringContaining("COMPACTION NOTICE"),
+      );
+    });
+  });
 });

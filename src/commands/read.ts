@@ -23,17 +23,20 @@ export async function getReadContent(
 ): Promise<string> {
   if (!requests || requests.length === 0)
     throw new Error("At least one file path is required.");
+
   const env = await getEnv();
   const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "1000", 10);
   const compactThreshold = 500;
   let combinedOutput = "";
   let anyCompacted = false;
+
   for (const req of requests) {
     await validatePathAccess(req.path);
     const { lines, total } = await getFileLines(
       req.path,
       req.range || { start: 1, end: "$" },
     );
+
     const startLineOffset = req.range
       ? typeof req.range.start === "number"
         ? req.range.start
@@ -41,8 +44,9 @@ export async function getReadContent(
       : 1;
     const isRangeRequest = !!req.range;
     let content = lines.join("\n");
-    let tokens = 0;
     let isCompacted = false;
+
+    // Compaction applies ONLY to full files (no range), regardless of mode
     if (!isRangeRequest) {
       if (content.length > compactThreshold) {
         const result = compactFile(req.path, content, startLineOffset);
@@ -53,21 +57,25 @@ export async function getReadContent(
         }
       }
     }
-    tokens = getTokenCount(content);
 
+    // Token counting ONLY for non-interactive mode enforcement
+    let tokens = 0;
     let exceedLabel = "";
-    if (tokens > tokenLimit) {
-      Logger.warn(
-        `${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`,
-      );
-      exceedLabel = " [EXCEEDS TOKEN LIMIT]";
-    }
-
-    if (!interactive && isRangeRequest && tokens > tokenLimit) {
-      const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`;
-      Logger.error(errorMessage);
-      combinedOutput += `#### ${req.path} ERROR\nError: ${errorMessage}\n\n`;
-      continue;
+    if (!interactive) {
+      tokens = getTokenCount(content);
+      if (tokens > tokenLimit) {
+        if (isRangeRequest) {
+          const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`;
+          Logger.error(errorMessage);
+          combinedOutput += `#### ${req.path} ERROR\nError: ${errorMessage}\n\n`;
+          continue;
+        } else if (!isCompacted) {
+          Logger.warn(
+            `${req.path} exceeds token limit (${tokens} > ${tokenLimit}) and could not be compacted.`,
+          );
+        }
+        exceedLabel = " [EXCEEDS TOKEN LIMIT]";
+      }
     }
 
     const ext = path.extname(req.path).slice(1) || "txt";
@@ -77,6 +85,7 @@ export async function getReadContent(
     const compactLabel = isCompacted ? " [COMPACTED OVERVIEW]" : "";
     combinedOutput += `#### ${req.path} (lines ${rangeLabel})${compactLabel}${exceedLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
   }
+
   return anyCompacted
     ? `${COMPACTION_ADVISORY}\n\n${combinedOutput}`
     : combinedOutput;
