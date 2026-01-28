@@ -61,7 +61,7 @@ describe("Config & Prompt Resolution", () => {
     process.env.SPEKTA_HOME_OVERRIDE = customDir;
     refreshPaths();
 
-    expect(HOME_PROVIDERS_USER).toBe(path.join(customDir, "providers.json"));
+    expect(HOME_PROVIDERS_USER).toBe(path.join(customDir, "providers.yaml"));
     expect(HOME_PROVIDERS_USER).not.toBe(originalProviderPath);
 
     // Cleanup
