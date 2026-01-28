@@ -6,7 +6,7 @@ import path from "path";
 import { getEnv, getIgnorePatterns } from "../config";
 import { openEditor } from "../editor-utils";
 import { NAV_BACK, isCancel } from "../ui";
-import { FileRequest, LineRange, validateFileRange } from "../utils/read-utils";
+import { FileRequest, LineRange } from "../utils/read-utils";
 import { RESTRICTED_FILES } from "../utils/security";
 import { runRead } from "./read";
 
@@ -31,7 +31,9 @@ export async function runReadInteractive() {
 
   console.log("\nInteractive File Reader");
   console.log("Files will open in your editor if SPEKTA_EDITOR is configured.");
-  console.log("Token limits are validated before adding files.\n");
+  console.log(
+    "Note: Token limits are bypassed in interactive mode for flexibility with large files.\n",
+  );
 
   const selectedRequests: FileRequest[] = [];
 
