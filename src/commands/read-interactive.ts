@@ -81,73 +81,67 @@ export async function runReadInteractive() {
       const editor = env.SPEKTA_EDITOR;
       const tokenLimit = parseInt(env.SPEKTA_READ_TOKEN_LIMIT || "1000", 10);
 
-      let validRequest = false;
-      while (!validRequest) {
-        const startInput = await input({
-          message: "Start line (o: open, f: full, c: cancel):",
-          default: "1",
-        });
+      const startInput = await input({
+        message: "Start line (o: open, f: full, c: cancel):",
+        default: "1",
+      });
+      if (isCancel(startInput)) continue;
 
-        if (isCancel(startInput)) break;
-
-        // Shortcut: Open Editor
-        if (startInput.toLowerCase() === "o") {
-          if (editor) {
-            console.log(`Opening ${filePath} in editor...`);
-            // Run in background to maintain terminal focus
-            openEditor(editor, filePath).catch((err) => {
-              console.warn(`Could not open editor: ${err.message}`);
-            });
-          } else {
-            console.warn("SPEKTA_EDITOR not configured.");
-          }
-          continue; // Re-prompt for line numbers
+      if (startInput.toLowerCase() === "o") {
+        if (editor) {
+          console.log(`Opening ${filePath} in editor...`);
+          openEditor(editor, filePath).catch((err) => {
+            console.warn(`Could not open editor: ${err.message}`);
+          });
+        } else {
+          console.warn("SPEKTA_EDITOR not configured.");
         }
+        continue;
+      }
 
-        // Shortcut: Full File
-        if (startInput.toLowerCase() === "f") {
-          const validation = await validateFileRange(
-            filePath,
-            { start: 1, end: "$" },
-            tokenLimit,
-          );
-          if (validation.valid) {
-            selectedRequests.push({ path: filePath }); // Omit range for full file
-            console.log(`✓ Full file added (${validation.tokens} tokens)`);
-            validRequest = true;
-          } else {
-            console.error(`\n✗ ${validation.message}\n`);
-          }
-          continue;
+      let range: LineRange | undefined;
+      let tokensMessage = "";
+
+      if (startInput.toLowerCase() === "f") {
+        const validation = await validateFileRange(
+          filePath,
+          { start: 1, end: "$" },
+          tokenLimit,
+        );
+        tokensMessage = ` (${validation.tokens} tokens)`;
+        if (!validation.valid) {
+          console.warn(`Warning: ${validation.message}`);
+        } else {
+          console.log(`Full file will be added${tokensMessage}`);
         }
-
+        // Full file: no range
+      } else {
         const endInput = await input({
           message: "End line (c: cancel):",
           default: "$",
         });
-
-        if (isCancel(endInput)) break;
+        if (isCancel(endInput)) continue;
 
         const start = parseInt(startInput, 10);
         const end = endInput === "$" ? "$" : parseInt(endInput, 10);
-
-        const range: LineRange = {
+        range = {
           start: isNaN(start) ? 1 : start,
           end: isNaN(end as number) && end !== "$" ? "$" : end,
         };
-
         const validation = await validateFileRange(filePath, range, tokenLimit);
-
-        if (validation.valid) {
-          selectedRequests.push({ path: filePath, range });
-          validRequest = true;
-          console.log(`Range added (${validation.tokens} tokens)`);
+        tokensMessage = ` (${validation.tokens} tokens)`;
+        if (!validation.valid) {
+          console.warn(`Warning: ${validation.message}`);
         } else {
-          console.error(`\n✗ ${validation.message}\n`);
+          console.log(`Range will be added${tokensMessage}`);
         }
       }
-      // If user cancelled during validation loop, continue to main menu
-      continue;
+
+      selectedRequests.push({ path: filePath, range });
+      // Always add
+      console.log(
+        `Added ${filePath}${range ? ` [${range.start},${range.end}]` : ""}${tokensMessage}`,
+      );
     }
 
     if (action === "remove") {
