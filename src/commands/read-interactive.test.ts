@@ -4,11 +4,18 @@ import { checkbox, input, select } from "@inquirer/prompts";
 import autocomplete from "inquirer-autocomplete-standalone";
 import * as readCmd from "./read";
 import { openEditor } from "../editor-utils";
+import { execa } from "execa";
+import { getEnv } from "../config";
 
 vi.mock("@inquirer/prompts");
 vi.mock("inquirer-autocomplete-standalone");
+vi.mock("execa");
+vi.mock("../config", () => ({
+  getEnv: vi.fn(),
+  getIgnorePatterns: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("../editor-utils", () => ({
-  openEditor: vi.fn(),
+  openEditor: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("./read", () => ({
   runRead: vi.fn(),
@@ -17,6 +24,14 @@ vi.mock("./read", () => ({
 describe("runReadInteractive", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default mock for execa to return a file list
+    vi.mocked(execa).mockResolvedValue({
+      stdout: "src/utils/helpers.ts\ntest.ts",
+    } as any);
+    // Default mock for getEnv
+    vi.mocked(getEnv).mockResolvedValue({
+      SPEKTA_EDITOR: "mock-editor",
+    });
   });
 
   it("should support removing added files before finalizing", async () => {
@@ -154,12 +169,55 @@ describe("runReadInteractive", () => {
     await runReadInteractive();
 
     expect(readCmd.runRead).not.toHaveBeenCalled();
-    // Mock the menu to select done immediately
-    vi.mocked(select).mockResolvedValueOnce("done");
+  });
+
+  it("should open file in editor with 'o' and not add it to selection", async () => {
+    // Setup environment for this specific test
+    vi.mocked(getEnv).mockResolvedValue({
+      SPEKTA_EDITOR: "mock-editor",
+    });
+
+    // First menu: add file, then after action is handled, next loop: done
+    vi.mocked(select)
+      .mockResolvedValueOnce("add")
+      .mockResolvedValueOnce("done");
+
+    // Autocomplete selects the specific file
+    vi.mocked(autocomplete).mockResolvedValueOnce("src/utils/helpers.ts");
+
+    // Input receives 'o' command to open in editor
+    vi.mocked(input).mockResolvedValueOnce("o");
 
     await runReadInteractive();
 
-    // Verify runRead was never called (no files selected)
+    // Verify editor was opened with correct path and command
+    expect(openEditor).toHaveBeenCalledWith(
+      "mock-editor",
+      "src/utils/helpers.ts",
+    );
+
+    // Verify file was NOT added to final selection (runRead should be called with empty array if loop broke at 'done')
+    // Or in this case, the test ends after 'done' and should confirm runRead was not called with the 'o' file.
     expect(readCmd.runRead).not.toHaveBeenCalled();
+  });
+
+  it("should warn when trying to open editor without SPEKTA_EDITOR configured", async () => {
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    vi.mocked(getEnv).mockResolvedValue({}); // No SPEKTA_EDITOR
+
+    vi.mocked(select)
+      .mockResolvedValueOnce("add")
+      .mockResolvedValueOnce("done");
+
+    vi.mocked(autocomplete).mockResolvedValueOnce("src/utils/helpers.ts");
+    vi.mocked(input).mockResolvedValueOnce("o");
+
+    await runReadInteractive();
+
+    expect(openEditor).not.toHaveBeenCalled();
+    expect(consoleSpy).toHaveBeenCalledWith("SPEKTA_EDITOR not configured.");
+
+    consoleSpy.mockRestore();
   });
 });
