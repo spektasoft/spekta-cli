@@ -3,16 +3,10 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { readYaml, writeYaml } from "./utils/yaml";
-import { fetchFreeModels } from "./api";
+import { Provider, syncFreeModels } from "./sync/freeModels";
+import { readYaml } from "./utils/yaml";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-export interface Provider {
-  name: string;
-  model: string;
-  config?: Record<string, any>;
-}
 
 interface ProvidersConfig {
   providers: Provider[];
@@ -202,29 +196,4 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   }
 
   return { providers };
-};
-
-export const syncFreeModels = async (apiKey: string) => {
-  const models = await fetchFreeModels(apiKey);
-
-  if (!models || !Array.isArray(models) || models.length === 0) {
-    throw new Error("No free models found on OpenRouter.");
-  }
-
-  const validModels = models.filter(
-    (m) => m && typeof m.id === "string" && typeof m.name === "string",
-  );
-
-  if (validModels.length === 0) {
-    throw new Error("No valid free models found on OpenRouter.");
-  }
-
-  const providers: Provider[] = validModels.map((m) => ({
-    name: `[Free] ${m.name}`,
-    model: m.id,
-  }));
-
-  // Save as YAML
-  await writeYaml(HOME_PROVIDERS_FREE, { providers });
-  return providers.length;
 };
