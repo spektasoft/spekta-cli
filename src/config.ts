@@ -194,12 +194,7 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   const freeProviders: Provider[] =
     freeRes.status === "fulfilled" ? freeRes.value.providers : [];
 
-  const mergedMap = new Map<string, Provider>();
-
-  freeProviders.forEach((p) => p.model && mergedMap.set(p.model, p));
-  userProviders.forEach((p) => p.model && mergedMap.set(p.model, p));
-
-  const providers = Array.from(mergedMap.values());
+  const providers = [...userProviders, ...freeProviders];
   if (providers.length === 0) {
     console.warn(
       "Notice: No providers configured. Run 'spekta sync' to fetch free models.",
