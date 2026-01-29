@@ -1,16 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import path from "path";
 import fs from "fs-extra";
 import os from "os";
+import path from "path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   bootstrap,
   getPromptContent,
-  refreshPaths,
-  HOME_DIR,
   getProviders,
+  HOME_DIR,
   HOME_PROVIDERS_FREE,
   HOME_PROVIDERS_USER,
+  refreshPaths,
 } from "./config";
+import { writeYaml } from "./utils/yaml";
 
 describe("Config & Prompt Resolution", () => {
   const tempTestDir = path.join(os.tmpdir(), "spekta-tests");
@@ -85,19 +86,26 @@ describe("Provider Merging Logic", () => {
     refreshPaths();
   });
 
-  it("should prioritize user providers over free providers when IDs conflict", async () => {
-    const freeMock = { providers: [{ name: "Free A", model: "gpt-free" }] };
-    const userMock = {
-      providers: [{ name: "User Custom", model: "gpt-free" }],
+  it("preserves duplicate model IDs with user providers first", async () => {
+    // Mock user providers with one overlapping model
+    const mockUser = {
+      providers: [{ name: "User Model", model: "test/model" }],
+    };
+    const mockFree = {
+      providers: [
+        { name: "[Free] Free Model", model: "test/model" },
+        { name: "[Free] Unique", model: "unique/free" },
+      ],
     };
 
-    await fs.writeJSON(HOME_PROVIDERS_FREE, freeMock);
-    await fs.writeJSON(HOME_PROVIDERS_USER, userMock);
+    await writeYaml(HOME_PROVIDERS_USER, mockUser);
+    await writeYaml(HOME_PROVIDERS_FREE, mockFree);
 
-    const { providers } = await getProviders();
-    const target = providers.find((p) => p.model === "gpt-free");
+    const result = await getProviders();
 
-    expect(target?.name).toBe("User Custom");
-    expect(providers.length).toBe(1);
+    expect(result.providers).toHaveLength(3);
+    expect(result.providers[0].name).toBe("User Model"); // User first
+    expect(result.providers[1].name).toBe("[Free] Free Model");
+    expect(result.providers[2].name).toBe("[Free] Unique");
   });
 });
