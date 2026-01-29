@@ -1,12 +1,6 @@
 import { fetchFreeModels } from "../api";
+import { HOME_PROVIDERS_FREE, Provider } from "../config";
 import { writeYaml } from "../utils/yaml";
-import { HOME_PROVIDERS_FREE } from "../config";
-
-export interface Provider {
-  name: string;
-  model: string;
-  config?: Record<string, any>;
-}
 
 export const syncFreeModels = async (apiKey: string) => {
   const models = await fetchFreeModels(apiKey);

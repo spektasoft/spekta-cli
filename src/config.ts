@@ -3,8 +3,13 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { Provider, syncFreeModels } from "./sync/freeModels";
 import { readYaml } from "./utils/yaml";
+
+export interface Provider {
+  name: string;
+  model: string;
+  config?: Record<string, any>;
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -58,23 +63,6 @@ export const bootstrap = async () => {
     ].join("\n");
     await fs.writeFile(HOME_IGNORE, defaultIgnores);
     console.log("Created default .spektaignore file");
-  }
-
-  if (!(await fs.pathExists(HOME_PROVIDERS_FREE))) {
-    const env = await getEnv();
-    if (env.OPENROUTER_API_KEY) {
-      try {
-        await syncFreeModels(env.OPENROUTER_API_KEY);
-      } catch (e: any) {
-        console.warn(
-          "Notice: Initial model sync skipped (OpenRouter unreachable).",
-        );
-      }
-    } else {
-      console.warn(
-        "Warning: OPENROUTER_API_KEY not found. Free models won't be fetched.",
-      );
-    }
   }
 };
 

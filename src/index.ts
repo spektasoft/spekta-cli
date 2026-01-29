@@ -1,19 +1,21 @@
-import { searchableSelect } from "./ui";
+import fs from "fs-extra";
 import { runCommit } from "./commands/commit";
 import { runCommitRange } from "./commands/commit-range";
 import { runPlan } from "./commands/plan";
 import { runPr } from "./commands/pr";
 import { runRead } from "./commands/read";
 import { runReadInteractive } from "./commands/read-interactive";
+import { runRepl } from "./commands/repl";
+import { runReplace } from "./commands/replace";
 import { runReview } from "./commands/review";
 import { runSummarize } from "./commands/summarize";
 import { runSync } from "./commands/sync";
-import { runReplace } from "./commands/replace";
 import { runWrite } from "./commands/write";
-import { bootstrap } from "./config";
+import { bootstrap, getEnv, HOME_PROVIDERS_FREE } from "./config";
 import { runMcpServer } from "./mcp-server";
+import { syncFreeModels } from "./sync/freeModels";
+import { searchableSelect } from "./ui";
 import { parseFilePathWithRange } from "./utils/read-utils";
-import { runRepl } from "./commands/repl";
 
 interface CommandDefinition {
   name: string;
@@ -87,6 +89,24 @@ const COMMANDS: Record<string, CommandDefinition> = {
 
 async function main() {
   await bootstrap();
+
+  // Initial free models sync if file doesn't exist
+  if (!(await fs.pathExists(HOME_PROVIDERS_FREE))) {
+    const env = await getEnv();
+    if (env.OPENROUTER_API_KEY) {
+      try {
+        await syncFreeModels(env.OPENROUTER_API_KEY);
+      } catch (e: any) {
+        console.warn(
+          "Notice: Initial model sync skipped (OpenRouter unreachable).",
+        );
+      }
+    } else {
+      console.warn(
+        "Warning: OPENROUTER_API_KEY not found. Free models won't be fetched.",
+      );
+    }
+  }
 
   const args = process.argv.slice(2);
   const commandArg = args[0];
