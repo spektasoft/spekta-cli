@@ -9,6 +9,7 @@ import {
   HOME_DIR,
   HOME_PROVIDERS_FREE,
   HOME_PROVIDERS_USER,
+  HOME_TOOLS,
   refreshPaths,
 } from "./config";
 import { writeYaml } from "./utils/yaml";
@@ -107,5 +108,21 @@ describe("Provider Merging Logic", () => {
     expect(result.providers[0].name).toBe("User Model"); // User first
     expect(result.providers[1].name).toBe("[Free] Free Model");
     expect(result.providers[2].name).toBe("[Free] Unique");
+  });
+});
+
+describe("Tool definitions", () => {
+  it("HOME_TOOLS points to ~/.spekta/tools by default", () => {
+    expect(HOME_TOOLS).toContain(".spekta/tools");
+  });
+
+  it("refreshPaths updates HOME_TOOLS correctly", () => {
+    const original = HOME_TOOLS;
+    process.env.SPEKTA_HOME_OVERRIDE = "/custom/path";
+    refreshPaths();
+    expect(HOME_TOOLS).toBe("/custom/path/tools");
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+    refreshPaths();
+    expect(HOME_TOOLS).toBe(original); // path changes but structure preserved
   });
 });
