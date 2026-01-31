@@ -107,37 +107,42 @@ export const bootstrap = async () => {
 };
 
 export const getPromptContent = async (fileName: string): Promise<string> => {
-  const userPath = path.join(HOME_PROMPTS, fileName);
-  const internalPath = path.join(ASSET_PROMPTS, fileName);
+  console.time(`getPromptContent - ${fileName}`);
+  try {
+    const userPath = path.join(HOME_PROMPTS, fileName);
+    const internalPath = path.join(ASSET_PROMPTS, fileName);
 
-  let content: string;
-  let isInternal = false;
+    let content: string;
+    let isInternal = false;
 
-  if (await fs.pathExists(userPath)) {
-    content = await fs.readFile(userPath, "utf-8");
-  } else if (await fs.pathExists(internalPath)) {
-    content = await fs.readFile(internalPath, "utf-8");
-    isInternal = true;
-  } else {
-    throw new Error(`Prompt template not found: ${fileName}.`);
+    if (await fs.pathExists(userPath)) {
+      content = await fs.readFile(userPath, "utf-8");
+    } else if (await fs.pathExists(internalPath)) {
+      content = await fs.readFile(internalPath, "utf-8");
+      isInternal = true;
+    } else {
+      throw new Error(`Prompt template not found: ${fileName}.`);
+    }
+
+    // Only inject into the internal REPL prompt template
+    if (isInternal && fileName === "repl.md") {
+      const tools = await loadToolDefinitions();
+      const toolSections = tools
+        .map((tool) => {
+          return `#### ${tool.name}\n\n${tool.description}\n\nExample:\n\n\`\`\`xml\n${tool.xml_example}\n\`\`\``;
+        })
+        .join("\n\n---\n\n");
+
+      content = content.replace(
+        "{{DYNAMIC_TOOLS}}",
+        `### Tools\n\n${toolSections}`,
+      );
+    }
+
+    return content;
+  } finally {
+    console.timeEnd(`getPromptContent - ${fileName}`);
   }
-
-  // Only inject into the internal REPL prompt template
-  if (isInternal && fileName === "repl.md") {
-    const tools = await loadToolDefinitions();
-    const toolSections = tools
-      .map((tool) => {
-        return `#### ${tool.name}\n\n${tool.description}\n\nExample:\n\n\`\`\`xml\n${tool.xml_example}\n\`\`\``;
-      })
-      .join("\n\n---\n\n");
-
-    content = content.replace(
-      "{{DYNAMIC_TOOLS}}",
-      `### Tools\n\n${toolSections}`,
-    );
-  }
-
-  return content;
 };
 
 let envLoaded = false;
@@ -245,7 +250,13 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   return { providers };
 };
 
-export const loadToolDefinitions = async (): Promise<ToolDefinition[]> => {
+let cachedTools: ToolDefinition[] | null = null;
+
+export const loadToolDefinitions = async (
+  forceRefresh = false,
+): Promise<ToolDefinition[]> => {
+  if (cachedTools && !forceRefresh) return cachedTools;
+
   const toolNames = ["read", "replace", "write"] as const;
   const tools: ToolDefinition[] = [];
 
@@ -306,5 +317,6 @@ export const loadToolDefinitions = async (): Promise<ToolDefinition[]> => {
     }
   }
 
+  cachedTools = tools;
   return tools;
 };
