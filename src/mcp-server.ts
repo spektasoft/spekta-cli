@@ -56,7 +56,7 @@ export async function runMcpServer() {
 
         case "spekta_replace":
           server.registerTool(
-            "replace",
+            tool.name,
             {
               description: tool.description,
               inputSchema: {
