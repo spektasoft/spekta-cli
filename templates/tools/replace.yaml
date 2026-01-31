@@ -1,0 +1,31 @@
+name: spekta_replace
+description: |
+  Replace code in a file using precise SEARCH/REPLACE blocks. Must match existing content exactly. Always use <read> first to verify current content.
+
+  - **Critical:** Must match existing content exactly including whitespace
+  - **Best Practice:** Always <read> the file first to verify current content before replacing
+  - **Indentation:** Tool preserves indentation of replacement blocks automatically
+
+params:
+  path:
+    description: "Relative path to the target file."
+  blocks:
+    description: "SEARCH/REPLACE blocks formatted as: <<<<<<< SEARCH\n{old_content}\n=======\n{new_content}\n>>>>>>> REPLACE. Provide sufficient surrounding context for precise matching."
+
+xml_example: |
+  <replace path="src/app.py">
+  <<<<<<< SEARCH
+  def count_items(items):
+      count = 0
+  =======
+  def count(items):
+      count = 0
+  >>>>>>> REPLACE
+  <<<<<<< SEARCH
+      count += 1
+      return count
+  =======
+      item += 1
+      return item
+  >>>>>>> REPLACE
+  </replace>

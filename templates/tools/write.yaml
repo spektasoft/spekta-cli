@@ -1,0 +1,14 @@
+name: spekta_write
+description: "Create a new file with provided content. Fails if file already exists. Path must be relative. Only for new files - use <replace> for modifications."
+
+params:
+  path:
+    description: "Relative path for the new file."
+  content:
+    description: "Complete content to write to the file."
+
+xml_example: |
+  <write path="src/greet.py">
+  def greet():
+      print("Hello, world!")
+  </write>
