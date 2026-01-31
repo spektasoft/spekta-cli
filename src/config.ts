@@ -49,9 +49,9 @@ export let HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.yaml");
 export let HOME_PROMPTS = path.join(HOME_DIR, "prompts");
 export let HOME_IGNORE = path.join(HOME_DIR, ".spektaignore");
 
-const ASSET_ROOT = __dirname;
-const ASSET_PROMPTS = path.join(ASSET_ROOT, "prompts");
-const ASSET_TOOLS = path.join(ASSET_ROOT, "tools");
+const ASSET_ROOT = path.resolve(__dirname, "..");
+const ASSET_PROMPTS = path.join(ASSET_ROOT, "templates", "prompts");
+const ASSET_TOOLS = path.join(ASSET_ROOT, "templates", "tools");
 export let HOME_TOOLS = path.join(HOME_DIR, "tools");
 
 export const refreshPaths = () => {
@@ -64,9 +64,12 @@ export const refreshPaths = () => {
 };
 
 export const bootstrap = async () => {
+  await getEnv();
+  refreshPaths();
   await fs.ensureDir(HOME_DIR);
   await fs.ensureDir(HOME_PROMPTS);
   await fs.ensureDir(HOME_TOOLS);
+  Logger.info(`ASSET_TOOLS path: ${ASSET_TOOLS}`);
 
   if (!(await fs.pathExists(HOME_IGNORE))) {
     const defaultIgnores = [
