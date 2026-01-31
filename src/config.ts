@@ -79,9 +79,17 @@ refreshPaths();
 export const bootstrap = async () => {
   await getEnv();
   refreshPaths();
+
   await fs.ensureDir(HOME_DIR);
   await fs.ensureDir(HOME_PROMPTS);
   await fs.ensureDir(HOME_TOOLS);
+
+  // Asset Integrity Check
+  if (!(await fs.pathExists(ASSET_TOOLS))) {
+    throw new Error(
+      `Critical Error: Internal tool templates not found at ${ASSET_TOOLS}`,
+    );
+  }
 
   if (!(await fs.pathExists(HOME_IGNORE))) {
     const defaultIgnores = [
