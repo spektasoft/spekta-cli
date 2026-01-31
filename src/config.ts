@@ -245,14 +245,6 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   return { providers };
 };
 
-/**
- * Generates a standardized Markdown documentation block for a tool.
- * Shared between REPL prompt injection and MCP tool descriptions.
- */
-export function formatToolDoc(tool: ToolDefinition): string {
-  return `${tool.description}\n\nExample:\n\n\`\`\`xml\n${tool.xml_example}\n\`\`\``;
-}
-
 export const loadToolDefinitions = async (): Promise<ToolDefinition[]> => {
   const toolNames = ["read", "replace", "write"] as const;
   const tools: ToolDefinition[] = [];
