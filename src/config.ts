@@ -246,7 +246,7 @@ export const loadToolDefinitions = async (): Promise<ToolDefinition[]> => {
     try {
       const data = await readYaml<{
         name: string;
-        shared_description: string;
+        description: string;
         params: Record<string, { description: string }>;
         xml_example: string;
         repl_notes?: string;
@@ -256,7 +256,7 @@ export const loadToolDefinitions = async (): Promise<ToolDefinition[]> => {
       if (
         !data ||
         !data.name ||
-        !data.shared_description ||
+        !data.description ||
         !data.params ||
         !data.xml_example
       ) {
@@ -269,7 +269,7 @@ export const loadToolDefinitions = async (): Promise<ToolDefinition[]> => {
       // Sanitize: extract ONLY safe string fields, discard any unexpected properties
       const safeDefinition: ToolDefinition = {
         name: data.name.trim(),
-        description: data.shared_description.trim(),
+        description: data.description.trim(),
         params: Object.fromEntries(
           Object.entries(data.params).map(([key, param]) => [
             key,

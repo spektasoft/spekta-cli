@@ -16,38 +16,12 @@ export async function runMcpServer() {
     version: "1.0.0",
   });
 
-  // Hardcoded type-safe schemas with dynamic descriptions injected at registration
-  const buildToolSchemas = (tool: ToolDefinition) => {
-    switch (tool.name) {
-      case "read":
-        return {
-          paths: z
-            .array(z.string())
-            .describe(tool.params.paths?.description || ""),
-        };
-      case "replace":
-        return {
-          path: z.string().describe(tool.params.path?.description || ""),
-          blocks: z.string().describe(tool.params.blocks?.description || ""),
-        };
-      case "write":
-        return {
-          path: z.string().describe(tool.params.path?.description || ""),
-          content: z.string().describe(tool.params.content?.description || ""),
-        };
-      default:
-        throw new Error(`Unknown tool: ${tool.name}`);
-    }
-  };
-
   const tools = await loadToolDefinitions();
 
   for (const tool of tools) {
     try {
-      const schema = buildToolSchemas(tool);
-
       switch (tool.name) {
-        case "read":
+        case "spekta_read":
           server.registerTool(
             tool.name,
             {
@@ -80,7 +54,7 @@ export async function runMcpServer() {
           );
           break;
 
-        case "replace":
+        case "spekta_replace":
           server.registerTool(
             "replace",
             {
@@ -116,7 +90,7 @@ export async function runMcpServer() {
           );
           break;
 
-        case "write":
+        case "spekta_write":
           server.registerTool(
             tool.name,
             {
