@@ -1,7 +1,7 @@
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import {
   bootstrap,
   getPromptContent,
@@ -10,6 +10,7 @@ import {
   HOME_PROVIDERS_FREE,
   HOME_PROVIDERS_USER,
   HOME_TOOLS,
+  loadToolDefinitions,
   refreshPaths,
 } from "./config";
 import { writeYaml } from "./utils/yaml";
@@ -133,5 +134,37 @@ describe("REPL Prompt Injection", () => {
     expect(content).toContain("### Tools");
     expect(content).toContain("#### read");
     expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
+  });
+});
+
+describe("Tool Overrides", () => {
+  const testHome = path.join(os.tmpdir(), "spekta-test-overrides");
+
+  beforeAll(async () => {
+    await fs.ensureDir(path.join(testHome, "tools"));
+    process.env.SPEKTA_HOME_OVERRIDE = testHome;
+    refreshPaths();
+  });
+
+  it("should prioritize user-defined tool descriptions", async () => {
+    const overrideContent = `
+name: read
+shared_description: "Custom Override Description"
+params:
+  paths:
+    description: "Custom Param"
+xml_example: "<read />"
+`;
+    await fs.writeFile(
+      path.join(testHome, "tools", "read.yaml"),
+      overrideContent,
+    );
+
+    const tools = await loadToolDefinitions();
+    const readTool = tools.find((t) => t.name === "read");
+
+    expect(readTool?.description).toBe("Custom Override Description");
+
+    await fs.remove(testHome);
   });
 });
