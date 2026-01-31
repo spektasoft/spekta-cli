@@ -126,3 +126,12 @@ describe("Tool definitions", () => {
     expect(HOME_TOOLS).toBe(original); // path changes but structure preserved
   });
 });
+
+describe("REPL Prompt Injection", () => {
+  it("should replace {{DYNAMIC_TOOLS}} with tool documentation", async () => {
+    const content = await getPromptContent("repl.md");
+    expect(content).toContain("### Tools");
+    expect(content).toContain("#### read");
+    expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
+  });
+});

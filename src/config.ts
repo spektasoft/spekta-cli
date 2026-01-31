@@ -87,15 +87,35 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
   const userPath = path.join(HOME_PROMPTS, fileName);
   const internalPath = path.join(ASSET_PROMPTS, fileName);
 
+  let content: string;
+  let isInternal = false;
+
   if (await fs.pathExists(userPath)) {
-    return fs.readFile(userPath, "utf-8");
+    content = await fs.readFile(userPath, "utf-8");
+  } else if (await fs.pathExists(internalPath)) {
+    content = await fs.readFile(internalPath, "utf-8");
+    isInternal = true;
+  } else {
+    throw new Error(`Prompt template not found: ${fileName}.`);
   }
 
-  if (await fs.pathExists(internalPath)) {
-    return fs.readFile(internalPath, "utf-8");
+  // Only inject into the internal REPL prompt template
+  if (isInternal && fileName === "repl.md") {
+    const tools = await loadToolDefinitions();
+    const toolSections = tools
+      .map((tool) => {
+        const notes = tool.repl_notes ? `\n\n${tool.repl_notes}` : "";
+        return `#### ${tool.name}\n\n${tool.description}${notes}\n\nExample:\n\n\`\`\`xml\n${tool.xml_example}\n\`\`\``;
+      })
+      .join("\n\n---\n\n");
+
+    content = content.replace(
+      "{{DYNAMIC_TOOLS}}",
+      `### Tools\n\n${toolSections}`,
+    );
   }
 
-  throw new Error(`Prompt template not found: ${fileName}.`);
+  return content;
 };
 
 let envLoaded = false;
