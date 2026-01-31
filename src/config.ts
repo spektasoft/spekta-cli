@@ -23,7 +23,21 @@ export interface ToolDefinition {
   xml_example: string;
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Robust ASSET_ROOT resolution for compiled distributions
+const getAssetRoot = () => {
+  const root = path.resolve(__dirname, "..");
+  if (fs.existsSync(path.join(root, "templates"))) {
+    return root;
+  }
+  return path.resolve(__dirname, "../../"); // Fallback for nested dist structures
+};
+
+const ASSET_ROOT = getAssetRoot();
+const ASSET_PROMPTS = path.join(ASSET_ROOT, "templates", "prompts");
+const ASSET_TOOLS = path.join(ASSET_ROOT, "templates", "tools");
 
 interface ProvidersConfig {
   providers: Provider[];
@@ -42,16 +56,13 @@ export interface OpenRouterModel {
 const GET_HOME_DIR = () =>
   process.env.SPEKTA_HOME_OVERRIDE || path.join(os.homedir(), ".spekta");
 
-export let HOME_DIR = GET_HOME_DIR();
-export let HOME_PROVIDERS_USER = path.join(HOME_DIR, "providers.yaml");
-export let HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.yaml");
-export let HOME_PROMPTS = path.join(HOME_DIR, "prompts");
-export let HOME_IGNORE = path.join(HOME_DIR, ".spektaignore");
-
-const ASSET_ROOT = path.resolve(__dirname, "..");
-const ASSET_PROMPTS = path.join(ASSET_ROOT, "templates", "prompts");
-const ASSET_TOOLS = path.join(ASSET_ROOT, "templates", "tools");
-export let HOME_TOOLS = path.join(HOME_DIR, "tools");
+// Ensure HOME_DIR is not cached until env is loaded
+export let HOME_DIR: string;
+export let HOME_PROVIDERS_USER: string;
+export let HOME_PROVIDERS_FREE: string;
+export let HOME_PROMPTS: string;
+export let HOME_IGNORE: string;
+export let HOME_TOOLS: string;
 
 export const refreshPaths = () => {
   HOME_DIR = GET_HOME_DIR();
@@ -61,6 +72,9 @@ export const refreshPaths = () => {
   HOME_IGNORE = path.join(HOME_DIR, ".spektaignore");
   HOME_TOOLS = path.join(HOME_DIR, "tools");
 };
+
+// Initialize once at load, but allow bootstrap to override
+refreshPaths();
 
 export const bootstrap = async () => {
   await getEnv();

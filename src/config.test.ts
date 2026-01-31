@@ -1,12 +1,22 @@
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import {
   bootstrap,
   getPromptContent,
   getProviders,
   HOME_DIR,
+  HOME_IGNORE,
+  HOME_PROMPTS,
   HOME_PROVIDERS_FREE,
   HOME_PROVIDERS_USER,
   HOME_TOOLS,
@@ -70,6 +80,28 @@ describe("Config & Prompt Resolution", () => {
     // Cleanup
     delete process.env.SPEKTA_HOME_OVERRIDE;
     refreshPaths();
+  });
+
+  it("should update all HOME_* paths when SPEKTA_HOME_OVERRIDE is set", () => {
+    // Mock the environment variable
+    vi.stubGlobal("process", {
+      ...process,
+      env: {
+        ...process.env,
+        SPEKTA_HOME_OVERRIDE: "/custom/home/path",
+      },
+    });
+
+    // Call refreshPaths to update paths
+    refreshPaths();
+
+    // Verify all paths are updated correctly
+    expect(HOME_DIR).toBe("/custom/home/path");
+    expect(HOME_PROVIDERS_USER).toBe("/custom/home/path/providers.yaml");
+    expect(HOME_PROVIDERS_FREE).toBe("/custom/home/path/providers-free.yaml");
+    expect(HOME_PROMPTS).toBe("/custom/home/path/prompts");
+    expect(HOME_IGNORE).toBe("/custom/home/path/.spektaignore");
+    expect(HOME_TOOLS).toBe("/custom/home/path/tools");
   });
 });
 
@@ -149,7 +181,7 @@ describe("Tool Overrides", () => {
   it("should prioritize user-defined tool descriptions", async () => {
     const overrideContent = `
 name: read
-shared_description: "Custom Override Description"
+description: "Custom Override Description"
 params:
   paths:
     description: "Custom Param"
