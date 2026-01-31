@@ -18,7 +18,7 @@ export interface ToolParamDefinition {
 
 export interface ToolDefinition {
   name: string;
-  shared_description: string;
+  description: string;
   params: Record<string, ToolParamDefinition>;
   xml_example: string;
   repl_notes?: string;
@@ -247,7 +247,7 @@ export const loadToolDefinitions = async (): Promise<ToolDefinition[]> => {
       // Sanitize: extract ONLY safe string fields, discard any unexpected properties
       const safeDefinition: ToolDefinition = {
         name: data.name.trim(),
-        shared_description: data.shared_description.trim(),
+        description: data.shared_description.trim(),
         params: Object.fromEntries(
           Object.entries(data.params).map(([key, param]) => [
             key,
