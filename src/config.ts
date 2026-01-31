@@ -21,7 +21,6 @@ export interface ToolDefinition {
   description: string;
   params: Record<string, ToolParamDefinition>;
   xml_example: string;
-  repl_notes?: string;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -106,8 +105,7 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
     const tools = await loadToolDefinitions();
     const toolSections = tools
       .map((tool) => {
-        const notes = tool.repl_notes ? `\n\n${tool.repl_notes}` : "";
-        return `#### ${tool.name}\n\n${tool.description}${notes}\n\nExample:\n\n\`\`\`xml\n${tool.xml_example}\n\`\`\``;
+        return `#### ${tool.name}\n\n${tool.description}\n\nExample:\n\n\`\`\`xml\n${tool.xml_example}\n\`\`\``;
       })
       .join("\n\n---\n\n");
 
@@ -249,7 +247,6 @@ export const loadToolDefinitions = async (): Promise<ToolDefinition[]> => {
         description: string;
         params: Record<string, { description: string }>;
         xml_example: string;
-        repl_notes?: string;
       }>(filePath);
 
       // Validate required fields
@@ -277,7 +274,6 @@ export const loadToolDefinitions = async (): Promise<ToolDefinition[]> => {
           ]),
         ),
         xml_example: data.xml_example.trim(),
-        repl_notes: data.repl_notes?.trim(),
       };
 
       tools.push(safeDefinition);
