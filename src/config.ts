@@ -3,12 +3,25 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
+import { Logger } from "./utils/logger";
 import { readYaml } from "./utils/yaml";
 
 export interface Provider {
   name: string;
   model: string;
   config?: Record<string, any>;
+}
+
+export interface ToolParamDefinition {
+  description: string;
+}
+
+export interface ToolDefinition {
+  name: string;
+  shared_description: string;
+  params: Record<string, ToolParamDefinition>;
+  xml_example: string;
+  repl_notes?: string;
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -188,4 +201,70 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   }
 
   return { providers };
+};
+
+export const loadToolDefinitions = async (): Promise<ToolDefinition[]> => {
+  const toolNames = ["read", "replace", "write"] as const;
+  const tools: ToolDefinition[] = [];
+
+  for (const name of toolNames) {
+    const userPath = path.join(HOME_TOOLS, `${name}.yaml`);
+    const internalPath = path.join(ASSET_TOOLS, `${name}.yaml`);
+
+    let filePath: string;
+    if (await fs.pathExists(userPath)) {
+      filePath = userPath;
+    } else if (await fs.pathExists(internalPath)) {
+      filePath = internalPath;
+    } else {
+      Logger.warn(`Tool definition missing for ${name}, skipping.`);
+      continue;
+    }
+
+    try {
+      const data = await readYaml<{
+        name: string;
+        shared_description: string;
+        params: Record<string, { description: string }>;
+        xml_example: string;
+        repl_notes?: string;
+      }>(filePath);
+
+      // Validate required fields
+      if (
+        !data ||
+        !data.name ||
+        !data.shared_description ||
+        !data.params ||
+        !data.xml_example
+      ) {
+        Logger.warn(
+          `Invalid tool definition for ${name} in ${filePath}: missing required fields`,
+        );
+        continue;
+      }
+
+      // Sanitize: extract ONLY safe string fields, discard any unexpected properties
+      const safeDefinition: ToolDefinition = {
+        name: data.name.trim(),
+        shared_description: data.shared_description.trim(),
+        params: Object.fromEntries(
+          Object.entries(data.params).map(([key, param]) => [
+            key,
+            { description: param.description?.trim() || "" },
+          ]),
+        ),
+        xml_example: data.xml_example.trim(),
+        repl_notes: data.repl_notes?.trim(),
+      };
+
+      tools.push(safeDefinition);
+    } catch (err: any) {
+      Logger.warn(
+        `Failed to load tool ${name} from ${filePath}: ${err.message}`,
+      );
+    }
+  }
+
+  return tools;
 };
