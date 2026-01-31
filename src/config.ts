@@ -69,7 +69,6 @@ export const bootstrap = async () => {
   await fs.ensureDir(HOME_DIR);
   await fs.ensureDir(HOME_PROMPTS);
   await fs.ensureDir(HOME_TOOLS);
-  Logger.info(`ASSET_TOOLS path: ${ASSET_TOOLS}`);
 
   if (!(await fs.pathExists(HOME_IGNORE))) {
     const defaultIgnores = [
