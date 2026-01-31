@@ -18,7 +18,16 @@ export async function runMcpServer() {
 
   const tools = await loadToolDefinitions();
 
+  // Track registered tool names to prevent duplicates
+  const registeredNames = new Set<string>();
+
   for (const tool of tools) {
+    // Check for duplicate tool names before registration
+    if (registeredNames.has(tool.name)) {
+      Logger.error(`Duplicate tool name detected: ${tool.name}`);
+      continue;
+    }
+
     try {
       switch (tool.name) {
         case "spekta_read":
@@ -130,7 +139,11 @@ export async function runMcpServer() {
       }
     } catch (err: any) {
       Logger.warn(`Skipping tool ${tool.name}: ${err.message}`);
+      continue;
     }
+
+    // Mark tool as successfully registered
+    registeredNames.add(tool.name);
   }
 
   const transport = new StdioServerTransport();
