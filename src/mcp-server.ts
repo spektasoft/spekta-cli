@@ -138,7 +138,7 @@ export async function runMcpServer() {
           break;
       }
     } catch (err: any) {
-      Logger.warn(`Skipping tool ${tool.name}: ${err.message}`);
+      Logger.error(`Failed to register tool ${tool.name}: ${err}`);
       continue;
     }
 
