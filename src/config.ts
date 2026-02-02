@@ -3,6 +3,7 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
+import { Logger } from "./utils/logger";
 import { readYaml } from "./utils/yaml";
 
 export interface Provider {
@@ -11,7 +12,32 @@ export interface Provider {
   config?: Record<string, any>;
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+export interface ToolParamDefinition {
+  description: string;
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  params: Record<string, ToolParamDefinition>;
+  xml_example: string;
+}
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Robust ASSET_ROOT resolution for compiled distributions
+const getAssetRoot = () => {
+  const root = path.resolve(__dirname, "..");
+  if (fs.existsSync(path.join(root, "templates"))) {
+    return root;
+  }
+  return path.resolve(__dirname, "../../"); // Fallback for nested dist structures
+};
+
+const ASSET_ROOT = getAssetRoot();
+const ASSET_PROMPTS = path.join(ASSET_ROOT, "templates", "prompts");
+const ASSET_TOOLS = path.join(ASSET_ROOT, "templates", "tools");
 
 interface ProvidersConfig {
   providers: Provider[];
@@ -30,14 +56,13 @@ export interface OpenRouterModel {
 const GET_HOME_DIR = () =>
   process.env.SPEKTA_HOME_OVERRIDE || path.join(os.homedir(), ".spekta");
 
-export let HOME_DIR = GET_HOME_DIR();
-export let HOME_PROVIDERS_USER = path.join(HOME_DIR, "providers.yaml");
-export let HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.yaml");
-export let HOME_PROMPTS = path.join(HOME_DIR, "prompts");
-export let HOME_IGNORE = path.join(HOME_DIR, ".spektaignore");
-
-const ASSET_ROOT = __dirname;
-const ASSET_PROMPTS = path.join(ASSET_ROOT, "prompts");
+// Ensure HOME_DIR is not cached until env is loaded
+export let HOME_DIR: string;
+export let HOME_PROVIDERS_USER: string;
+export let HOME_PROVIDERS_FREE: string;
+export let HOME_PROMPTS: string;
+export let HOME_IGNORE: string;
+export let HOME_TOOLS: string;
 
 export const refreshPaths = () => {
   HOME_DIR = GET_HOME_DIR();
@@ -45,11 +70,26 @@ export const refreshPaths = () => {
   HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.yaml");
   HOME_PROMPTS = path.join(HOME_DIR, "prompts");
   HOME_IGNORE = path.join(HOME_DIR, ".spektaignore");
+  HOME_TOOLS = path.join(HOME_DIR, "tools");
 };
 
+// Initialize once at load, but allow bootstrap to override
+refreshPaths();
+
 export const bootstrap = async () => {
+  await getEnv();
+  refreshPaths();
+
   await fs.ensureDir(HOME_DIR);
   await fs.ensureDir(HOME_PROMPTS);
+  await fs.ensureDir(HOME_TOOLS);
+
+  // Asset Integrity Check
+  if (!(await fs.pathExists(ASSET_TOOLS))) {
+    throw new Error(
+      `Critical Error: Internal tool templates not found at ${ASSET_TOOLS}`,
+    );
+  }
 
   if (!(await fs.pathExists(HOME_IGNORE))) {
     const defaultIgnores = [
@@ -70,15 +110,34 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
   const userPath = path.join(HOME_PROMPTS, fileName);
   const internalPath = path.join(ASSET_PROMPTS, fileName);
 
+  let content: string;
+  let isInternal = false;
+
   if (await fs.pathExists(userPath)) {
-    return fs.readFile(userPath, "utf-8");
+    content = await fs.readFile(userPath, "utf-8");
+  } else if (await fs.pathExists(internalPath)) {
+    content = await fs.readFile(internalPath, "utf-8");
+    isInternal = true;
+  } else {
+    throw new Error(`Prompt template not found: ${fileName}.`);
   }
 
-  if (await fs.pathExists(internalPath)) {
-    return fs.readFile(internalPath, "utf-8");
+  // Only inject into the internal REPL prompt template
+  if (isInternal && fileName === "repl.md") {
+    const tools = await loadToolDefinitions();
+    const toolSections = tools
+      .map((tool) => {
+        return `#### ${tool.name}\n\n${tool.description}\n\nExample:\n\n\`\`\`xml\n${tool.xml_example}\n\`\`\``;
+      })
+      .join("\n\n---\n\n");
+
+    content = content.replace(
+      "{{DYNAMIC_TOOLS}}",
+      `### Tools\n\n${toolSections}`,
+    );
   }
 
-  throw new Error(`Prompt template not found: ${fileName}.`);
+  return content;
 };
 
 let envLoaded = false;
@@ -184,4 +243,75 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
   }
 
   return { providers };
+};
+
+let cachedTools: ToolDefinition[] | null = null;
+
+export const loadToolDefinitions = async (
+  forceRefresh = false,
+): Promise<ToolDefinition[]> => {
+  if (cachedTools && !forceRefresh) return cachedTools;
+
+  const toolNames = ["read", "replace", "write"] as const;
+  const tools: ToolDefinition[] = [];
+
+  for (const name of toolNames) {
+    const userPath = path.join(HOME_TOOLS, `${name}.yaml`);
+    const internalPath = path.join(ASSET_TOOLS, `${name}.yaml`);
+
+    let filePath: string;
+    if (await fs.pathExists(userPath)) {
+      filePath = userPath;
+    } else if (await fs.pathExists(internalPath)) {
+      filePath = internalPath;
+    } else {
+      Logger.warn(`Tool definition missing for ${name}, skipping.`);
+      continue;
+    }
+
+    try {
+      const data = await readYaml<{
+        name: string;
+        description: string;
+        params: Record<string, { description: string }>;
+        xml_example: string;
+      }>(filePath);
+
+      // Validate required fields
+      if (
+        !data ||
+        !data.name ||
+        !data.description ||
+        !data.params ||
+        !data.xml_example
+      ) {
+        Logger.warn(
+          `Invalid tool definition for ${name} in ${filePath}: missing required fields`,
+        );
+        continue;
+      }
+
+      // Sanitize: extract ONLY safe string fields, discard any unexpected properties
+      const safeDefinition: ToolDefinition = {
+        name: data.name.trim(),
+        description: data.description.trim(),
+        params: Object.fromEntries(
+          Object.entries(data.params).map(([key, param]) => [
+            key,
+            { description: param.description?.trim() || "" },
+          ]),
+        ),
+        xml_example: data.xml_example.trim(),
+      };
+
+      tools.push(safeDefinition);
+    } catch (err: any) {
+      Logger.warn(
+        `Failed to load tool ${name} from ${filePath}: ${err.message}`,
+      );
+    }
+  }
+
+  cachedTools = tools;
+  return tools;
 };

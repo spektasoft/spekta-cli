@@ -1,0 +1,13 @@
+name: spekta_read
+description: |
+  Read one or multiple files with optional range support. Always use relative paths. Ranges use [start,end] syntax (e.g., 'src/main.ts[10,50]').
+
+  - **Syntax:** Space-separated paths; quotes for paths with spaces
+  - **Line Ranges:** Append `[start,end]` to a path; use `$` for the last line (e.g., `[10,$]`)
+
+params:
+  paths:
+    description: "Space-separated file paths."
+
+xml_example: |
+  <read path="src/main.ts[1,20] 'tests/unit test.ts'" />
