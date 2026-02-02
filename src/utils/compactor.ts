@@ -32,6 +32,8 @@ function getBlockType(
   lines: string[],
 ):
   | "test"
+  | "test-suite"
+  | "test"
   | "function"
   | "method"
   | "arrow"
@@ -73,6 +75,7 @@ interface BraceMatch {
   depth: number;
   type:
     | "test"
+    | "test-suite"
     | "function"
     | "method"
     | "arrow"
@@ -99,6 +102,7 @@ function isSingleLineLogical(
   // Types that should ALWAYS collapse if multi-line, regardless of density
   if (
     type === "test" ||
+    type === "test-suite" ||
     type === "function" ||
     type === "method" ||
     type === "object"
