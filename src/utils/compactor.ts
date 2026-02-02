@@ -40,6 +40,9 @@ function getBlockType(
   | "class"
   | "object"
   | "brace"
+  | "interface"
+  | "trait"
+  | "enum"
   | null {
   const trimmed = line.trim();
 
@@ -50,7 +53,12 @@ function getBlockType(
     }
     return "test";
   }
-  if (CLASS_DECLARATION.test(trimmed)) return "class";
+  if (CLASS_DECLARATION.test(trimmed)) {
+    if (trimmed.includes("interface ")) return "interface";
+    if (trimmed.includes("trait ")) return "trait";
+    if (trimmed.includes("enum ")) return "enum";
+    return "class";
+  }
   if (FUNCTION_DECLARATION.test(trimmed)) return "function";
   if (ARROW_FUNCTION.test(trimmed)) return "arrow";
   if (METHOD_DECLARATION.test(trimmed)) return "method";
