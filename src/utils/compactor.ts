@@ -277,10 +277,10 @@ class SemanticCompactor implements CompactionStrategy {
       // Aggressive collapsing rules:
       // - Test blocks: always collapse if >0 lines
       // - Functions/methods: collapse if >0 lines
-      // - Classes: never collapse (only their methods)
+      // - Container types (class, interface, trait, enum): never collapse (only their methods)
       // - Generic braces: collapse if >1 lines
 
-      if (match.type === "class") continue; // Never collapse class declarations
+      if (match.type === "class") continue; // Never collapse container declarations
 
       const shouldCollapse =
         (match.type === "test" && bodyLines > 0) ||
