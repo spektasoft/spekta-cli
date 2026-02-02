@@ -158,6 +158,33 @@ enum Status { ACTIVE, INACTIVE }`;
     // Should collapse method but not class
     expect(result.content).toContain("public function run()");
   });
+
+  it("prioritizes outer containers over nested functions", () => {
+    const content = `it("should collapse outer", () => {
+    function nested() {
+        console.log("inner");
+    }
+    nested();
+  });`;
+    const result = compactFile("test.test.ts", content, 1);
+    // The 'it' block (lines 1-6) should collapse.
+    // We should NOT see a marker for 'nested'.
+    expect(result.content).toContain('it("should collapse outer"');
+    expect(result.content).toContain("// ... [lines 2-5 collapsed]");
+    expect(result.content).not.toContain("nested()");
+  });
+
+  it("collapses test blocks regardless of object literals", () => {
+    const content = `it("test", () => {
+  expect(result).toEqual({
+    id: 1,
+    name: 'test'
+  });
+});`;
+    const result = compactFile("test.test.ts", content, 1);
+    // Should collapse the 'it' block, hiding the object literal
+    expect(result.content).toContain("// ... [lines 2-5 collapsed]");
+  });
 });
 
 describe("full file compaction", () => {
