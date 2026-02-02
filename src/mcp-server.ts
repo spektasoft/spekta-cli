@@ -9,6 +9,32 @@ import { Logger } from "./utils/logger";
 import { parseFilePathWithRange } from "./utils/read-utils";
 
 /**
+ * Validates that all tools defined in YAML have corresponding logic
+ * and that parameters are correctly documented.
+ */
+function validateToolDefinitions(tools: ToolDefinition[]) {
+  for (const tool of tools) {
+    const implementation = TOOL_REGISTRY[tool.name];
+    if (!implementation) {
+      Logger.warn(
+        `Configuration Mismatch: Tool '${tool.name}' is defined in YAML but has no implementation in TOOL_REGISTRY.`,
+      );
+      continue;
+    }
+
+    // Identify parameters defined in YAML that might be missing descriptions
+    const paramEntries = Object.entries(tool.params);
+    for (const [key, value] of paramEntries) {
+      if (!value.description || value.description.trim() === "") {
+        Logger.warn(
+          `Documentation Gap: Parameter '${key}' for tool '${tool.name}' lacks a description in YAML.`,
+        );
+      }
+    }
+  }
+}
+
+/**
  * Standard response format for MCP Tool handlers.
  */
 interface McpToolResponse {
@@ -77,6 +103,7 @@ export async function runMcpServer() {
   await bootstrap();
   const server = new McpServer({ name: "spekta-mcp-server", version: "1.0.0" });
   const tools = await loadToolDefinitions();
+  validateToolDefinitions(tools);
 
   // Track registered tool names to prevent duplicates
   const registeredNames = new Set<string>();
@@ -117,7 +144,7 @@ export async function runMcpServer() {
         },
       );
       registeredNames.add(tool.name);
-    } catch (err: any) {
+    } catch (err: unknown) {
       Logger.error(`Failed to register tool ${tool.name}:`, err);
     }
   }
