@@ -278,13 +278,14 @@ class Export extends FilamentExport
 
     public function creator(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'creator_id');
+        $user = $this->belongsTo(User::class, 'creator_id');
+        return $user;
     }
 }`;
     const result = compactFile("Export.php", content, 1);
     expect(result.content).toContain("class Export");
     expect(result.content).toContain("public function creator()");
-    expect(result.content).toContain("// ... [lines 8-10 collapsed]");
+    expect(result.content).toContain("// ... [lines 8-9 collapsed]");
     expect(result.content).toContain("use HasFactory;");
   });
 
@@ -294,11 +295,12 @@ class Export extends FilamentExport
     public function log(string $message)
     {
         echo $message;
+        return true;
     }
 }`;
     const result = compactFile("Loggable.php", content, 1);
     expect(result.content).toContain("trait Loggable");
-    expect(result.content).toContain("// ... [lines 5-5 collapsed]");
+    expect(result.content).toContain("// ... [lines 5-6 collapsed]");
   });
 
   it("handles PHP methods with DocBlocks between signature and brace", () => {
@@ -310,13 +312,16 @@ class TestClass
  * DocBlock
  */
     {
-        return [];
+        $data = [];
+        $data[] = 'test';
+        return $data;
     }
 }`;
     const result = compactFile("TestClass.php", content, 1);
     expect(result.content).toContain("public function data()");
-    expect(result.content).toContain("// ... [lines 8-8 collapsed]");
-    expect(result.content).toContain("return []");
+    expect(result.content).toContain("// ... [lines 9-11 collapsed]");
+    expect(result.content).not.toContain("$data = []");
+    expect(result.content).not.toContain("return $data");
     expect(result.isCompacted).toBe(true);
   });
 });
