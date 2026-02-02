@@ -21,7 +21,8 @@ function formatArgs(args: any[]): string {
           return arg.stack || arg.message;
         }
         if (typeof arg === "object") {
-          return inspect(arg, { depth: 2, colors: true });
+          // colors: false ensures logs remain clean for all MCP clients
+          return inspect(arg, { depth: 3, colors: false });
         }
         return String(arg);
       })

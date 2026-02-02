@@ -82,4 +82,15 @@ describe("Logger", () => {
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("123"));
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("nested"));
   });
+
+  it("should not include ANSI color codes in output", () => {
+    const error = new Error("Test Error");
+    const spy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    Logger.error("Test Message", error, { foo: "bar" });
+    const output = spy.mock.calls[0][0];
+    expect(output).not.toContain("\x1B[");
+    expect(output).not.toContain("\x1b[");
+  });
 });
