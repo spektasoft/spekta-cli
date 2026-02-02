@@ -11,9 +11,11 @@ const hasQuotes = (line: string): boolean =>
 const IMPORT_PATTERN =
   /^\s*(import\s+.*from|import\s*{|import\s+type|use\s+[\w\\]+)/;
 const TEST_BLOCK_PATTERN =
-  /^\s*(it|test|beforeEach|afterEach|beforeAll|afterAll)\s*\(/;
-const FUNCTION_DECLARATION = /^\s*(export\s+)?(async\s+)?function\s+\w+/;
-const METHOD_DECLARATION = /^\s*(\w+)\s*\([^)]*\)\s*[:{]/;
+  /^\s*(describe|it|test|beforeEach|afterEach|beforeAll|afterAll)\s*\(/;
+const FUNCTION_DECLARATION =
+  /^\s*(export\s+)?(async\s+)?function(\s+\w+)?\s*\(/;
+const METHOD_DECLARATION =
+  /^\s*(public|protected|private|static|final|abstract)?\s*(async\s+)?(function\s+)?\w+\s*\(/;
 const ARROW_FUNCTION = /^\s*(const|let|var)\s+\w+\s*=\s*(\([^)]*\))?\s*=>/;
 const CLASS_DECLARATION =
   /^\s*(export\s+)?(abstract\s+|final\s+)?(class|interface|trait|enum)\s+\w+/;

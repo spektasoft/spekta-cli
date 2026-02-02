@@ -49,6 +49,38 @@ describe("brace matching", () => {
 });
 
 describe("SemanticCompactor", () => {
+  it("identifies method declarations correctly", () => {
+    const content = `class Test {
+  public function save() {
+    // implementation
+  }
+}`;
+    const result = compactFile("test.php", content, 1);
+    expect(result.content).toContain("public function save()");
+    expect(result.content).toContain("// ... [lines");
+  });
+
+  it("identifies describe blocks correctly", () => {
+    const content = `describe("suite", () => {
+  it("test", () => {
+    // implementation
+  });
+});`;
+    const result = compactFile("test.ts", content, 1);
+    expect(result.content).toContain('describe("suite"');
+    expect(result.content).toContain('it("test"');
+    expect(result.content).toContain("// ... [lines");
+  });
+
+  it("identifies anonymous functions correctly", () => {
+    const content = `const callback = function ($item) {
+  // implementation
+};`;
+    const result = compactFile("test.php", content, 1);
+    expect(result.content).toContain("function ($item)");
+    expect(result.content).toContain("// ... [lines");
+  });
+
   it("collapses test bodies aggressively", () => {
     const content = `describe("suite", () => {
   it("test 1", () => {
