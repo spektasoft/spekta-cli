@@ -62,7 +62,17 @@ interface BraceMatch {
   openLine: number;
   closeLine: number;
   depth: number;
-  type: "test" | "function" | "method" | "arrow" | "class" | "object" | "brace";
+  type:
+    | "test"
+    | "function"
+    | "method"
+    | "arrow"
+    | "class"
+    | "object"
+    | "brace"
+    | "interface"
+    | "trait"
+    | "enum";
 }
 
 /**
@@ -270,7 +280,7 @@ class SemanticCompactor implements CompactionStrategy {
           (child) =>
             child.openLine > match.openLine &&
             child.closeLine < match.closeLine &&
-            child.type === "object" &&
+            child.type !== "brace" && // Any semantic type (method, function, test, object)
             !isSingleLineLogical(
               child.openLine,
               child.closeLine,
@@ -291,7 +301,13 @@ class SemanticCompactor implements CompactionStrategy {
       // - Container types (class, interface, trait, enum): never collapse (only their methods)
       // - Generic braces: collapse if >1 lines
 
-      if (match.type === "class") continue; // Never collapse container declarations
+      if (
+        match.type === "class" ||
+        match.type === "interface" ||
+        match.type === "trait" ||
+        match.type === "enum"
+      )
+        continue; // Never collapse container declarations
 
       const shouldCollapse =
         (match.type === "test" && bodyLines > 0) ||
