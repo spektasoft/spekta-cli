@@ -330,6 +330,19 @@ class Export extends FilamentExport
     expect(result.content).toContain("// ... [lines 5-6 collapsed]");
   });
 
+  it("accurately classifies interfaces", () => {
+    const input = `interface UserInterface {
+  getName(): string;
+  getEmail(): string;
+}`;
+
+    const result = compactFile("UserInterface.php", input, 1);
+    expect(result.content).toContain("interface UserInterface {");
+    expect(result.content).toContain("getName(): string;");
+    expect(result.content).toContain("getEmail(): string;");
+    expect(result.content).not.toContain("// ... [lines");
+  });
+
   it("handles PHP methods with DocBlocks between signature and brace", () => {
     const content = `<?php
 class TestClass
