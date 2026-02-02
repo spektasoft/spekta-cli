@@ -112,6 +112,20 @@ enum Status { ACTIVE, INACTIVE }`;
     // Should collapse method, not class
     expect(result.content).toContain("method1()");
   });
+
+  it("supports Allman style bracing (PHP-style)", () => {
+    const content = `class Test
+{
+    public function run()
+    {
+        // code
+    }
+}`;
+    const result = compactFile("class.ts", content, 1);
+    expect(result.content).toContain("class Test");
+    // Should collapse method but not class
+    expect(result.content).toContain("public function run()");
+  });
 });
 
 describe("full file compaction", () => {

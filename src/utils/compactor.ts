@@ -53,8 +53,6 @@ function getBlockType(
     return "object";
   }
 
-  if (trimmed.endsWith("{") && !hasQuotes(trimmed)) return "brace";
-
   return null;
 }
 
@@ -137,10 +135,30 @@ function findBraceMatches(lines: string[]): Map<number, BraceMatch> {
     const openCount = (line.match(/{/g) || []).length;
     const closeCount = (line.match(/}/g) || []).length;
 
-    // Detect block opening
-    const blockType = getBlockType(line, i, lines);
-    if (blockType && trimmed.endsWith("{")) {
-      stack.push({ lineIdx: i, depth: currentDepth, type: blockType });
+    const openBraceIdx = line.indexOf("{");
+    if (openBraceIdx !== -1) {
+      let blockType = getBlockType(line, i, lines);
+
+      // Look-back for Allman style (brace on new line)
+      if (!blockType && i > 0) {
+        const prevLine = lines[i - 1].trim();
+        if (
+          prevLine !== "" &&
+          !prevLine.startsWith("/") &&
+          !prevLine.startsWith("*")
+        ) {
+          blockType = getBlockType(lines[i - 1], i - 1, lines);
+        }
+      }
+
+      // Default to generic brace if no semantic type found
+      if (!blockType && line.trim().endsWith("{")) {
+        blockType = "brace";
+      }
+
+      if (blockType) {
+        stack.push({ lineIdx: i, depth: currentDepth, type: blockType });
+      }
     }
 
     currentDepth += openCount - closeCount;
