@@ -33,7 +33,6 @@ function getBlockType(
 ):
   | "test"
   | "test-suite"
-  | "test"
   | "function"
   | "method"
   | "arrow"
