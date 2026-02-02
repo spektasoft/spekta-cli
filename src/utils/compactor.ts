@@ -41,7 +41,13 @@ function getBlockType(
   | null {
   const trimmed = line.trim();
 
-  if (TEST_BLOCK_PATTERN.test(trimmed)) return "test";
+  if (TEST_BLOCK_PATTERN.test(trimmed)) {
+    // Treat describe/context as containers, others as atomic tests
+    if (/^\s*(describe|context)\s*\(/.test(trimmed)) {
+      return "test-suite";
+    }
+    return "test";
+  }
   if (CLASS_DECLARATION.test(trimmed)) return "class";
   if (FUNCTION_DECLARATION.test(trimmed)) return "function";
   if (ARROW_FUNCTION.test(trimmed)) return "arrow";
@@ -299,7 +305,8 @@ class SemanticCompactor implements CompactionStrategy {
         match.type === "class" ||
         match.type === "interface" ||
         match.type === "trait" ||
-        match.type === "enum"
+        match.type === "enum" ||
+        match.type === "test-suite"
       )
         continue; // Never collapse container declarations
 
