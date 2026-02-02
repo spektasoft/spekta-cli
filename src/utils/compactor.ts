@@ -141,15 +141,24 @@ function findBraceMatches(lines: string[]): Map<number, BraceMatch> {
     if (openBraceIdx !== -1) {
       let blockType = getBlockType(line, i, lines);
 
-      // Look-back for Allman style (brace on new line)
+      // Robust Look-back for Allman style
       if (!blockType && i > 0) {
-        const prevLine = lines[i - 1].trim();
-        if (
-          prevLine !== "" &&
-          !prevLine.startsWith("/") &&
-          !prevLine.startsWith("*")
-        ) {
-          blockType = getBlockType(lines[i - 1], i - 1, lines);
+        let lookbackIdx = i - 1;
+        while (lookbackIdx >= 0) {
+          const prevLine = lines[lookbackIdx].trim();
+          // Skip empty lines and comment lines
+          if (
+            prevLine === "" ||
+            prevLine.startsWith("//") ||
+            prevLine.startsWith("*") ||
+            prevLine.startsWith("/*") ||
+            prevLine.endsWith("*/")
+          ) {
+            lookbackIdx--;
+            continue;
+          }
+          blockType = getBlockType(lines[lookbackIdx], lookbackIdx, lines);
+          break;
         }
       }
 

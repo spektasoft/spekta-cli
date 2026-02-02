@@ -300,6 +300,25 @@ class Export extends FilamentExport
     expect(result.content).toContain("trait Loggable");
     expect(result.content).toContain("// ... [lines 5-5 collapsed]");
   });
+
+  it("handles PHP methods with DocBlocks between signature and brace", () => {
+    const content = `<?php
+class TestClass
+{
+    public function data()
+/**
+ * DocBlock
+ */
+    {
+        return [];
+    }
+}`;
+    const result = compactFile("TestClass.php", content, 1);
+    expect(result.content).toContain("public function data()");
+    expect(result.content).toContain("// ... [lines 8-8 collapsed]");
+    expect(result.content).toContain("return []");
+    expect(result.isCompacted).toBe(true);
+  });
 });
 
 describe("Regression: TypeScript Compaction", () => {
