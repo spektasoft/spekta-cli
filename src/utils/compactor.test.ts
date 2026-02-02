@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compactFile } from "./compactor";
 
-describe("compactor pattern recognition", () => {
+describe("Compactor Pattern Recognition", () => {
   it("protects import statements", () => {
     const content = `import { a } from "b";
 import { c } from "d";
@@ -26,7 +26,7 @@ function test() {
   });
 });
 
-describe("brace matching", () => {
+describe("Brace Matching", () => {
   it("matches nested braces correctly", () => {
     const content = `function outer() {
   function inner() {
@@ -187,7 +187,7 @@ enum Status { ACTIVE, INACTIVE }`;
   });
 });
 
-describe("full file compaction", () => {
+describe("Full File Compaction", () => {
   it("matches expected output for agent-utils test file", () => {
     const content = `import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getReadContent } from "../commands/read";
@@ -221,7 +221,7 @@ describe("agent-utils", () => {
   });
 });
 
-describe("object literal compaction", () => {
+describe("Object Literal Compaction", () => {
   it("collapses object literals in expect statements", () => {
     const content = `it("test", () => {
   expect(result).toEqual({
@@ -236,7 +236,7 @@ describe("object literal compaction", () => {
   });
 });
 
-describe("edge cases", () => {
+describe("Edge Cases", () => {
   it("preserves single-line arrow functions", () => {
     const content = `const fn = () => { return 1; };`;
     const result = compactFile("test.ts", content, 1);
@@ -263,7 +263,7 @@ describe("edge cases", () => {
   });
 });
 
-describe("performance and integration", () => {
+describe("Performance and Integration", () => {
   it("handles small files efficiently", () => {
     const content = `function small() {\n  return 1;\n}`;
     const start = Date.now();
