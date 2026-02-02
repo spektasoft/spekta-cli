@@ -170,7 +170,19 @@ function findBraceMatches(lines: string[]): Map<number, BraceMatch> {
             lookbackIdx--;
             continue;
           }
+
           blockType = getBlockType(lines[lookbackIdx], lookbackIdx, lines);
+
+          // If we haven't found a block type, but the line doesn't terminate the
+          // signature (no ; or }), keep looking back for the function/class header
+          if (
+            !blockType &&
+            !prevLine.includes(";") &&
+            !prevLine.includes("}")
+          ) {
+            lookbackIdx--;
+            continue;
+          }
           break;
         }
       }
