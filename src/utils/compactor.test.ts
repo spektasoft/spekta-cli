@@ -90,6 +90,17 @@ describe("SemanticCompactor", () => {
     expect(result.content).toContain("// ... [lines");
   });
 
+  it("matches PHP traits, interfaces, and enums", () => {
+    const content = `trait ExportTrait {}
+interface ExportInterface {}
+enum Status { ACTIVE, INACTIVE }`;
+
+    const result = compactFile("test.php", content, 1);
+    expect(result.content).toContain("trait ExportTrait");
+    expect(result.content).toContain("interface ExportInterface");
+    expect(result.content).toContain("enum Status");
+  });
+
   it("never collapses class declarations", () => {
     const content = `class MyClass {
   method1() {

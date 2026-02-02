@@ -8,13 +8,15 @@ const hasQuotes = (line: string): boolean =>
   line.includes("/");
 
 // Pattern matchers for semantic analysis
-const IMPORT_PATTERN = /^\s*(import\s+.*from|import\s*{|import\s+type)/;
+const IMPORT_PATTERN =
+  /^\s*(import\s+.*from|import\s*{|import\s+type|use\s+[\w\\]+)/;
 const TEST_BLOCK_PATTERN =
   /^\s*(it|test|beforeEach|afterEach|beforeAll|afterAll)\s*\(/;
 const FUNCTION_DECLARATION = /^\s*(export\s+)?(async\s+)?function\s+\w+/;
 const METHOD_DECLARATION = /^\s*(\w+)\s*\([^)]*\)\s*[:{]/;
 const ARROW_FUNCTION = /^\s*(const|let|var)\s+\w+\s*=\s*(\([^)]*\))?\s*=>/;
-const CLASS_DECLARATION = /^\s*(export\s+)?(abstract\s+)?class\s+\w+/;
+const CLASS_DECLARATION =
+  /^\s*(export\s+)?(abstract\s+|final\s+)?(class|interface|trait|enum)\s+\w+/;
 
 /**
  * Check if line starts a collapsible block
