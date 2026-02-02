@@ -236,3 +236,49 @@ describe("performance and integration", () => {
     expect(compactedLines).toBeLessThan(originalLines);
   });
 });
+
+describe("PHP Compaction", () => {
+  it("compacts PHP classes with Allman style braces", () => {
+    const content = `<?php
+class Export extends FilamentExport
+{
+    use HasFactory;
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'creator_id');
+    }
+}`;
+    const result = compactFile("Export.php", content, 1);
+    expect(result.content).toContain("class Export");
+    expect(result.content).toContain("public function creator()");
+    expect(result.content).toContain("// ... [lines 8-10 collapsed]");
+    expect(result.content).toContain("use HasFactory;");
+  });
+
+  it("handles PHP traits and interfaces", () => {
+    const content = `trait Loggable
+{
+    public function log(string $message)
+    {
+        echo $message;
+    }
+}`;
+    const result = compactFile("Loggable.php", content, 1);
+    expect(result.content).toContain("trait Loggable");
+    expect(result.content).toContain("// ... [lines 5-5 collapsed]");
+  });
+});
+
+describe("Regression: TypeScript Compaction", () => {
+  it("still compacts TS classes correctly", () => {
+    const content = `export class ReplSession {
+  constructor() {
+    this.setup();
+  }
+}`;
+    const result = compactFile("repl.ts", content, 1);
+    expect(result.content).toContain("export class ReplSession");
+    expect(result.content).toContain("// ... [lines 3-3 collapsed]");
+  });
+});
