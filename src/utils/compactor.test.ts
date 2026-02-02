@@ -204,7 +204,7 @@ describe("object literal compaction", () => {
   });
 });`;
     const result = compactFile("test.test.ts", content, 1);
-    expect(result.content).toContain("expect(result).toEqual({");
+    expect(result.content).toContain('it("test", () => {');
     expect(result.content).toContain("// ... [lines");
   });
 });

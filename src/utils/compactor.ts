@@ -275,27 +275,6 @@ class SemanticCompactor implements CompactionStrategy {
         continue;
       }
 
-      // Special Case: Object Literal Visibility
-      // If this is a 'test' block, check if it contains a collapsible 'object' literal.
-      // If so, we SKIP collapsing the test block so the object assertion remains visible.
-      if (match.type === "test") {
-        const hasCollapsibleObjectChild = sortedMatches.some(
-          (child) =>
-            child.openLine > match.openLine &&
-            child.closeLine < match.closeLine &&
-            child.type !== "brace" && // Any semantic type (method, function, test, object)
-            !isSingleLineLogical(
-              child.openLine,
-              child.closeLine,
-              lines,
-              child.type,
-            ),
-        );
-        if (hasCollapsibleObjectChild) {
-          continue;
-        }
-      }
-
       const bodyLines = match.closeLine - match.openLine - 1;
 
       // Aggressive collapsing rules:
