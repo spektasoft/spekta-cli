@@ -8,13 +8,20 @@ const hasQuotes = (line: string): boolean =>
   line.includes("/");
 
 // Pattern matchers for semantic analysis
-const IMPORT_PATTERN = /^\s*(import\s+.*from|import\s*{|import\s+type)/;
+const IMPORT_PATTERN =
+  /^\s*(import\s+.*from|import\s*{|import\s+type|use\s+[\w\\]+)/;
 const TEST_BLOCK_PATTERN =
-  /^\s*(it|test|beforeEach|afterEach|beforeAll|afterAll)\s*\(/;
-const FUNCTION_DECLARATION = /^\s*(export\s+)?(async\s+)?function\s+\w+/;
-const METHOD_DECLARATION = /^\s*(\w+)\s*\([^)]*\)\s*[:{]/;
+  /^\s*(describe|it|test|beforeEach|afterEach|beforeAll|afterAll)\s*\(/;
+// Allow multiple modifiers (e.g., public static abstract)
+const METHOD_DECLARATION =
+  /^\s*((?:public|protected|private|static|final|abstract)\s+)*\s*(async\s+)?(function\s+)?\w+\s*\(/;
+
+// Allow functions in assignments (e.g., const x = function() or 'key': function())
+const FUNCTION_DECLARATION =
+  /^\s*(?:export\s+)?(?:const|let|var|return)?\s*[\w$]+\s*[:=]\s*(?:async\s+)?function(?:\s+\w+)?\s*\(|^\s*(?:export\s+)?(?:async\s+)?function(?:\s+\w+)?\s*\(/;
 const ARROW_FUNCTION = /^\s*(const|let|var)\s+\w+\s*=\s*(\([^)]*\))?\s*=>/;
-const CLASS_DECLARATION = /^\s*(export\s+)?(abstract\s+)?class\s+\w+/;
+const CLASS_DECLARATION =
+  /^\s*(export\s+)?(abstract\s+|final\s+)?(class|interface|trait|enum)\s+\w+/;
 
 /**
  * Check if line starts a collapsible block
@@ -25,17 +32,32 @@ function getBlockType(
   lines: string[],
 ):
   | "test"
+  | "test-suite"
   | "function"
   | "method"
   | "arrow"
   | "class"
   | "object"
   | "brace"
+  | "interface"
+  | "trait"
+  | "enum"
   | null {
   const trimmed = line.trim();
 
-  if (TEST_BLOCK_PATTERN.test(trimmed)) return "test";
-  if (CLASS_DECLARATION.test(trimmed)) return "class";
+  if (TEST_BLOCK_PATTERN.test(trimmed)) {
+    // Treat describe/context as containers, others as atomic tests
+    if (/^\s*(describe|context)\s*\(/.test(trimmed)) {
+      return "test-suite";
+    }
+    return "test";
+  }
+  if (CLASS_DECLARATION.test(trimmed)) {
+    if (trimmed.includes("interface ")) return "interface";
+    if (trimmed.includes("trait ")) return "trait";
+    if (trimmed.includes("enum ")) return "enum";
+    return "class";
+  }
   if (FUNCTION_DECLARATION.test(trimmed)) return "function";
   if (ARROW_FUNCTION.test(trimmed)) return "arrow";
   if (METHOD_DECLARATION.test(trimmed)) return "method";
@@ -51,8 +73,6 @@ function getBlockType(
     return "object";
   }
 
-  if (trimmed.endsWith("{") && !hasQuotes(trimmed)) return "brace";
-
   return null;
 }
 
@@ -60,7 +80,18 @@ interface BraceMatch {
   openLine: number;
   closeLine: number;
   depth: number;
-  type: "test" | "function" | "method" | "arrow" | "class" | "object" | "brace";
+  type:
+    | "test"
+    | "test-suite"
+    | "function"
+    | "method"
+    | "arrow"
+    | "class"
+    | "object"
+    | "brace"
+    | "interface"
+    | "trait"
+    | "enum";
 }
 
 /**
@@ -78,6 +109,7 @@ function isSingleLineLogical(
   // Types that should ALWAYS collapse if multi-line, regardless of density
   if (
     type === "test" ||
+    type === "test-suite" ||
     type === "function" ||
     type === "method" ||
     type === "object"
@@ -135,10 +167,51 @@ function findBraceMatches(lines: string[]): Map<number, BraceMatch> {
     const openCount = (line.match(/{/g) || []).length;
     const closeCount = (line.match(/}/g) || []).length;
 
-    // Detect block opening
-    const blockType = getBlockType(line, i, lines);
-    if (blockType && trimmed.endsWith("{")) {
-      stack.push({ lineIdx: i, depth: currentDepth, type: blockType });
+    const openBraceIdx = line.indexOf("{");
+    if (openBraceIdx !== -1) {
+      let blockType = getBlockType(line, i, lines);
+
+      // Robust Look-back for Allman style
+      if (!blockType && i > 0) {
+        let lookbackIdx = i - 1;
+        while (lookbackIdx >= 0) {
+          const prevLine = lines[lookbackIdx].trim();
+          // Skip empty lines and comment lines
+          if (
+            prevLine === "" ||
+            prevLine.startsWith("//") ||
+            prevLine.startsWith("*") ||
+            prevLine.startsWith("/*") ||
+            prevLine.endsWith("*/")
+          ) {
+            lookbackIdx--;
+            continue;
+          }
+
+          blockType = getBlockType(lines[lookbackIdx], lookbackIdx, lines);
+
+          // If we haven't found a block type, but the line doesn't terminate the
+          // signature (no ; or }), keep looking back for the function/class header
+          if (
+            !blockType &&
+            !prevLine.includes(";") &&
+            !prevLine.includes("}")
+          ) {
+            lookbackIdx--;
+            continue;
+          }
+          break;
+        }
+      }
+
+      // Default to generic brace if no semantic type found
+      if (!blockType && line.trim().endsWith("{")) {
+        blockType = "brace";
+      }
+
+      if (blockType) {
+        stack.push({ lineIdx: i, depth: currentDepth, type: blockType });
+      }
     }
 
     currentDepth += openCount - closeCount;
@@ -231,36 +304,22 @@ class SemanticCompactor implements CompactionStrategy {
         continue;
       }
 
-      // Special Case: Object Literal Visibility
-      // If this is a 'test' block, check if it contains a collapsible 'object' literal.
-      // If so, we SKIP collapsing the test block so the object assertion remains visible.
-      if (match.type === "test") {
-        const hasCollapsibleObjectChild = sortedMatches.some(
-          (child) =>
-            child.openLine > match.openLine &&
-            child.closeLine < match.closeLine &&
-            child.type === "object" &&
-            !isSingleLineLogical(
-              child.openLine,
-              child.closeLine,
-              lines,
-              child.type,
-            ),
-        );
-        if (hasCollapsibleObjectChild) {
-          continue;
-        }
-      }
-
       const bodyLines = match.closeLine - match.openLine - 1;
 
       // Aggressive collapsing rules:
       // - Test blocks: always collapse if >0 lines
       // - Functions/methods: collapse if >0 lines
-      // - Classes: never collapse (only their methods)
+      // - Container types (class, interface, trait, enum): never collapse (only their methods)
       // - Generic braces: collapse if >1 lines
 
-      if (match.type === "class") continue; // Never collapse class declarations
+      if (
+        match.type === "class" ||
+        match.type === "interface" ||
+        match.type === "trait" ||
+        match.type === "enum" ||
+        match.type === "test-suite"
+      )
+        continue; // Never collapse container declarations
 
       const shouldCollapse =
         (match.type === "test" && bodyLines > 0) ||

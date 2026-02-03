@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { compactFile } from "./compactor";
 
-describe("compactor pattern recognition", () => {
+describe("Compactor Pattern Recognition", () => {
   it("protects import statements", () => {
     const content = `import { a } from "b";
 import { c } from "d";
@@ -26,7 +26,7 @@ function test() {
   });
 });
 
-describe("brace matching", () => {
+describe("Brace Matching", () => {
   it("matches nested braces correctly", () => {
     const content = `function outer() {
   function inner() {
@@ -49,6 +49,38 @@ describe("brace matching", () => {
 });
 
 describe("SemanticCompactor", () => {
+  it("identifies method declarations correctly", () => {
+    const content = `class Test {
+  public function save() {
+    // implementation
+  }
+}`;
+    const result = compactFile("test.php", content, 1);
+    expect(result.content).toContain("public function save()");
+    expect(result.content).toContain("// ... [lines");
+  });
+
+  it("identifies describe blocks correctly", () => {
+    const content = `describe("suite", () => {
+  it("test", () => {
+    // implementation
+  });
+});`;
+    const result = compactFile("test.ts", content, 1);
+    expect(result.content).toContain('describe("suite"');
+    expect(result.content).toContain('it("test"');
+    expect(result.content).toContain("// ... [lines");
+  });
+
+  it("identifies anonymous functions correctly", () => {
+    const content = `const callback = function ($item) {
+  // implementation
+};`;
+    const result = compactFile("test.php", content, 1);
+    expect(result.content).toContain("function ($item)");
+    expect(result.content).toContain("// ... [lines");
+  });
+
   it("collapses test bodies aggressively", () => {
     const content = `describe("suite", () => {
   it("test 1", () => {
@@ -90,6 +122,17 @@ describe("SemanticCompactor", () => {
     expect(result.content).toContain("// ... [lines");
   });
 
+  it("matches PHP traits, interfaces, and enums", () => {
+    const content = `trait ExportTrait {}
+interface ExportInterface {}
+enum Status { ACTIVE, INACTIVE }`;
+
+    const result = compactFile("test.php", content, 1);
+    expect(result.content).toContain("trait ExportTrait");
+    expect(result.content).toContain("interface ExportInterface");
+    expect(result.content).toContain("enum Status");
+  });
+
   it("never collapses class declarations", () => {
     const content = `class MyClass {
   method1() {
@@ -101,9 +144,50 @@ describe("SemanticCompactor", () => {
     // Should collapse method, not class
     expect(result.content).toContain("method1()");
   });
+
+  it("supports Allman style bracing (PHP-style)", () => {
+    const content = `class Test
+{
+    public function run()
+    {
+        // code
+    }
+}`;
+    const result = compactFile("class.ts", content, 1);
+    expect(result.content).toContain("class Test");
+    // Should collapse method but not class
+    expect(result.content).toContain("public function run()");
+  });
+
+  it("prioritizes outer containers over nested functions", () => {
+    const content = `it("should collapse outer", () => {
+    function nested() {
+        console.log("inner");
+    }
+    nested();
+  });`;
+    const result = compactFile("test.test.ts", content, 1);
+    // The 'it' block (lines 1-6) should collapse.
+    // We should NOT see a marker for 'nested'.
+    expect(result.content).toContain('it("should collapse outer"');
+    expect(result.content).toContain("// ... [lines 2-5 collapsed]");
+    expect(result.content).not.toContain("nested()");
+  });
+
+  it("collapses test blocks regardless of object literals", () => {
+    const content = `it("test", () => {
+  expect(result).toEqual({
+    id: 1,
+    name: 'test'
+  });
+});`;
+    const result = compactFile("test.test.ts", content, 1);
+    // Should collapse the 'it' block, hiding the object literal
+    expect(result.content).toContain("// ... [lines 2-5 collapsed]");
+  });
 });
 
-describe("full file compaction", () => {
+describe("Full File Compaction", () => {
   it("matches expected output for agent-utils test file", () => {
     const content = `import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getReadContent } from "../commands/read";
@@ -137,7 +221,7 @@ describe("agent-utils", () => {
   });
 });
 
-describe("object literal compaction", () => {
+describe("Object Literal Compaction", () => {
   it("collapses object literals in expect statements", () => {
     const content = `it("test", () => {
   expect(result).toEqual({
@@ -147,12 +231,12 @@ describe("object literal compaction", () => {
   });
 });`;
     const result = compactFile("test.test.ts", content, 1);
-    expect(result.content).toContain("expect(result).toEqual({");
+    expect(result.content).toContain('it("test", () => {');
     expect(result.content).toContain("// ... [lines");
   });
 });
 
-describe("edge cases", () => {
+describe("Edge Cases", () => {
   it("preserves single-line arrow functions", () => {
     const content = `const fn = () => { return 1; };`;
     const result = compactFile("test.ts", content, 1);
@@ -179,7 +263,7 @@ describe("edge cases", () => {
   });
 });
 
-describe("performance and integration", () => {
+describe("Performance and Integration", () => {
   it("handles small files efficiently", () => {
     const content = `function small() {\n  return 1;\n}`;
     const start = Date.now();
@@ -209,5 +293,88 @@ describe("performance and integration", () => {
     const originalLines = content.split("\n").length;
     const compactedLines = result.content.split("\n").length;
     expect(compactedLines).toBeLessThan(originalLines);
+  });
+});
+
+describe("PHP Compaction", () => {
+  it("compacts PHP classes with Allman style braces", () => {
+    const content = `<?php
+class Export extends FilamentExport
+{
+    use HasFactory;
+
+    public function creator(): BelongsTo
+    {
+        $user = $this->belongsTo(User::class, 'creator_id');
+        return $user;
+    }
+}`;
+    const result = compactFile("Export.php", content, 1);
+    expect(result.content).toContain("class Export");
+    expect(result.content).toContain("public function creator()");
+    expect(result.content).toContain("// ... [lines 8-9 collapsed]");
+    expect(result.content).toContain("use HasFactory;");
+  });
+
+  it("handles PHP traits and interfaces", () => {
+    const content = `trait Loggable
+{
+    public function log(string $message)
+    {
+        echo $message;
+        return true;
+    }
+}`;
+    const result = compactFile("Loggable.php", content, 1);
+    expect(result.content).toContain("trait Loggable");
+    expect(result.content).toContain("// ... [lines 5-6 collapsed]");
+  });
+
+  it("accurately classifies interfaces", () => {
+    const input = `interface UserInterface {
+  getName(): string;
+  getEmail(): string;
+}`;
+
+    const result = compactFile("UserInterface.php", input, 1);
+    expect(result.content).toContain("interface UserInterface {");
+    expect(result.content).toContain("getName(): string;");
+    expect(result.content).toContain("getEmail(): string;");
+    expect(result.content).not.toContain("// ... [lines");
+  });
+
+  it("handles PHP methods with DocBlocks between signature and brace", () => {
+    const content = `<?php
+class TestClass
+{
+    public function data()
+/**
+ * DocBlock
+ */
+    {
+        $data = [];
+        $data[] = 'test';
+        return $data;
+    }
+}`;
+    const result = compactFile("TestClass.php", content, 1);
+    expect(result.content).toContain("public function data()");
+    expect(result.content).toContain("// ... [lines 9-11 collapsed]");
+    expect(result.content).not.toContain("$data = []");
+    expect(result.content).not.toContain("return $data");
+    expect(result.isCompacted).toBe(true);
+  });
+});
+
+describe("Regression: TypeScript Compaction", () => {
+  it("still compacts TS classes correctly", () => {
+    const content = `export class ReplSession {
+  constructor() {
+    this.setup();
+  }
+}`;
+    const result = compactFile("repl.ts", content, 1);
+    expect(result.content).toContain("export class ReplSession");
+    expect(result.content).toContain("// ... [lines 3-3 collapsed]");
   });
 });
