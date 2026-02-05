@@ -148,14 +148,14 @@ export const getEnv = async () => {
   const workspaceEnv = path.join(process.cwd(), ".env");
   const homeEnv = path.join(HOME_DIR, ".env");
 
-  const envPath = (await fs.pathExists(workspaceEnv))
-    ? workspaceEnv
-    : (await fs.pathExists(homeEnv))
-      ? homeEnv
-      : null;
+  // 1. Load Home Environment (Global Defaults)
+  if (await fs.pathExists(homeEnv)) {
+    dotenv.config({ path: homeEnv, quiet: true });
+  }
 
-  if (envPath) {
-    dotenv.config({ path: envPath, quiet: true });
+  // 2. Load Workspace Environment (Project Overrides)
+  if (await fs.pathExists(workspaceEnv)) {
+    dotenv.config({ path: workspaceEnv, quiet: true, override: true });
   }
 
   envLoaded = true;
