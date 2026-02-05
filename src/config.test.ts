@@ -20,8 +20,10 @@ import {
   HOME_PROVIDERS_FREE,
   HOME_PROVIDERS_USER,
   HOME_TOOLS,
+  getEnv,
   loadToolDefinitions,
   refreshPaths,
+  resetEnvState,
 } from "./config";
 import { writeYaml } from "./utils/yaml";
 
@@ -144,6 +146,93 @@ describe("Provider Merging Logic", () => {
   });
 });
 
+describe("Environment Loading", () => {
+  const tempTestDir = path.join(os.tmpdir(), "spekta-env-test");
+  const tempHome = path.join(os.tmpdir(), "spekta-env-home");
+  const originalCwd = process.cwd;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    resetEnvState();
+    await fs.ensureDir(tempTestDir);
+    await fs.ensureDir(tempHome);
+    process.env.SPEKTA_HOME_OVERRIDE = tempHome;
+    process.cwd = () => tempTestDir;
+  });
+
+  afterEach(async () => {
+    delete process.env.TEST_GLOBAL_VAR;
+    delete process.env.TEST_LOCAL_VAR;
+    delete process.env.TEST_VAR;
+    delete process.env.GLOBAL_ONLY;
+    delete process.env.LOCAL_ONLY;
+    delete process.env.SHARED;
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+    process.cwd = originalCwd;
+    await fs.remove(tempTestDir);
+    await fs.remove(tempHome);
+  });
+
+  it("should load global environment variables", async () => {
+    await fs.writeFile(
+      path.join(tempHome, ".env"),
+      "TEST_GLOBAL_VAR=global_value",
+    );
+
+    await getEnv();
+
+    expect(process.env.TEST_GLOBAL_VAR).toBe("global_value");
+  });
+
+  it("should prioritize Shell > Local > Global", async () => {
+    // 1. Global value
+    await fs.writeFile(path.join(tempHome, ".env"), "TEST_VAR=global");
+
+    // 2. Local value
+    await fs.writeFile(path.join(tempTestDir, ".env"), "TEST_VAR=local");
+
+    // 3. Shell value (already set in process.env)
+    process.env.TEST_VAR = "shell";
+
+    await getEnv();
+
+    expect(process.env.TEST_VAR).toBe("shell");
+
+    // Reset and test Local > Global
+    resetEnvState();
+    delete process.env.TEST_VAR;
+
+    await getEnv();
+    expect(process.env.TEST_VAR).toBe("local");
+
+    // Reset and test Global only
+    resetEnvState();
+    delete process.env.TEST_VAR;
+    await fs.remove(path.join(tempTestDir, ".env"));
+
+    await getEnv();
+    expect(process.env.TEST_VAR).toBe("global");
+  });
+
+  it("should load both global and workspace variables when both exist", async () => {
+    await fs.writeFile(
+      path.join(tempHome, ".env"),
+      "GLOBAL_ONLY=global_value\nSHARED=global",
+    );
+
+    await fs.writeFile(
+      path.join(tempTestDir, ".env"),
+      "LOCAL_ONLY=local_value\nSHARED=local",
+    );
+
+    await getEnv();
+
+    expect(process.env.GLOBAL_ONLY).toBe("global_value");
+    expect(process.env.LOCAL_ONLY).toBe("local_value");
+    expect(process.env.SHARED).toBe("local"); // Local should override global
+  });
+});
+
 describe("Tool definitions", () => {
   it("HOME_TOOLS points to ~/.spekta/tools by default", () => {
     expect(HOME_TOOLS).toContain(".spekta/tools");
@@ -164,7 +253,7 @@ describe("REPL Prompt Injection", () => {
   it("should replace {{DYNAMIC_TOOLS}} with tool documentation", async () => {
     const content = await getPromptContent("repl.md");
     expect(content).toContain("### Tools");
-    expect(content).toContain("#### read");
+    expect(content).toContain("#### spekta_read");
     expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
   });
 });
