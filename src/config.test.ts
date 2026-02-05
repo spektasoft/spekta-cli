@@ -37,8 +37,11 @@ describe("Config & Prompt Resolution", () => {
   });
 
   afterEach(() => {
+    // Use a whitelist approach to cleaning process.env
+    const keysToClean = ["SPEKTA_HOME_OVERRIDE"];
+    keysToClean.forEach((key) => delete process.env[key]);
+
     fs.removeSync(tempTestDir);
-    delete process.env.SPEKTA_HOME_OVERRIDE;
     refreshPaths();
   });
 
@@ -117,8 +120,11 @@ describe("Provider Merging Logic", () => {
   });
 
   afterEach(() => {
+    // Use a whitelist approach to cleaning process.env
+    const keysToClean = ["SPEKTA_HOME_OVERRIDE"];
+    keysToClean.forEach((key) => delete process.env[key]);
+
     fs.removeSync(tempTestDir);
-    delete process.env.SPEKTA_HOME_OVERRIDE;
     refreshPaths();
   });
 
@@ -161,16 +167,22 @@ describe("Environment Loading", () => {
   });
 
   afterEach(async () => {
-    delete process.env.TEST_GLOBAL_VAR;
-    delete process.env.TEST_LOCAL_VAR;
-    delete process.env.TEST_VAR;
-    delete process.env.GLOBAL_ONLY;
-    delete process.env.LOCAL_ONLY;
-    delete process.env.SHARED;
-    delete process.env.SPEKTA_HOME_OVERRIDE;
+    // Use a whitelist approach to cleaning process.env
+    const keysToClean = [
+      "TEST_VAR",
+      "SPEKTA_HOME_OVERRIDE",
+      "GLOBAL_ONLY",
+      "LOCAL_ONLY",
+      "SHARED",
+      "TEST_GLOBAL_VAR",
+      "TEST_LOCAL_VAR",
+    ];
+    keysToClean.forEach((key) => delete process.env[key]);
+
     process.cwd = originalCwd;
     await fs.remove(tempTestDir);
     await fs.remove(tempHome);
+    resetInternalState();
   });
 
   it("should load global environment variables", async () => {
@@ -269,8 +281,11 @@ describe("Tool Overrides", () => {
   });
 
   afterEach(async () => {
+    // Use a whitelist approach to cleaning process.env
+    const keysToClean = ["SPEKTA_HOME_OVERRIDE"];
+    keysToClean.forEach((key) => delete process.env[key]);
+
     await fs.remove(testHome);
-    delete process.env.SPEKTA_HOME_OVERRIDE;
   });
 
   it("should verify cache is cleared", async () => {
