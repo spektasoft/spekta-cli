@@ -16,6 +16,10 @@ export async function openEditor(
   editorCommand: string,
   filePath: string,
 ): Promise<void> {
+  if (!editorCommand) {
+    throw new Error("No editor command provided.");
+  }
+
   try {
     // Handle quotes and spaces correctly using shlex
     const { split } = await getShlex();
@@ -25,6 +29,7 @@ export async function openEditor(
 
     await execa(bin, args, {
       stdio: "inherit",
+      shell: false, // Explicitly disable shell to prevent injection
     });
   } catch (error: any) {
     throw new Error(
