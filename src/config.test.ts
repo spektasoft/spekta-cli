@@ -23,7 +23,7 @@ import {
   getEnv,
   loadToolDefinitions,
   refreshPaths,
-  resetEnvState,
+  resetInternalState,
 } from "./config";
 import { writeYaml } from "./utils/yaml";
 
@@ -153,7 +153,7 @@ describe("Environment Loading", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    resetEnvState();
+    resetInternalState();
     await fs.ensureDir(tempTestDir);
     await fs.ensureDir(tempHome);
     process.env.SPEKTA_HOME_OVERRIDE = tempHome;
@@ -199,14 +199,14 @@ describe("Environment Loading", () => {
     expect(process.env.TEST_VAR).toBe("shell");
 
     // Reset and test Local > Global
-    resetEnvState();
+    resetInternalState();
     delete process.env.TEST_VAR;
 
     await getEnv();
     expect(process.env.TEST_VAR).toBe("local");
 
     // Reset and test Global only
-    resetEnvState();
+    resetInternalState();
     delete process.env.TEST_VAR;
     await fs.remove(path.join(tempTestDir, ".env"));
 
@@ -261,10 +261,27 @@ describe("REPL Prompt Injection", () => {
 describe("Tool Overrides", () => {
   const testHome = path.join(os.tmpdir(), "spekta-test-overrides");
 
-  beforeAll(async () => {
+  beforeEach(async () => {
+    resetInternalState(); // Clears cachedTools and envLoaded
     await fs.ensureDir(path.join(testHome, "tools"));
     process.env.SPEKTA_HOME_OVERRIDE = testHome;
     refreshPaths();
+  });
+
+  afterEach(async () => {
+    await fs.remove(testHome);
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+  });
+
+  it("should verify cache is cleared", async () => {
+    await loadToolDefinitions();
+    resetInternalState();
+    // Subsequent calls should hit the filesystem again
+    // rather than returning the previous ToolDefinition array reference.
+    const tools1 = await loadToolDefinitions();
+    resetInternalState();
+    const tools2 = await loadToolDefinitions();
+    expect(tools1).not.toBe(tools2);
   });
 
   it("should prioritize user-defined tool descriptions", async () => {
@@ -285,7 +302,5 @@ xml_example: "<read />"
     const readTool = tools.find((t) => t.name === "read");
 
     expect(readTool?.description).toBe("Custom Override Description");
-
-    await fs.remove(testHome);
   });
 });

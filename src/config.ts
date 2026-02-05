@@ -143,11 +143,12 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
 let envLoaded = false;
 
 /**
- * Resets the environment loading state.
+ * Resets internal module state.
  * Primarily used for the test suite to ensure clean state between runs.
  */
-export const resetEnvState = () => {
+export const resetInternalState = () => {
   envLoaded = false;
+  cachedTools = null; // Clear the tool cache
 };
 
 export const getEnv = async () => {
