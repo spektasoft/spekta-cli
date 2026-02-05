@@ -15,7 +15,7 @@ import {
 } from "../fs-manager";
 import { input, select } from "@inquirer/prompts";
 import { searchableSelect } from "../ui";
-import { execa } from "execa";
+import { openEditor } from "../editor-utils";
 import { promptHashRange } from "../git-ui";
 import { collectSupplementalContext } from "./review-context";
 
@@ -115,11 +115,9 @@ export async function runReview() {
     const editor = env.SPEKTA_EDITOR;
     if (editor) {
       try {
-        // Ensure stdio: "inherit" is kept for terminal-based editors like vim/nano
-        await execa(editor, [filePath], { stdio: "inherit" });
+        await openEditor(editor, filePath);
       } catch (editorError: any) {
-        console.warn(`\nWarning: Failed to open editor "${editor}".`);
-        console.warn(`Detail: ${editorError.message}`);
+        console.warn(`\nWarning: ${editorError.message}`);
         console.log(`You can manually open the review at: ${filePath}`);
         process.exitCode = 1;
       }
