@@ -142,20 +142,38 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
 
 let envLoaded = false;
 
+/**
+ * Resets the environment loading state.
+ * Primarily used for the test suite to ensure clean state between runs.
+ */
+export const resetEnvState = () => {
+  envLoaded = false;
+};
+
 export const getEnv = async () => {
   if (envLoaded) return process.env;
 
   const workspaceEnv = path.join(process.cwd(), ".env");
-  const homeEnv = path.join(HOME_DIR, ".env");
+  const homeEnv = path.join(GET_HOME_DIR(), ".env");
 
-  // 1. Load Home Environment (Global Defaults)
+  let globalConfig = {};
   if (await fs.pathExists(homeEnv)) {
-    dotenv.config({ path: homeEnv, quiet: true });
+    globalConfig = dotenv.parse(await fs.readFile(homeEnv, "utf-8"));
   }
 
-  // 2. Load Workspace Environment (Project Overrides)
+  let localConfig = {};
   if (await fs.pathExists(workspaceEnv)) {
-    dotenv.config({ path: workspaceEnv, quiet: true, override: true });
+    localConfig = dotenv.parse(await fs.readFile(workspaceEnv, "utf-8"));
+  }
+
+  // Priority: Local > Global
+  const mergedConfig = { ...globalConfig, ...localConfig };
+
+  // Apply to process.env only if not already set (Shell priority)
+  for (const [key, value] of Object.entries(mergedConfig)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value as string;
+    }
   }
 
   envLoaded = true;
