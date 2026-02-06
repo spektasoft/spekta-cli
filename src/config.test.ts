@@ -283,6 +283,29 @@ describe("REPL Prompt Injection", () => {
     expect(result).toContain("$` $& $'");
     expect(result).not.toContain("Preamble\nPreamble"); // Ensure $` didn't trigger
   });
+
+  it("should replace {{DYNAMIC_TOOLS}} in user-defined repl.md prompt", async () => {
+    const tempTestDir = path.join(os.tmpdir(), "spekta-repl-test");
+    fs.ensureDirSync(path.join(tempTestDir, "prompts"));
+    process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
+    refreshPaths();
+
+    const userPromptPath = path.join(tempTestDir, "prompts", "repl.md");
+    const mockContent = "Custom REPL Prompt\n{{DYNAMIC_TOOLS}}";
+    fs.writeFileSync(userPromptPath, mockContent);
+
+    try {
+      const content = await getPromptContent("repl.md");
+      expect(content).toContain("Custom REPL Prompt");
+      expect(content).toContain("### Tools");
+      expect(content).toContain("#### spekta_read");
+      expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
+    } finally {
+      delete process.env.SPEKTA_HOME_OVERRIDE;
+      fs.removeSync(tempTestDir);
+      refreshPaths();
+    }
+  });
 });
 
 describe("Tool Overrides", () => {

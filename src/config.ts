@@ -122,8 +122,8 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
     throw new Error(`Prompt template not found: ${fileName}.`);
   }
 
-  // Only inject into the internal REPL prompt template
-  if (isInternal && fileName === "repl.md") {
+  // Only inject into the REPL prompt template
+  if (fileName === "repl.md") {
     const tools = await loadToolDefinitions();
     const toolSections = tools
       .map((tool) => {
