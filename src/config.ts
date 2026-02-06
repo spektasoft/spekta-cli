@@ -142,20 +142,39 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
 
 let envLoaded = false;
 
+/**
+ * Resets internal module state.
+ * Primarily used for the test suite to ensure clean state between runs.
+ */
+export const resetInternalState = () => {
+  envLoaded = false;
+  cachedTools = null; // Clear the tool cache
+};
+
 export const getEnv = async () => {
   if (envLoaded) return process.env;
 
   const workspaceEnv = path.join(process.cwd(), ".env");
-  const homeEnv = path.join(HOME_DIR, ".env");
+  const homeEnv = path.join(GET_HOME_DIR(), ".env");
 
-  const envPath = (await fs.pathExists(workspaceEnv))
-    ? workspaceEnv
-    : (await fs.pathExists(homeEnv))
-      ? homeEnv
-      : null;
+  let globalConfig = {};
+  if (await fs.pathExists(homeEnv)) {
+    globalConfig = dotenv.parse(await fs.readFile(homeEnv, "utf-8"));
+  }
 
-  if (envPath) {
-    dotenv.config({ path: envPath, quiet: true });
+  let localConfig = {};
+  if (await fs.pathExists(workspaceEnv)) {
+    localConfig = dotenv.parse(await fs.readFile(workspaceEnv, "utf-8"));
+  }
+
+  // Priority: Local > Global
+  const mergedConfig = { ...globalConfig, ...localConfig };
+
+  // Apply to process.env only if not already set (Shell priority)
+  for (const [key, value] of Object.entries(mergedConfig)) {
+    if (process.env[key] === undefined) {
+      process.env[key] = value as string;
+    }
   }
 
   envLoaded = true;
