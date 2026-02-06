@@ -131,9 +131,10 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
       })
       .join("\n\n---\n\n");
 
+    // Use a function for the second argument to avoid $ interpretation
     content = content.replace(
       "{{DYNAMIC_TOOLS}}",
-      `### Tools\n\n${toolSections}`,
+      () => `### Tools\n\n${toolSections}`,
     );
   }
 

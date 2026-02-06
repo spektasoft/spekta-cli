@@ -268,6 +268,21 @@ describe("REPL Prompt Injection", () => {
     expect(content).toContain("#### spekta_read");
     expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
   });
+
+  it("should not interpolate $ characters in tool descriptions", () => {
+    const template = "Preamble\n{{DYNAMIC_TOOLS}}\nPostscript";
+    const toolSections = "Tool with [10,$] range and `backticks` $` $& $'";
+
+    // This replicates the logic in getPromptContent
+    const result = template.replace(
+      "{{DYNAMIC_TOOLS}}",
+      () => `### Tools\n\n${toolSections}`,
+    );
+
+    expect(result).toContain("Tool with [10,$] range");
+    expect(result).toContain("$` $& $'");
+    expect(result).not.toContain("Preamble\nPreamble"); // Ensure $` didn't trigger
+  });
 });
 
 describe("Tool Overrides", () => {
