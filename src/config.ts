@@ -106,34 +106,36 @@ export const bootstrap = async () => {
   }
 };
 
-export const getPromptContent = async (fileName: string): Promise<string> => {
+export const getPromptContent = async (
+  fileName: string,
+  toolLoader: () => Promise<ToolDefinition[]> = loadToolDefinitions,
+): Promise<string> => {
   const userPath = path.join(HOME_PROMPTS, fileName);
   const internalPath = path.join(ASSET_PROMPTS, fileName);
 
   let content: string;
-  let isInternal = false;
 
   if (await fs.pathExists(userPath)) {
     content = await fs.readFile(userPath, "utf-8");
   } else if (await fs.pathExists(internalPath)) {
     content = await fs.readFile(internalPath, "utf-8");
-    isInternal = true;
   } else {
     throw new Error(`Prompt template not found: ${fileName}.`);
   }
 
-  // Only inject into the internal REPL prompt template
-  if (isInternal && fileName === "repl.md") {
-    const tools = await loadToolDefinitions();
+  // Only inject into the REPL prompt template
+  if (fileName === "repl.md") {
+    const tools = await toolLoader();
     const toolSections = tools
       .map((tool) => {
         return `#### ${tool.name}\n\n${tool.description}\n\nExample:\n\n\`\`\`xml\n${tool.xml_example}\n\`\`\``;
       })
       .join("\n\n---\n\n");
 
+    // Use a function for the second argument to avoid $ interpretation
     content = content.replace(
       "{{DYNAMIC_TOOLS}}",
-      `### Tools\n\n${toolSections}`,
+      () => `### Tools\n\n${toolSections}`,
     );
   }
 

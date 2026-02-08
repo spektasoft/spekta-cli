@@ -268,6 +268,52 @@ describe("REPL Prompt Injection", () => {
     expect(content).toContain("#### spekta_read");
     expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
   });
+
+  it("should not interpolate $ characters in tool descriptions during prompt resolution", async () => {
+    // 1. Mock the tool definitions with problematic characters
+    const mockTools = [
+      {
+        name: "test_tool",
+        description: "Tool with [10,$] range and `backticks` $` $& $'",
+        params: {},
+        xml_example: "<test/>",
+      },
+    ];
+
+    // 2. Call the actual production function with mocked tool loader
+    const content = await getPromptContent("repl.md", async () => mockTools);
+
+    // 3. Assert the output contains the literal characters
+    expect(content).toContain("Tool with [10,$] range");
+    expect(content).toContain("$` $& $'");
+
+    // Ensure the $` didn't cause text duplication (the bug symptom)
+    const occurrences = content.split("### Tools").length - 1;
+    expect(occurrences).toBe(1);
+  });
+
+  it("should replace {{DYNAMIC_TOOLS}} in user-defined repl.md prompt", async () => {
+    const tempTestDir = path.join(os.tmpdir(), "spekta-repl-test");
+    fs.ensureDirSync(path.join(tempTestDir, "prompts"));
+    process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
+    refreshPaths();
+
+    const userPromptPath = path.join(tempTestDir, "prompts", "repl.md");
+    const mockContent = "Custom REPL Prompt\n{{DYNAMIC_TOOLS}}";
+    fs.writeFileSync(userPromptPath, mockContent);
+
+    try {
+      const content = await getPromptContent("repl.md");
+      expect(content).toContain("Custom REPL Prompt");
+      expect(content).toContain("### Tools");
+      expect(content).toContain("#### spekta_read");
+      expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
+    } finally {
+      delete process.env.SPEKTA_HOME_OVERRIDE;
+      fs.removeSync(tempTestDir);
+      refreshPaths();
+    }
+  });
 });
 
 describe("Tool Overrides", () => {
