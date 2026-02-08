@@ -106,7 +106,10 @@ export const bootstrap = async () => {
   }
 };
 
-export const getPromptContent = async (fileName: string): Promise<string> => {
+export const getPromptContent = async (
+  fileName: string,
+  toolLoader: () => Promise<ToolDefinition[]> = loadToolDefinitions,
+): Promise<string> => {
   const userPath = path.join(HOME_PROMPTS, fileName);
   const internalPath = path.join(ASSET_PROMPTS, fileName);
 
@@ -122,7 +125,7 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
 
   // Only inject into the REPL prompt template
   if (fileName === "repl.md") {
-    const tools = await loadToolDefinitions();
+    const tools = await toolLoader();
     const toolSections = tools
       .map((tool) => {
         return `#### ${tool.name}\n\n${tool.description}\n\nExample:\n\n\`\`\`xml\n${tool.xml_example}\n\`\`\``;

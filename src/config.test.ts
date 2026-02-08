@@ -269,19 +269,27 @@ describe("REPL Prompt Injection", () => {
     expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
   });
 
-  it("should not interpolate $ characters in tool descriptions", () => {
-    const template = "Preamble\n{{DYNAMIC_TOOLS}}\nPostscript";
-    const toolSections = "Tool with [10,$] range and `backticks` $` $& $'";
+  it("should not interpolate $ characters in tool descriptions during prompt resolution", async () => {
+    // 1. Mock the tool definitions with problematic characters
+    const mockTools = [
+      {
+        name: "test_tool",
+        description: "Tool with [10,$] range and `backticks` $` $& $'",
+        params: {},
+        xml_example: "<test/>",
+      },
+    ];
 
-    // This replicates the logic in getPromptContent
-    const result = template.replace(
-      "{{DYNAMIC_TOOLS}}",
-      () => `### Tools\n\n${toolSections}`,
-    );
+    // 2. Call the actual production function with mocked tool loader
+    const content = await getPromptContent("repl.md", async () => mockTools);
 
-    expect(result).toContain("Tool with [10,$] range");
-    expect(result).toContain("$` $& $'");
-    expect(result).not.toContain("Preamble\nPreamble"); // Ensure $` didn't trigger
+    // 3. Assert the output contains the literal characters
+    expect(content).toContain("Tool with [10,$] range");
+    expect(content).toContain("$` $& $'");
+
+    // Ensure the $` didn't cause text duplication (the bug symptom)
+    const occurrences = content.split("### Tools").length - 1;
+    expect(occurrences).toBe(1);
   });
 
   it("should replace {{DYNAMIC_TOOLS}} in user-defined repl.md prompt", async () => {
