@@ -111,13 +111,11 @@ export const getPromptContent = async (fileName: string): Promise<string> => {
   const internalPath = path.join(ASSET_PROMPTS, fileName);
 
   let content: string;
-  let isInternal = false;
 
   if (await fs.pathExists(userPath)) {
     content = await fs.readFile(userPath, "utf-8");
   } else if (await fs.pathExists(internalPath)) {
     content = await fs.readFile(internalPath, "utf-8");
-    isInternal = true;
   } else {
     throw new Error(`Prompt template not found: ${fileName}.`);
   }
