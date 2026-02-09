@@ -1,8 +1,6 @@
 name: spekta_grep
 description: |
-  Search for a regex pattern in the codebase using ripgrep. 
-  Respects .gitignore and .spektaignore automatically.
-
+  Search for a regex pattern in the codebase using ripgrep. Respects .gitignore and .spektaignore automatically.
   - **Pattern:** Supports standard regex syntax.
   - **Path:** Optional directory to search in (defaults to project root).
   - **Globs:** Optional file patterns to include (e.g., '*.ts' or 'src/**/*.js').
