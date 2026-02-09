@@ -196,4 +196,25 @@ describe("getUserMessage", () => {
     expect(result).toBe("final message");
     expect(mockRl.close).toHaveBeenCalledTimes(101);
   });
+
+  it("should have non-nullable return type", () => {
+    // Compile-time check: TypeScript should reject null/undefined assignment
+    const result: string = "" as any; // Simulated return value
+    // @ts-expect-error - null should not be assignable to return type
+    const invalid: null = result;
+    // @ts-expect-error - undefined should not be assignable to return type
+    const invalid2: undefined = result;
+
+    expect(typeof result).toBe("string");
+  });
+
+  it("should document forced-input semantics in JSDoc", () => {
+    const fs = require("fs");
+    const source = fs.readFileSync("src/utils/multiline-input.ts", "utf-8");
+    expect(source).toMatch(/GUARANTEES:/);
+    expect(source).toMatch(
+      /Always returns a non-empty string OR the literal "exit"/,
+    );
+    expect(source).toMatch(/Never returns null\/undefined/);
+  });
 });

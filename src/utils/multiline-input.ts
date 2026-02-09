@@ -44,6 +44,22 @@ async function openInEditorWithConfirmation(
   }
 }
 
+/**
+ * Captures multi-line user input with forced completion semantics.
+ *
+ * GUARANTEES:
+ * - Always returns a non-empty string OR the literal "exit" command
+ * - Never returns null/undefined - user MUST provide input or exit
+ * - Empty submissions ("s" with no content) trigger automatic retry
+ * - Cancellations ("c") trigger automatic retry with cleared buffer
+ *
+ * EXIT CONDITIONS:
+ * - Returns "exit" when user enters 'q' or 'quit'
+ * - Returns non-empty string when user submits valid content via 's' or editor
+ *
+ * @returns {Promise<string>} Non-empty user input OR literal string "exit"
+ * @throws {Error} Only on unrecoverable I/O failures (not on user cancellation)
+ */
 export async function getUserMessage(): Promise<InputResult> {
   let currentBuffer = "";
 
