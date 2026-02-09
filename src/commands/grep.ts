@@ -73,7 +73,10 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
 
     return Object.entries(resultsByFile)
       .map(([file, matches]) => {
-        return `#### ${file}\n\`\`\`text\n${matches.join("\n")}\n\`\`\``;
+        // Extract extension (e.g., 'file.ts' -> 'ts')
+        const ext = file.split(".").pop();
+        const lang = ext && ext !== file ? ext : "text";
+        return `#### ${file}\n\`\`\`${lang}\n${matches.join("\n")}\n\`\`\``;
       })
       .join("\n\n");
   } catch (error: any) {

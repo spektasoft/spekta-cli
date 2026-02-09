@@ -55,7 +55,7 @@ describe("getGrepContent", () => {
     const result = await getGrepContent({ pattern: "const", path: "src" });
 
     expect(result).toContain("#### src/main.ts");
-    expect(result).toContain("```text\n1:5:const x = 1;\n```");
+    expect(result).toContain("```ts\n1:5:const x = 1;\n```");
     expect(result).not.toContain('Search Results for "const":');
   });
 
@@ -117,6 +117,24 @@ describe("getGrepContent", () => {
     const result = await getGrepContent({ pattern: "const", path: "src" });
 
     expect(result).toContain("#### src/main.ts");
-    expect(result).toContain("```text\n1:5:const x = 1;\n```");
+    expect(result).toContain("```ts\n1:5:const x = 1;\n```");
+  });
+
+  it("uses the file extension as the markdown language identifier", async () => {
+    const mockJson = createRgMatch(
+      "src/service.ts",
+      10,
+      0,
+      "export class Service {}",
+    );
+
+    vi.mocked(execa)
+      .mockResolvedValueOnce({} as any)
+      .mockResolvedValueOnce({ stdout: mockJson } as any);
+
+    const result = await getGrepContent({ pattern: "class", path: "src" });
+
+    expect(result).toContain("#### src/service.ts");
+    expect(result).toContain("```ts\n10:0:export class Service {}\n```");
   });
 });
