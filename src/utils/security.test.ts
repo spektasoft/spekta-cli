@@ -131,6 +131,16 @@ describe("Security Validation", () => {
     );
   });
 
+  it("rejects non-existent paths with descriptive error", async () => {
+    const error = new Error("ENOENT");
+    (error as any).code = "ENOENT";
+    mockStat.mockRejectedValue(error);
+
+    await expect(validatePathAccess("missing.txt")).rejects.toThrow(
+      "Access Denied: The path 'missing.txt' does not exist.",
+    );
+  });
+
   describe("validateGitTracked", () => {
     it("should pass for tracked files", async () => {
       vi.mocked(execa).mockResolvedValue({ stdout: "tracked-file.ts" } as any);

@@ -70,12 +70,19 @@ export const validatePathAccess = async (filePath: string): Promise<void> => {
     throw new Error(`Access Denied: ${filePath} is ignored by git.`);
   }
 
-  // 5. File Size Check
-  const stats = await fs.stat(absolutePath);
-  if (stats.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-    throw new Error(
-      `Access Denied: File exceeds size limit (${MAX_FILE_SIZE_MB}MB).`,
-    );
+  // 5. Existence and File Size Check
+  try {
+    const stats = await fs.stat(absolutePath);
+    if (stats.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      throw new Error(
+        `Access Denied: File exceeds size limit (${MAX_FILE_SIZE_MB}MB).`,
+      );
+    }
+  } catch (error: any) {
+    if (error.code === "ENOENT") {
+      throw new Error(`Access Denied: The path '${filePath}' does not exist.`);
+    }
+    throw error;
   }
 };
 
