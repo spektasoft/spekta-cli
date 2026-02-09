@@ -12,6 +12,10 @@ vi.mock("../commands/read", () => ({
   getReadContent: vi.fn(),
 }));
 
+vi.mock("../commands/grep", () => ({
+  getGrepContent: vi.fn(),
+}));
+
 vi.mock("./read-utils", async () => {
   const actual = await vi.importActual("./read-utils");
   return {
@@ -62,6 +66,20 @@ describe("agent-utils", () => {
         raw: '<read path="src/main.ts" />',
       });
     });
+
+    it("parses grep calls with multiple attributes", () => {
+      const text = '<grep pattern="foo" path="src" globs="*.ts" />';
+      const calls = parseToolCalls(text);
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toEqual({
+        type: "grep",
+        path: "src",
+        pattern: "foo",
+        globs: "*.ts",
+        raw: '<grep pattern="foo" path="src" globs="*.ts" />',
+      });
+    });
   });
 
   describe("validateFilePath", () => {
@@ -106,6 +124,28 @@ describe("agent-utils", () => {
         { path: "file1.ts" },
         { path: "spaced file.ts", range: { start: 1, end: 10 } },
       ]);
+    });
+
+    it("executes grep tool correctly", async () => {
+      const { getGrepContent } = await import("../commands/grep");
+      vi.mocked(getGrepContent).mockResolvedValue("grep results");
+
+      const call: ToolCall = {
+        type: "grep",
+        path: "src",
+        pattern: "todo",
+        globs: "*.ts",
+        raw: "",
+      };
+
+      const result = await executeTool(call);
+
+      expect(result).toBe("grep results");
+      expect(getGrepContent).toHaveBeenCalledWith({
+        pattern: "todo",
+        path: "src",
+        globs: "*.ts",
+      });
     });
   });
 });

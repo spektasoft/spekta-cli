@@ -7,41 +7,55 @@ import { parseFilePathWithRange, tokenizeQuotedPaths } from "./read-utils";
 import { ReplaceRequest } from "./replace-utils";
 
 export interface ToolCall {
-  type: "read" | "write" | "replace";
+  type: "read" | "write" | "replace" | "grep";
   path: string;
   content?: string;
+  pattern?: string;
+  globs?: string;
   raw: string;
 }
 
 export function parseToolCalls(text: string): ToolCall[] {
   const calls: ToolCall[] = [];
 
-  // More robust parsing with better error handling
+  // More flexible parsing for multiple attributes
   const toolRegex =
-    /<(read|write|replace)\s+path=["']([^"']+)["']\s*>([\s\S]*?)<\/\1>|<(read)\s+path=["']([^"']+)["']\s*\/>/g;
+    /<(read|write|replace|grep)\s+([^>]+?)\s*(?:\/>|>([\s\S]*?)<\/\1>)/g;
 
   let match;
   while ((match = toolRegex.exec(text)) !== null) {
     const fullMatch = match[0];
-
-    const type = (match[1] || match[4]) as "read" | "write" | "replace";
-    const filePath = match[2] || match[5];
+    const type = match[1] as ToolCall["type"];
+    const attrString = match[2];
     const content = match[3] || undefined;
 
-    // Validate path doesn't contain dangerous patterns
+    // Simple attribute parser
+    const attrs: Record<string, string> = {};
+    const attrRegex = /([a-z_]+)=["']([^"']+)["']/gi;
+    let attrMatch;
+    while ((attrMatch = attrRegex.exec(attrString)) !== null) {
+      attrs[attrMatch[1]] = attrMatch[2];
+    }
+
+    const filePath = attrs.path || "";
+
+    // Validate path if present
     if (
-      filePath.includes("..") ||
-      filePath.startsWith("/") ||
-      filePath.includes("\\")
+      filePath &&
+      (filePath.includes("..") ||
+        filePath.startsWith("/") ||
+        filePath.includes("\\"))
     ) {
       Logger.warn(`Invalid path detected in tool call: ${filePath}`);
-      continue; // Skip invalid paths
+      continue;
     }
 
     calls.push({
       type,
       path: filePath,
       content,
+      pattern: attrs.pattern,
+      globs: attrs.globs,
       raw: fullMatch,
     });
   }
@@ -125,5 +139,15 @@ export async function executeTool(call: ToolCall): Promise<string> {
     // Return minimal summary only - no additional context appending
     return `${message}`;
   }
+
+  if (call.type === "grep") {
+    const { getGrepContent } = await import("../commands/grep");
+    return await getGrepContent({
+      pattern: call.pattern || "",
+      path: call.path || undefined,
+      globs: call.globs,
+    });
+  }
+
   throw new Error("Unknown tool");
 }
