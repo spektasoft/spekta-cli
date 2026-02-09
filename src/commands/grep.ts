@@ -13,12 +13,7 @@ interface GrepOptions {
 }
 
 export async function getGrepContent(options: GrepOptions): Promise<string> {
-  const {
-    pattern,
-    path: searchPath = ".",
-    globs,
-    case_insensitive = true,
-  } = options;
+  const { pattern, path: searchPath = ".", globs, case_insensitive } = options;
 
   // Security check
   await validatePathAccess(searchPath);
@@ -42,12 +37,23 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
     "--json", // Use JSON for robust parsing into multiple blocks
   ];
 
-  if (case_insensitive) args.push("--ignore-case");
+  // Only force flags if explicitly requested
+  if (case_insensitive === true) {
+    args.push("--ignore-case");
+  } else if (case_insensitive === false) {
+    args.push("--case-sensitive");
+  }
+
   if (globs) args.push("-g", globs);
   if (await fs.pathExists(HOME_IGNORE)) args.push("--ignore-file", HOME_IGNORE);
 
   const child = execa("rg", args);
   const resultsByFile: Record<string, string[]> = {};
+
+  let totalMatches = 0;
+  const MAX_MATCHES = 500;
+  const MAX_FILES = 100;
+  let truncated = false;
 
   if (child.stdout) {
     const rl = readline.createInterface({
@@ -56,6 +62,14 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
     });
 
     for await (const line of rl) {
+      if (
+        totalMatches >= MAX_MATCHES ||
+        Object.keys(resultsByFile).length >= MAX_FILES
+      ) {
+        truncated = true;
+        child.kill();
+        break;
+      }
       try {
         const parsed = JSON.parse(line);
         if (parsed.type === "match") {
@@ -68,6 +82,7 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
 
           if (!resultsByFile[filePath]) resultsByFile[filePath] = [];
           resultsByFile[filePath].push(`${lineNum}:${colNums}:${text}`);
+          totalMatches++;
         }
       } catch (e) {
         // Skip invalid JSON lines
@@ -79,7 +94,9 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
   try {
     await child;
   } catch (error: any) {
-    if (error.exitCode !== 1) {
+    // exitCode 1 means no matches found, which is fine
+    // if we truncated, we killed the process, which is also fine
+    if (error.exitCode !== 1 && !truncated) {
       throw new Error(`Ripgrep error: ${error.message}`);
     }
   }
@@ -88,7 +105,7 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
     return "No matches found.";
   }
 
-  return Object.entries(resultsByFile)
+  let output = Object.entries(resultsByFile)
     .map(([file, matches]) => {
       // Extract extension (e.g., 'file.ts' -> 'ts')
       const ext = file.split(".").pop();
@@ -96,6 +113,13 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
       return `#### ${file}\n\`\`\`${lang}\n${matches.join("\n")}\n\`\`\``;
     })
     .join("\n\n");
+
+  if (truncated) {
+    output +=
+      "\n\n**Notice:** Results truncated. Please use a more specific pattern or path.";
+  }
+
+  return output;
 }
 
 export async function runGrep(args?: string[]) {

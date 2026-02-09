@@ -44,7 +44,10 @@ describe("getGrepContent", () => {
       exitCode === 0
         ? Promise.resolve({ stdout, exitCode })
         : Promise.reject({ exitCode, message: "Command failed" });
-    return Object.assign(promise, { stdout: Readable.from(stdout) }) as any;
+    return Object.assign(promise, {
+      stdout: Readable.from(stdout),
+      kill: vi.fn(),
+    }) as any;
   };
 
   it("verifies path access before execution", async () => {
@@ -76,11 +79,36 @@ describe("getGrepContent", () => {
       case_insensitive: false,
     });
 
+    // index 0: rg --version, index 1: rg search
     const lastCallArgs = vi.mocked(execa).mock.calls[1][1];
     expect(lastCallArgs).toContain("--json");
     expect(lastCallArgs).toContain("-g");
     expect(lastCallArgs).toContain("*.ts");
+    expect(lastCallArgs).toContain("--case-sensitive");
     expect(lastCallArgs).not.toContain("--ignore-case");
+
+    await getGrepContent({
+      pattern: "test",
+      case_insensitive: true,
+    });
+    // index 2: rg --version, index 3: rg search
+    const lastCallArgs2 = vi.mocked(execa).mock.calls[3][1];
+    expect(lastCallArgs2).toContain("--ignore-case");
+  });
+
+  it("truncates results when match limit is reached", async () => {
+    // Generate 501 matches
+    const matches = Array.from({ length: 501 }, (_, i) =>
+      createRgMatch("test.ts", i + 1, 0, `match ${i}`),
+    ).join("\n");
+
+    vi.mocked(execa).mockImplementation(() => mockExecaStream(matches));
+
+    const result = await getGrepContent({ pattern: "test" });
+    expect(result).toContain("Results truncated");
+    // Verify it stopped after 500
+    const matchCount = (result.match(/match \d+/g) || []).length;
+    expect(matchCount).toBe(500);
   });
 
   it("returns 'No matches found.' when ripgrep exit code is 1", async () => {
