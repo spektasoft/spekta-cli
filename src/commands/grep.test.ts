@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { getGrepContent } from "./grep";
 import { execa } from "execa";
-import fs from "fs-extra";
+import { Readable } from "node:stream";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { validatePathAccess } from "../utils/security";
+import { getGrepContent } from "./grep";
 
 vi.mock("execa");
 vi.mock("fs-extra");
@@ -39,8 +39,16 @@ describe("getGrepContent", () => {
     vi.mocked(validatePathAccess).mockResolvedValue(undefined);
   });
 
+  const mockExecaStream = (stdout: string, exitCode = 0) => {
+    const promise =
+      exitCode === 0
+        ? Promise.resolve({ stdout, exitCode })
+        : Promise.reject({ exitCode, message: "Command failed" });
+    return Object.assign(promise, { stdout: Readable.from(stdout) }) as any;
+  };
+
   it("verifies path access before execution", async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
+    vi.mocked(execa).mockImplementation(() => mockExecaStream(""));
     await getGrepContent({ pattern: "test", path: "src" });
     expect(validatePathAccess).toHaveBeenCalledWith("src");
   });
@@ -49,8 +57,8 @@ describe("getGrepContent", () => {
     const matchJson = createRgMatch("src/main.ts", 1, 5, "const x = 1;");
 
     vi.mocked(execa)
-      .mockResolvedValueOnce({} as any) // rg --version check
-      .mockResolvedValueOnce({ stdout: matchJson } as any);
+      .mockImplementationOnce(() => mockExecaStream("")) // rg --version check
+      .mockImplementationOnce(() => mockExecaStream(matchJson));
 
     const result = await getGrepContent({ pattern: "const", path: "src" });
 
@@ -60,7 +68,7 @@ describe("getGrepContent", () => {
   });
 
   it("correctly applies glob and case sensitivity flags", async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
+    vi.mocked(execa).mockImplementation(() => mockExecaStream(""));
 
     await getGrepContent({
       pattern: "test",
@@ -77,8 +85,8 @@ describe("getGrepContent", () => {
 
   it("returns 'No matches found.' when ripgrep exit code is 1", async () => {
     vi.mocked(execa)
-      .mockResolvedValueOnce({} as any)
-      .mockRejectedValueOnce({ exitCode: 1 } as any);
+      .mockImplementationOnce(() => mockExecaStream(""))
+      .mockImplementationOnce(() => mockExecaStream("", 1));
 
     const result = await getGrepContent({ pattern: "nonexistent" });
     expect(result).toBe("No matches found.");
@@ -90,8 +98,8 @@ describe("getGrepContent", () => {
     const mixedStdout = `${invalidJson}\n${validMatch}`;
 
     vi.mocked(execa)
-      .mockResolvedValueOnce({} as any)
-      .mockResolvedValueOnce({ stdout: mixedStdout } as any);
+      .mockImplementationOnce(() => mockExecaStream(""))
+      .mockImplementationOnce(() => mockExecaStream(mixedStdout));
 
     const result = await getGrepContent({ pattern: "test" });
 
@@ -111,8 +119,8 @@ describe("getGrepContent", () => {
     });
 
     vi.mocked(execa)
-      .mockResolvedValueOnce({} as any) // rg version check
-      .mockResolvedValueOnce({ stdout: mockJson } as any);
+      .mockImplementationOnce(() => mockExecaStream("")) // rg version check
+      .mockImplementationOnce(() => mockExecaStream(mockJson));
 
     const result = await getGrepContent({ pattern: "const", path: "src" });
 
@@ -129,12 +137,33 @@ describe("getGrepContent", () => {
     );
 
     vi.mocked(execa)
-      .mockResolvedValueOnce({} as any)
-      .mockResolvedValueOnce({ stdout: mockJson } as any);
+      .mockImplementationOnce(() => mockExecaStream(""))
+      .mockImplementationOnce(() => mockExecaStream(mockJson));
 
     const result = await getGrepContent({ pattern: "class", path: "src" });
 
     expect(result).toContain("#### src/service.ts");
     expect(result).toContain("```ts\n10:0:export class Service {}\n```");
+  });
+
+  it("supports multiple submatches per line", async () => {
+    const mockJson = JSON.stringify({
+      type: "match",
+      data: {
+        path: { text: "src/multi.ts" },
+        line_number: 5,
+        submatches: [{ start: 10 }, { start: 25 }],
+        lines: { text: "const a = 1; const b = 2;" },
+      },
+    });
+
+    vi.mocked(execa)
+      .mockImplementationOnce(() => mockExecaStream(""))
+      .mockImplementationOnce(() => mockExecaStream(mockJson));
+
+    const result = await getGrepContent({ pattern: "const" });
+
+    expect(result).toContain("#### src/multi.ts");
+    expect(result).toContain("```ts\n5:10,25:const a = 1; const b = 2;\n```");
   });
 });

@@ -1,8 +1,9 @@
 import { execa } from "execa";
 import fs from "fs-extra";
-import { validatePathAccess } from "../utils/security";
+import readline from "node:readline";
 import { HOME_IGNORE } from "../config";
 import { Logger } from "../utils/logger";
+import { validatePathAccess } from "../utils/security";
 
 interface GrepOptions {
   pattern: string;
@@ -45,44 +46,56 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
   if (globs) args.push("-g", globs);
   if (await fs.pathExists(HOME_IGNORE)) args.push("--ignore-file", HOME_IGNORE);
 
-  try {
-    const { stdout } = await execa("rg", args);
-    const lines = stdout.split("\n").filter((l) => l.trim());
+  const child = execa("rg", args);
+  const resultsByFile: Record<string, string[]> = {};
 
-    if (lines.length === 0) return "No matches found.";
+  if (child.stdout) {
+    const rl = readline.createInterface({
+      input: child.stdout,
+      terminal: false,
+    });
 
-    const resultsByFile: Record<string, string[]> = {};
-
-    for (const line of lines) {
+    for await (const line of rl) {
       try {
         const parsed = JSON.parse(line);
         if (parsed.type === "match") {
           const filePath = parsed.data.path.text;
           const lineNum = parsed.data.line_number;
-          const colNum = parsed.data.submatches[0].start;
+          const colNums = parsed.data.submatches
+            .map((m: any) => m.start)
+            .join(",");
           const text = parsed.data.lines.text.trimEnd();
 
           if (!resultsByFile[filePath]) resultsByFile[filePath] = [];
-          resultsByFile[filePath].push(`${lineNum}:${colNum}:${text}`);
+          resultsByFile[filePath].push(`${lineNum}:${colNums}:${text}`);
         }
       } catch (e) {
         // Skip invalid JSON lines
         continue;
       }
     }
-
-    return Object.entries(resultsByFile)
-      .map(([file, matches]) => {
-        // Extract extension (e.g., 'file.ts' -> 'ts')
-        const ext = file.split(".").pop();
-        const lang = ext && ext !== file ? ext : "text";
-        return `#### ${file}\n\`\`\`${lang}\n${matches.join("\n")}\n\`\`\``;
-      })
-      .join("\n\n");
-  } catch (error: any) {
-    if (error.exitCode === 1) return "No matches found.";
-    throw new Error(`Ripgrep error: ${error.message}`);
   }
+
+  try {
+    await child;
+  } catch (error: any) {
+    if (error.exitCode !== 1) {
+      throw new Error(`Ripgrep error: ${error.message}`);
+    }
+  }
+
+  if (Object.keys(resultsByFile).length === 0) {
+    return "No matches found.";
+  }
+
+  return Object.entries(resultsByFile)
+    .map(([file, matches]) => {
+      // Extract extension (e.g., 'file.ts' -> 'ts')
+      const ext = file.split(".").pop();
+      const lang = ext && ext !== file ? ext : "text";
+      return `#### ${file}\n\`\`\`${lang}\n${matches.join("\n")}\n\`\`\``;
+    })
+    .join("\n\n");
 }
 
 export async function runGrep(args?: string[]) {
