@@ -156,9 +156,10 @@ export async function executeSafeReplace(
 /**
  * CLI command for replace operation.
  */
-export async function runReplace(args: string[] = []): Promise<void> {
+export async function runReplace(args?: string[]): Promise<void> {
+  const safeArgs = args || [];
   try {
-    if (args.length < 2) {
+    if (safeArgs.length < 2) {
       Logger.error(
         "Usage: spekta replace <file> <blocks>\n" +
           "Example: spekta replace src/file.ts 'blocks content'",
@@ -167,8 +168,8 @@ export async function runReplace(args: string[] = []): Promise<void> {
       return;
     }
 
-    const filePath = args[0];
-    const blocksInput = args.slice(1).join(" ");
+    const filePath = safeArgs[0];
+    const blocksInput = safeArgs.slice(1).join(" ");
 
     const request: ReplaceRequest = { path: filePath, blocks: [] };
 

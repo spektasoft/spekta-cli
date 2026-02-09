@@ -82,13 +82,15 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
   }
 }
 
-export async function runGrep(args: string[]) {
+export async function runGrep(args?: string[]) {
   try {
     // Basic argument parsing: spekta grep <pattern> [path] [--glob <glob>]
-    const pattern = args[0];
-    const path = args[1] && !args[1].startsWith("-") ? args[1] : ".";
-    const globIdx = args.indexOf("--glob");
-    const globs = globIdx !== -1 ? args[globIdx + 1] : undefined;
+    const safeArgs = args || [];
+    const pattern = safeArgs[0];
+    const path =
+      safeArgs[1] && !safeArgs[1].startsWith("-") ? safeArgs[1] : ".";
+    const globIdx = safeArgs.indexOf("--glob");
+    const globs = globIdx !== -1 ? safeArgs[globIdx + 1] : undefined;
 
     if (!pattern) {
       Logger.error("Usage: spekta grep <pattern> [path] [--glob <glob>]");
