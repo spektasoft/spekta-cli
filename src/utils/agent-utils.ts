@@ -5,6 +5,7 @@ import { getWriteContent } from "../commands/write";
 import { Logger } from "./logger";
 import { parseFilePathWithRange, tokenizeQuotedPaths } from "./read-utils";
 import { ReplaceRequest } from "./replace-utils";
+import { getGrepContent } from "../commands/grep";
 
 export interface ToolCall {
   type: "read" | "write" | "replace" | "grep";
@@ -141,7 +142,6 @@ export async function executeTool(call: ToolCall): Promise<string> {
   }
 
   if (call.type === "grep") {
-    const { getGrepContent } = await import("../commands/grep");
     return await getGrepContent({
       pattern: call.pattern || "",
       path: call.path || undefined,
