@@ -47,83 +47,85 @@ async function openInEditorWithConfirmation(
 export async function getUserMessage(): Promise<InputResult> {
   let currentBuffer = "";
 
-  const runInputLoop = (): Promise<InputResult> => {
-    return new Promise((resolve) => {
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
+  // Top-level iterative control flow guarantees O(1) stack depth
+  while (true) {
+    const { action, content } = await runSingleInputSession(currentBuffer);
 
-      const askForLine = () => {
-        const instruction = chalk.green.dim(
-          "Controls: 'e' (editor) | 's' (send) | 'c' (cancel) | 'q' (quit)",
-        );
-        // Explicitly handle the empty string case to prevent starting at index 2
-        const lineCount =
-          currentBuffer === "" ? 0 : currentBuffer.split("\n").length;
-        const promptText =
-          lineCount === 0 ? `${instruction}\n1> ` : `${lineCount + 1}> `;
-        rl.question(promptText, async (input) => {
-          const trimmed = input.trim().toLowerCase();
+    switch (action) {
+      case "send":
+        const trimmed = content.trim();
+        if (trimmed === "") {
+          currentBuffer = "";
+          console.log("Input cancelled (empty message).");
+          continue; // Retry loop with cleared buffer
+        }
+        return trimmed;
 
-          if (["c", "cancel"].includes(trimmed)) {
-            rl.close();
-            currentBuffer = ""; // Explicitly clear buffer
-            console.log("Input cancelled.");
-            resolve(await runInputLoop()); // Restart loop
-            return;
-          }
+      case "cancel":
+        currentBuffer = "";
+        console.log("Input cancelled.");
+        continue; // Retry loop with cleared buffer
 
-          if (["s", "send", ".", ";;"].includes(trimmed)) {
-            rl.close();
-            const content = currentBuffer.trim();
-            if (content === "") {
-              currentBuffer = "";
-              console.log("Input cancelled (empty message).");
-              resolve(await runInputLoop()); // Restart loop on empty
-              return;
-            }
-            resolve(content);
-            return;
-          }
+      case "exit":
+        return "exit";
+    }
+  }
+}
 
-          if (["q", "quit"].includes(trimmed)) {
-            rl.close();
-            resolve("exit");
-            return;
-          }
-
-          if (trimmed === "e") {
-            rl.close();
-            const result = await openInEditorWithConfirmation(currentBuffer);
-
-            if (result.action === "send") {
-              const content = result.content.trim();
-              if (content === "") {
-                currentBuffer = "";
-                console.log("Input cancelled (empty message).");
-                resolve(await runInputLoop());
-              } else {
-                resolve(content);
-              }
-            } else if (result.action === "exit") {
-              resolve("exit");
-            } else {
-              // cancel: reset buffer and restart loop
-              currentBuffer = "";
-              resolve(await runInputLoop());
-            }
-            return;
-          }
-
-          currentBuffer += (currentBuffer ? "\n" : "") + input;
-          askForLine();
-        });
-      };
-
-      askForLine();
+async function runSingleInputSession(
+  initialBuffer: string,
+): Promise<{ action: "send" | "cancel" | "exit"; content: string }> {
+  return new Promise((resolve) => {
+    let currentBuffer = initialBuffer;
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
     });
-  };
 
-  return runInputLoop();
+    const askForLine = () => {
+      const instruction = chalk.green.dim(
+        "Controls: 'e' (editor) | 's' (send) | 'c' (cancel) | 'q' (quit)",
+      );
+      const lineCount =
+        currentBuffer === "" ? 0 : currentBuffer.split("\n").length;
+      const promptText =
+        lineCount === 0 ? `${instruction}\n1> ` : `${lineCount + 1}> `;
+
+      rl.question(promptText, async (input) => {
+        const trimmed = input.trim().toLowerCase();
+
+        if (["c", "cancel"].includes(trimmed)) {
+          rl.close();
+          resolve({ action: "cancel", content: "" });
+          return;
+        }
+
+        if (["s", "send", ".", ";;"].includes(trimmed)) {
+          rl.close();
+          resolve({ action: "send", content: currentBuffer });
+          return;
+        }
+
+        if (["q", "quit"].includes(trimmed)) {
+          rl.close();
+          resolve({ action: "exit", content: "" });
+          return;
+        }
+
+        if (trimmed === "e") {
+          rl.close();
+          const result = await openInEditorWithConfirmation(currentBuffer);
+
+          // Propagate editor result without recursion
+          resolve(result);
+          return;
+        }
+
+        currentBuffer += (currentBuffer ? "\n" : "") + input;
+        askForLine();
+      });
+    };
+
+    askForLine();
+  });
 }

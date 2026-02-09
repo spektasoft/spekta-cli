@@ -176,4 +176,24 @@ describe("getUserMessage", () => {
       expect.stringContaining("Editor failed"),
     );
   });
+
+  it("should handle 100 consecutive cancellations without stack overflow", async () => {
+    // Vitest has lower stack limits than production environments, so 100 is a safe threshold
+    // to test iterative behavior without hitting Vitest's own overhead limits.
+    const mockSequence = Array(100).fill("c");
+    mockSequence.push("final message");
+    mockSequence.push("s");
+
+    mockSequence.forEach((input) => {
+      mockRl.question.mockImplementationOnce(
+        (prompt: string, cb: (answer: string) => void) => {
+          cb(input);
+        },
+      );
+    });
+
+    const result = await getUserMessage();
+    expect(result).toBe("final message");
+    expect(mockRl.close).toHaveBeenCalledTimes(101);
+  });
 });
