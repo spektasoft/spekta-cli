@@ -1,0 +1,21 @@
+name: spekta_grep
+description: |
+  Search for a regex pattern in the codebase using ripgrep. 
+  Respects .gitignore and .spektaignore automatically.
+
+  - **Pattern:** Supports standard regex syntax.
+  - **Path:** Optional directory to search in (defaults to project root).
+  - **Globs:** Optional file patterns to include (e.g., '*.ts' or 'src/**/*.js').
+
+params:
+  pattern:
+    description: "The search pattern (regex)."
+  path:
+    description: "Directory to search in (default: '.')."
+  globs:
+    description: "File patterns to include (e.g., '*.ts')."
+  case_insensitive:
+    description: "Whether to ignore case (default: true)."
+
+xml_example: |
+  <grep pattern="class ReplSession" globs="*.ts" />
