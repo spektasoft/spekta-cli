@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
+import { getGrepContent } from "./commands/grep";
 import { getReadContent } from "./commands/read";
 import { executeSafeReplace } from "./commands/replace";
 import { getWriteContent } from "./commands/write";
@@ -50,7 +51,7 @@ interface McpToolResponse {
  * Registry defining the static schema and handler for each tool.
  * Descriptions are injected dynamically from YAML definitions.
  */
-const TOOL_REGISTRY: Record<
+export const TOOL_REGISTRY: Record<
   string,
   {
     schema: (params: ToolDefinition["params"]) => z.ZodObject<any>;
@@ -95,6 +96,28 @@ const TOOL_REGISTRY: Record<
         isError: !result.success,
         content: [{ type: "text", text: result.message }],
       };
+    },
+  },
+  spekta_grep: {
+    schema: (params) =>
+      z.object({
+        pattern: z.string().describe(params.pattern?.description || ""),
+        path: z
+          .string()
+          .optional()
+          .describe(params.path?.description || ""),
+        globs: z
+          .string()
+          .optional()
+          .describe(params.globs?.description || ""),
+        case_insensitive: z
+          .boolean()
+          .optional()
+          .describe(params.case_insensitive?.description || ""),
+      }),
+    handler: async (args) => {
+      const result = await getGrepContent(args);
+      return { content: [{ type: "text", text: result }] };
     },
   },
 };

@@ -45,15 +45,16 @@ export async function getWriteContent(
   };
 }
 
-export async function runWrite(args: string[] = []): Promise<void> {
-  if (args.length !== 1) {
+export async function runWrite(args?: string[]): Promise<void> {
+  const safeArgs = args || [];
+  if (safeArgs.length !== 1) {
     Logger.error("Usage: spekta write <relative/path/to/newfile.ext>");
     Logger.error("Content must be provided via stdin.");
     process.exitCode = 1;
     return;
   }
 
-  const filePath = args[0];
+  const filePath = safeArgs[0];
 
   try {
     // Read content from stdin

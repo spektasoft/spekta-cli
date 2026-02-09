@@ -273,7 +273,7 @@ export const loadToolDefinitions = async (
 ): Promise<ToolDefinition[]> => {
   if (cachedTools && !forceRefresh) return cachedTools;
 
-  const toolNames = ["read", "replace", "write"] as const;
+  const toolNames = ["read", "replace", "write", "grep"] as const;
   const tools: ToolDefinition[] = [];
 
   for (const name of toolNames) {

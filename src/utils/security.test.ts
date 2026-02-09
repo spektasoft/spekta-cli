@@ -55,6 +55,7 @@ describe("Security Validation", () => {
     // Default happy path setups
     mockStat.mockResolvedValue({
       size: 1024,
+      isFile: () => true,
       isDirectory: () => false, // Default to file, not directory
     } as any);
     mockPathExists.mockResolvedValue(true); // Default: directories exist
@@ -81,6 +82,24 @@ describe("Security Validation", () => {
     await expect(
       validatePathAccess("src/valid-file.ts"),
     ).resolves.toBeUndefined();
+  });
+
+  it("should allow access to the project root '.'", async () => {
+    mockStat.mockResolvedValue({
+      size: 0,
+      isFile: () => false,
+      isDirectory: () => true,
+    } as any);
+    await expect(validatePathAccess(".")).resolves.not.toThrow();
+  });
+
+  it("should allow directory paths", async () => {
+    mockStat.mockResolvedValue({
+      size: 0,
+      isFile: () => false,
+      isDirectory: () => true,
+    } as any);
+    await expect(validatePathAccess("src")).resolves.not.toThrow();
   });
 
   it("should deny access to restricted files", async () => {
@@ -124,10 +143,24 @@ describe("Security Validation", () => {
   });
 
   it("rejects files larger than 10MB", async () => {
-    mockStat.mockResolvedValue({ size: 20 * 1024 * 1024 } as any);
+    mockStat.mockResolvedValue({
+      size: 20 * 1024 * 1024,
+      isFile: () => true,
+      isDirectory: () => false,
+    } as any);
 
     await expect(validatePathAccess("big.log")).rejects.toThrow(
       "exceeds size limit",
+    );
+  });
+
+  it("rejects non-existent paths with descriptive error", async () => {
+    const error = new Error("ENOENT");
+    (error as any).code = "ENOENT";
+    mockStat.mockRejectedValue(error);
+
+    await expect(validatePathAccess("missing.txt")).rejects.toThrow(
+      "Access Denied: The path 'missing.txt' does not exist.",
     );
   });
 
@@ -205,6 +238,7 @@ describe("validateParentDirForCreate", () => {
     // Mock parent directory exists and is a directory
     mockPathExists.mockResolvedValue(true);
     mockStat.mockResolvedValue({
+      isFile: () => false,
       isDirectory: () => true,
     } as any);
 
@@ -223,6 +257,7 @@ describe("validateParentDirForCreate", () => {
     // Mock parent directory exists and is a directory
     mockPathExists.mockResolvedValue(true);
     mockStat.mockResolvedValue({
+      isFile: () => false,
       isDirectory: () => true,
     } as any);
 
@@ -264,6 +299,7 @@ describe("validateParentDirForCreate (new tests)", () => {
     });
 
     mockStat.mockResolvedValue({
+      isFile: () => false,
       isDirectory: () => true,
     } as any);
 
@@ -289,7 +325,10 @@ describe("validateParentDirForCreate (new tests)", () => {
     const targetFile = path.join(testDir, "symlink-dir", "file.txt");
 
     mockPathExists.mockImplementation(async (p: string) => p === testDir);
-    mockStat.mockResolvedValue({ isDirectory: () => true } as any);
+    mockStat.mockResolvedValue({
+      isFile: () => false,
+      isDirectory: () => true,
+    } as any);
     mockRealpath.mockResolvedValue("/outside/dangerous");
     vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
 
@@ -302,7 +341,10 @@ describe("validateParentDirForCreate (new tests)", () => {
     const targetFile = path.join(testDir, ".env", "secrets", "newfile.txt");
 
     mockPathExists.mockResolvedValue(true);
-    mockStat.mockResolvedValue({ isDirectory: () => true } as any);
+    mockStat.mockResolvedValue({
+      isFile: () => false,
+      isDirectory: () => true,
+    } as any);
     mockRealpath.mockResolvedValue(testDir);
     vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
 
@@ -333,8 +375,14 @@ describe("findExistingAncestor", () => {
       .mockResolvedValueOnce(true); // root (/)
 
     mockStat
-      .mockResolvedValueOnce({ isDirectory: () => true } as any) // testDir/existing
-      .mockResolvedValueOnce({ isDirectory: () => true } as any); // testDir
+      .mockResolvedValueOnce({
+        isFile: () => false,
+        isDirectory: () => true,
+      } as any) // testDir/existing
+      .mockResolvedValueOnce({
+        isFile: () => false,
+        isDirectory: () => true,
+      } as any); // testDir
 
     const targetPath = path.join(testDir, "existing", "nested", "file.ts");
     const ancestor = await findExistingAncestor(path.dirname(targetPath));
@@ -352,6 +400,7 @@ describe("findExistingAncestor", () => {
       .mockResolvedValueOnce(true); // root (/)
 
     mockStat.mockResolvedValueOnce({
+      isFile: () => false,
       isDirectory: () => true,
     } as any); // existingPath
 

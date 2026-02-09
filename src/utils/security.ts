@@ -31,8 +31,8 @@ export async function findExistingAncestor(
   return currentPath;
 }
 
-export const validatePathAccess = async (filePath: string): Promise<void> => {
-  const absolutePath = path.resolve(filePath);
+export const validatePathAccess = async (targetPath: string): Promise<void> => {
+  const absolutePath = path.resolve(targetPath);
   const fileName = path.basename(absolutePath);
   const relativePath = path.relative(process.cwd(), absolutePath);
 
@@ -44,47 +44,68 @@ export const validatePathAccess = async (filePath: string): Promise<void> => {
   // 2. Out-of-bounds Block: Prevent reading outside project root
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     throw new Error(
-      `Access Denied: ${filePath} is outside the project directory.`,
+      `Access Denied: ${targetPath} is outside the project directory.`,
     );
   }
 
-  // 3. Spektaignore Check
-  const spektaIgnores = await getIgnorePatterns();
-  const ig = ignore().add(spektaIgnores);
-  if (ig.ignores(relativePath)) {
-    throw new Error(`Access Denied: ${filePath} is ignored by .spektaignore.`);
+  // 3. Ignore Checks (Skip for project root '.')
+  if (relativePath !== "") {
+    const displayPath = relativePath;
+
+    // Spektaignore Check
+    const spektaIgnores = await getIgnorePatterns();
+    const ig = ignore().add(spektaIgnores);
+    if (ig.ignores(displayPath)) {
+      throw new Error(
+        `Access Denied: ${targetPath} is ignored by .spektaignore.`,
+      );
+    }
+
+    // Gitignore Check
+    let isGitIgnored = false;
+    try {
+      // git check-ignore returns exitCode 0 if the file IS ignored.
+      await execa("git", ["check-ignore", "-q", displayPath]);
+      isGitIgnored = true;
+    } catch (error: any) {
+      // execa throws on non-zero exitCode (1 means NOT ignored).
+      // We swallow the error here as it implies the file is safe to access (relative to git).
+    }
+
+    if (isGitIgnored) {
+      throw new Error(`Access Denied: ${targetPath} is ignored by git.`);
+    }
   }
 
-  // 4. Gitignore Check
-  let isGitIgnored = false;
+  // 4. Existence and Type-Specific Checks
   try {
-    // git check-ignore returns exitCode 0 if the file IS ignored.
-    await execa("git", ["check-ignore", "-q", filePath]);
-    isGitIgnored = true;
+    const stats = await fs.stat(absolutePath);
+
+    // Only apply size limits to files, not directories
+    if (stats.isFile() && stats.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+      throw new Error(
+        `Access Denied: File exceeds size limit (${MAX_FILE_SIZE_MB}MB).`,
+      );
+    }
   } catch (error: any) {
-    // execa throws on non-zero exitCode (1 means NOT ignored).
-    // We swallow the error here as it implies the file is safe to access (relative to git).
-  }
-
-  if (isGitIgnored) {
-    throw new Error(`Access Denied: ${filePath} is ignored by git.`);
-  }
-
-  // 5. File Size Check
-  const stats = await fs.stat(absolutePath);
-  if (stats.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-    throw new Error(
-      `Access Denied: File exceeds size limit (${MAX_FILE_SIZE_MB}MB).`,
-    );
+    if (error.code === "ENOENT") {
+      throw new Error(
+        `Access Denied: The path '${targetPath}' does not exist.`,
+      );
+    }
+    throw error;
   }
 };
 
 export const validatePathAccessForWrite = async (
-  filePath: string,
+  targetPath: string,
 ): Promise<void> => {
-  const absolutePath = path.resolve(filePath);
+  const absolutePath = path.resolve(targetPath);
   const fileName = path.basename(absolutePath);
   const relativePath = path.relative(process.cwd(), absolutePath);
+
+  const displayPath = relativePath || ".";
+  const ignoreCheckPath = relativePath || ".";
 
   // 1. System File Block
   if (RESTRICTED_FILES.includes(fileName)) {
@@ -94,29 +115,31 @@ export const validatePathAccessForWrite = async (
   // 2. Out-of-bounds Block: Prevent reading outside project root
   if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
     throw new Error(
-      `Access Denied: ${filePath} is outside the project directory.`,
+      `Access Denied: ${targetPath} is outside the project directory.`,
     );
   }
 
   // 3. Spektaignore Check
   const spektaIgnores = await getIgnorePatterns();
   const ig = ignore().add(spektaIgnores);
-  if (ig.ignores(relativePath)) {
-    throw new Error(`Access Denied: ${filePath} is ignored by .spektaignore.`);
+  if (ig.ignores(ignoreCheckPath)) {
+    throw new Error(
+      `Access Denied: ${targetPath} is ignored by .spektaignore.`,
+    );
   }
 
   // 4. Gitignore Check (for the target file path, even though it doesn't exist yet)
   let isGitIgnored = false;
   try {
     // git check-ignore returns exitCode 0 if the file WOULD BE ignored.
-    await execa("git", ["check-ignore", "-q", filePath]);
+    await execa("git", ["check-ignore", "-q", displayPath]);
     isGitIgnored = true;
   } catch (error: any) {
     // execa throws on non-zero exitCode (1 means NOT ignored).
   }
 
   if (isGitIgnored) {
-    throw new Error(`Access Denied: ${filePath} would be ignored by git.`);
+    throw new Error(`Access Denied: ${targetPath} would be ignored by git.`);
   }
 
   // Note: File size check is intentionally omitted since file doesn't exist
@@ -126,8 +149,8 @@ export const validatePathAccessForWrite = async (
  * Validates that a file is tracked by git.
  * Edit operations should only be performed on tracked files to ensure safety.
  */
-export const validateGitTracked = async (filePath: string): Promise<void> => {
-  const absolutePath = path.resolve(filePath);
+export const validateGitTracked = async (targetPath: string): Promise<void> => {
+  const absolutePath = path.resolve(targetPath);
   const relativePath = path.relative(process.cwd(), absolutePath);
 
   try {
@@ -135,7 +158,7 @@ export const validateGitTracked = async (filePath: string): Promise<void> => {
     await execa("git", ["ls-files", "--error-unmatch", relativePath]);
   } catch (error: any) {
     throw new Error(
-      `Edit Denied: ${filePath} is not tracked by git. Only tracked files can be edited.`,
+      `Edit Denied: ${targetPath} is not tracked by git. Only tracked files can be edited.`,
     );
   }
 };
@@ -144,9 +167,9 @@ export const validateGitTracked = async (filePath: string): Promise<void> => {
  * Combined validation for edit operations.
  * Ensures file passes both access and git tracking checks.
  */
-export const validateEditAccess = async (filePath: string): Promise<void> => {
-  await validatePathAccess(filePath);
-  await validateGitTracked(filePath);
+export const validateEditAccess = async (targetPath: string): Promise<void> => {
+  await validatePathAccess(targetPath);
+  await validateGitTracked(targetPath);
 };
 
 /**

@@ -1,6 +1,7 @@
 import fs from "fs-extra";
 import { runCommit } from "./commands/commit";
 import { runCommitRange } from "./commands/commit-range";
+import { runGrep } from "./commands/grep";
 import { runPlan } from "./commands/plan";
 import { runPr } from "./commands/pr";
 import { runRead } from "./commands/read";
@@ -42,9 +43,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
   },
   read: {
     name: "Read Files",
-    run: async (args: string[] = []) => {
-      const fileArgs = args.filter((arg) => arg !== "--save");
-      const isSave = args.includes("--save");
+    run: async (args?: string[]) => {
+      const safeArgs = args || [];
+      const fileArgs = safeArgs.filter((arg) => arg !== "--save");
+      const isSave = safeArgs.includes("--save");
 
       if (fileArgs.length === 0) {
         await runReadInteractive();
@@ -53,6 +55,10 @@ const COMMANDS: Record<string, CommandDefinition> = {
         await runRead(requests, { save: isSave });
       }
     },
+  },
+  grep: {
+    name: "Search Project (grep)",
+    run: runGrep,
   },
   pr: {
     name: "Generate PR Message",
