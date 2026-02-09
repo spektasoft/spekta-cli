@@ -146,6 +146,7 @@ export async function executeTool(call: ToolCall): Promise<string> {
       pattern: call.pattern || "",
       path: call.path || undefined,
       globs: call.globs,
+      // Default to case_insensitive as per GrepOptions
     });
   }
 
