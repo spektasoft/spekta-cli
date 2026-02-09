@@ -34,11 +34,7 @@ export async function findExistingAncestor(
 export const validatePathAccess = async (targetPath: string): Promise<void> => {
   const absolutePath = path.resolve(targetPath);
   const fileName = path.basename(absolutePath);
-  let relativePath = path.relative(process.cwd(), absolutePath);
-
-  // Normalize empty path (current directory) to '.' for libraries that require non-empty strings
-  const displayPath = relativePath || ".";
-  const ignoreCheckPath = relativePath || ".";
+  const relativePath = path.relative(process.cwd(), absolutePath);
 
   // 1. System File Block
   if (RESTRICTED_FILES.includes(fileName)) {
@@ -52,31 +48,36 @@ export const validatePathAccess = async (targetPath: string): Promise<void> => {
     );
   }
 
-  // 3. Spektaignore Check
-  const spektaIgnores = await getIgnorePatterns();
-  const ig = ignore().add(spektaIgnores);
-  if (ig.ignores(ignoreCheckPath)) {
-    throw new Error(
-      `Access Denied: ${targetPath} is ignored by .spektaignore.`,
-    );
+  // 3. Ignore Checks (Skip for project root '.')
+  if (relativePath !== "") {
+    const displayPath = relativePath;
+
+    // Spektaignore Check
+    const spektaIgnores = await getIgnorePatterns();
+    const ig = ignore().add(spektaIgnores);
+    if (ig.ignores(displayPath)) {
+      throw new Error(
+        `Access Denied: ${targetPath} is ignored by .spektaignore.`,
+      );
+    }
+
+    // Gitignore Check
+    let isGitIgnored = false;
+    try {
+      // git check-ignore returns exitCode 0 if the file IS ignored.
+      await execa("git", ["check-ignore", "-q", displayPath]);
+      isGitIgnored = true;
+    } catch (error: any) {
+      // execa throws on non-zero exitCode (1 means NOT ignored).
+      // We swallow the error here as it implies the file is safe to access (relative to git).
+    }
+
+    if (isGitIgnored) {
+      throw new Error(`Access Denied: ${targetPath} is ignored by git.`);
+    }
   }
 
-  // 4. Gitignore Check
-  let isGitIgnored = false;
-  try {
-    // git check-ignore returns exitCode 0 if the file IS ignored.
-    await execa("git", ["check-ignore", "-q", displayPath]);
-    isGitIgnored = true;
-  } catch (error: any) {
-    // execa throws on non-zero exitCode (1 means NOT ignored).
-    // We swallow the error here as it implies the file is safe to access (relative to git).
-  }
-
-  if (isGitIgnored) {
-    throw new Error(`Access Denied: ${targetPath} is ignored by git.`);
-  }
-
-  // 5. Existence and Type-Specific Checks
+  // 4. Existence and Type-Specific Checks
   try {
     const stats = await fs.stat(absolutePath);
 
