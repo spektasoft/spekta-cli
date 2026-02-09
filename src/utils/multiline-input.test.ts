@@ -33,16 +33,22 @@ describe("getUserMessage", () => {
     vi.clearAllMocks();
   });
 
-  it("should return null when input is cancelled ('c')", async () => {
-    mockRl.question.mockImplementationOnce(
-      (prompt: string, cb: (answer: string) => void) => {
-        cb("c");
-      },
-    );
+  it("should retry when input is cancelled ('c')", async () => {
+    mockRl.question
+      .mockImplementationOnce(
+        (prompt: string, cb: (answer: string) => void) => {
+          cb("c");
+        },
+      )
+      .mockImplementationOnce(
+        (prompt: string, cb: (answer: string) => void) => {
+          cb("q");
+        },
+      );
 
     const result = await getUserMessage();
-    expect(result).toBeNull();
-    expect(mockRl.close).toHaveBeenCalled();
+    expect(result).toBe("exit");
+    expect(mockRl.close).toHaveBeenCalledTimes(2);
     expect(consoleLogSpy).toHaveBeenCalledWith("Input cancelled.");
   });
 
@@ -81,15 +87,29 @@ describe("getUserMessage", () => {
     expect(mockRl.close).toHaveBeenCalled();
   });
 
-  it("should return null when 's' is pressed with no content", async () => {
-    mockRl.question.mockImplementationOnce(
-      (prompt: string, cb: (answer: string) => void) => {
-        cb("s");
-      },
-    );
+  it("should retry when 's' is pressed with no content", async () => {
+    mockRl.question
+      .mockImplementationOnce(
+        (prompt: string, cb: (answer: string) => void) => {
+          cb("s");
+        },
+      )
+      .mockImplementationOnce(
+        (prompt: string, cb: (answer: string) => void) => {
+          cb("line 1");
+        },
+      )
+      .mockImplementationOnce(
+        (prompt: string, cb: (answer: string) => void) => {
+          cb("s");
+        },
+      );
 
     const result = await getUserMessage();
-    expect(result).toBeNull();
+    expect(result).toBe("line 1");
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      "Input cancelled (empty message).",
+    );
   });
 
   it("should handle external editor 'cancel' action (resets buffer and restarts loop)", async () => {

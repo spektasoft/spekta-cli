@@ -6,7 +6,7 @@ import { openEditor } from "../editor-utils";
 import { getTempPath } from "./fs-utils";
 import chalk from "chalk";
 
-type InputResult = string | null;
+type InputResult = string;
 
 async function openInEditorWithConfirmation(
   initialContent: string,
@@ -68,15 +68,22 @@ export async function getUserMessage(): Promise<InputResult> {
 
           if (["c", "cancel"].includes(trimmed)) {
             rl.close();
+            currentBuffer = ""; // Explicitly clear buffer
             console.log("Input cancelled.");
-            resolve(null);
+            resolve(await runInputLoop()); // Restart loop
             return;
           }
 
           if (["s", "send", ".", ";;"].includes(trimmed)) {
             rl.close();
             const content = currentBuffer.trim();
-            resolve(content || null);
+            if (content === "") {
+              currentBuffer = "";
+              console.log("Input cancelled (empty message).");
+              resolve(await runInputLoop()); // Restart loop on empty
+              return;
+            }
+            resolve(content);
             return;
           }
 
@@ -91,7 +98,14 @@ export async function getUserMessage(): Promise<InputResult> {
             const result = await openInEditorWithConfirmation(currentBuffer);
 
             if (result.action === "send") {
-              resolve(result.content.trim() || null);
+              const content = result.content.trim();
+              if (content === "") {
+                currentBuffer = "";
+                console.log("Input cancelled (empty message).");
+                resolve(await runInputLoop());
+              } else {
+                resolve(content);
+              }
             } else if (result.action === "exit") {
               resolve("exit");
             } else {

@@ -120,8 +120,6 @@ export class ReplSession {
   private async handleUserTurn(): Promise<boolean> {
     const userInput = await getUserMessage();
 
-    if (userInput === null) return true;
-
     if (userInput.toLowerCase() === "exit") {
       if (this.pendingToolResults) {
         this.messages.push({ role: "user", content: this.pendingToolResults });
