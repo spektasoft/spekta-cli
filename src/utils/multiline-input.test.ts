@@ -42,6 +42,52 @@ describe("getUserMessage", () => {
     vi.clearAllMocks();
   });
 
+  it("should handle mixed command sequences (cancel → editor → send)", async () => {
+    const sequence = ["initial", "c", "e", "fallback message", "s"];
+    let callIndex = 0;
+
+    vi.mocked(readline.createInterface).mockImplementation(() => {
+      return {
+        question: vi.fn((_prompt, cb) => {
+          cb(sequence[callIndex++] || "q");
+        }),
+        close: vi.fn(),
+      } as any;
+    });
+
+    vi.mocked(select).mockResolvedValue("send" as never);
+
+    const result = await getUserMessage();
+    expect(result).toBe("fallback message");
+  });
+
+  it("should handle mixed command sequences with successful editor submission", async () => {
+    const sequence = ["initial", "c", "e"];
+    let callIndex = 0;
+    let closeCount = 0;
+
+    vi.mocked(readline.createInterface).mockImplementation(
+      () =>
+        ({
+          question: vi.fn((_prompt, cb) => {
+            cb(sequence[callIndex++] || "q");
+          }),
+          close: vi.fn(() => {
+            closeCount++;
+          }),
+        }) as any,
+    );
+
+    vi.mocked(select).mockResolvedValue("send" as never);
+    vi.mocked(fs.readFile).mockResolvedValue(
+      "edited content\nsecond line" as never,
+    );
+
+    const result = await getUserMessage();
+    expect(result).toBe("edited content\nsecond line");
+    expect(closeCount).toBe(2); // Session 1 (cancel), Session 2 (editor open → close before editor)
+  });
+
   it("should retry when input is cancelled ('c')", async () => {
     mockRl.question
       .mockImplementationOnce(
@@ -218,25 +264,6 @@ describe("getUserMessage", () => {
     const result = await getUserMessage();
     expect(result).toBe("final message");
     expect(mockRl.close).toHaveBeenCalledTimes(101);
-  });
-
-  it("should handle mixed command sequences (cancel → editor → send)", async () => {
-    const sequence = ["initial", "c", "e", "fallback message", "s"];
-    let callIndex = 0;
-
-    vi.mocked(readline.createInterface).mockImplementation(() => {
-      return {
-        question: vi.fn((_prompt, cb) => {
-          cb(sequence[callIndex++] || "q");
-        }),
-        close: vi.fn(),
-      } as any;
-    });
-
-    vi.mocked(select).mockResolvedValue("send" as never);
-
-    const result = await getUserMessage();
-    expect(result).toBe("fallback message");
   });
 
   it("should have non-nullable return type", () => {
