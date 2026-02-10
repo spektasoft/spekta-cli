@@ -1,4 +1,5 @@
 import { select } from "@inquirer/prompts";
+import fs from "fs-extra";
 import * as readline from "readline";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getEnv } from "../config";
@@ -22,11 +23,19 @@ describe("getUserMessage", () => {
     vi.mocked(getEnv).mockResolvedValue({ SPEKTA_EDITOR: "vim" } as any);
     vi.mocked(getTempPath).mockReturnValue("/tmp/test-path");
 
+    // Fix: Ensure fs methods return Promises to avoid "undefined.catch" errors
+    vi.mocked(fs.ensureFile).mockResolvedValue(undefined as never);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined as never);
+    vi.mocked(fs.remove).mockResolvedValue(undefined as never);
+    vi.mocked(fs.readFile).mockResolvedValue("" as never); // Default return
+
     mockRl = {
       question: vi.fn(),
       close: vi.fn(),
     };
-    vi.mocked(readline.createInterface).mockReturnValue(mockRl);
+    // Mock readline.createInterface to return our mockRl object
+    // casting to any to avoid strict type checks on the full Readline interface
+    (readline.createInterface as any) = vi.fn().mockReturnValue(mockRl);
   });
 
   afterEach(() => {
@@ -209,6 +218,25 @@ describe("getUserMessage", () => {
     const result = await getUserMessage();
     expect(result).toBe("final message");
     expect(mockRl.close).toHaveBeenCalledTimes(101);
+  });
+
+  it("should handle mixed command sequences (cancel → editor → send)", async () => {
+    const sequence = ["initial", "c", "e", "fallback message", "s"];
+    let callIndex = 0;
+
+    vi.mocked(readline.createInterface).mockImplementation(() => {
+      return {
+        question: vi.fn((_prompt, cb) => {
+          cb(sequence[callIndex++] || "q");
+        }),
+        close: vi.fn(),
+      } as any;
+    });
+
+    vi.mocked(select).mockResolvedValue("send" as never);
+
+    const result = await getUserMessage();
+    expect(result).toBe("fallback message");
   });
 
   it("should have non-nullable return type", () => {
