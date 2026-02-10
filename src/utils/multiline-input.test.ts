@@ -87,6 +87,20 @@ describe("getUserMessage", () => {
     expect(mockRl.close).toHaveBeenCalled();
   });
 
+  it("should successfully collect multiple lines iteratively without recursion", async () => {
+    const lines = ["first", "second", "third", "s"];
+    lines.forEach((line) => {
+      mockRl.question.mockImplementationOnce(
+        (prompt: string, cb: (answer: string) => void) => cb(line),
+      );
+    });
+
+    const result = await getUserMessage();
+    expect(result).toBe("first\nsecond\nthird");
+    // Verify it only closed the interface once at the end of the session
+    expect(mockRl.close).toHaveBeenCalledTimes(1);
+  });
+
   it("should retry when 's' is pressed with no content", async () => {
     mockRl.question
       .mockImplementationOnce(

@@ -1,10 +1,10 @@
 import { select } from "@inquirer/prompts";
+import chalk from "chalk";
 import fs from "fs-extra";
 import * as readline from "readline";
 import { getEnv } from "../config";
 import { openEditor } from "../editor-utils";
 import { getTempPath } from "./fs-utils";
-import chalk from "chalk";
 
 type InputResult = string;
 
@@ -91,14 +91,19 @@ export async function getUserMessage(): Promise<InputResult> {
 async function runSingleInputSession(
   initialBuffer: string,
 ): Promise<{ action: "send" | "cancel" | "exit"; content: string }> {
-  return new Promise((resolve) => {
-    let currentBuffer = initialBuffer;
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
 
-    const askForLine = () => {
+  // Promisify rl.question for iterative usage
+  const question = (query: string): Promise<string> =>
+    new Promise((resolve) => rl.question(query, resolve));
+
+  let currentBuffer = initialBuffer;
+
+  try {
+    while (true) {
       const instruction = chalk.green.dim(
         "Controls: 'e' (editor) | 's' (send) | 'c' (cancel) | 'q' (quit)",
       );
@@ -107,41 +112,28 @@ async function runSingleInputSession(
       const promptText =
         lineCount === 0 ? `${instruction}\n1> ` : `${lineCount + 1}> `;
 
-      rl.question(promptText, async (input) => {
-        const trimmed = input.trim().toLowerCase();
+      const input = await question(promptText);
+      const trimmed = input.trim().toLowerCase();
 
-        if (["c", "cancel"].includes(trimmed)) {
-          rl.close();
-          resolve({ action: "cancel", content: "" });
-          return;
-        }
+      if (["c", "cancel"].includes(trimmed)) {
+        return { action: "cancel", content: "" };
+      }
 
-        if (["s", "send", ".", ";;"].includes(trimmed)) {
-          rl.close();
-          resolve({ action: "send", content: currentBuffer });
-          return;
-        }
+      if (["s", "send", ".", ";;"].includes(trimmed)) {
+        return { action: "send", content: currentBuffer };
+      }
 
-        if (["q", "quit"].includes(trimmed)) {
-          rl.close();
-          resolve({ action: "exit", content: "" });
-          return;
-        }
+      if (["q", "quit"].includes(trimmed)) {
+        return { action: "exit", content: "" };
+      }
 
-        if (trimmed === "e") {
-          rl.close();
-          const result = await openInEditorWithConfirmation(currentBuffer);
+      if (trimmed === "e") {
+        return await openInEditorWithConfirmation(currentBuffer);
+      }
 
-          // Propagate editor result without recursion
-          resolve(result);
-          return;
-        }
-
-        currentBuffer += (currentBuffer ? "\n" : "") + input;
-        askForLine();
-      });
-    };
-
-    askForLine();
-  });
+      currentBuffer += (currentBuffer ? "\n" : "") + input;
+    }
+  } finally {
+    rl.close();
+  }
 }
