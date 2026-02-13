@@ -24,7 +24,7 @@ interface CommandDefinition {
   hidden?: boolean;
 }
 
-const COMMANDS: Record<string, CommandDefinition> = {
+export const COMMANDS: Record<string, CommandDefinition> = {
   commit: {
     name: "Generate Commit Message",
     run: runCommit,
@@ -59,6 +59,7 @@ const COMMANDS: Record<string, CommandDefinition> = {
   grep: {
     name: "Search Project (grep)",
     run: runGrep,
+    hidden: true,
   },
   pr: {
     name: "Generate PR Message",

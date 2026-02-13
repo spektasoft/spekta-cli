@@ -195,3 +195,31 @@ describe("getGrepContent", () => {
     expect(result).toContain("```ts\n5:10,25:const a = 1; const b = 2;\n```");
   });
 });
+
+describe("getGrepContent pattern validation", () => {
+  it("rejects empty string pattern", async () => {
+    await expect(getGrepContent({ pattern: "" })).rejects.toThrow(
+      "Pattern cannot be empty or whitespace-only.",
+    );
+  });
+
+  it("rejects whitespace-only patterns", async () => {
+    const invalidPatterns = ["   ", "\t", "\n", " \t\n "];
+    for (const pattern of invalidPatterns) {
+      await expect(getGrepContent({ pattern })).rejects.toThrow(
+        "Pattern cannot be empty or whitespace-only.",
+      );
+    }
+  });
+
+  it("accepts valid pattern with non-whitespace content", async () => {
+    // Mock execa to return success or error code 1 for valid patterns
+    const { execa } = await import("execa");
+    vi.mocked(execa).mockReturnValue(Promise.resolve({ exitCode: 0 }) as any);
+
+    // This should not throw the validation error
+    await expect(getGrepContent({ pattern: "valid" })).resolves.not.toThrow(
+      "Pattern cannot be empty or whitespace-only.",
+    );
+  });
+});
