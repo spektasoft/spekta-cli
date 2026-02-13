@@ -1,12 +1,12 @@
 import { select } from "@inquirer/prompts";
+import chalk from "chalk";
 import fs from "fs-extra";
 import * as readline from "readline";
 import { getEnv } from "../config";
 import { openEditor } from "../editor-utils";
 import { getTempPath } from "./fs-utils";
-import chalk from "chalk";
 
-type InputResult = string | null;
+type InputResult = string;
 
 async function openInEditorWithConfirmation(
   initialContent: string,
@@ -44,72 +44,96 @@ async function openInEditorWithConfirmation(
   }
 }
 
+/**
+ * Captures multi-line user input with forced completion semantics.
+ *
+ * GUARANTEES:
+ * - Always returns a non-empty string OR the literal "exit" command
+ * - Never returns null/undefined - user MUST provide input or exit
+ * - Empty submissions ("s" with no content) trigger automatic retry
+ * - Cancellations ("c") trigger automatic retry with cleared buffer
+ *
+ * EXIT CONDITIONS:
+ * - Returns "exit" when user enters 'q' or 'quit'
+ * - Returns non-empty string when user submits valid content via 's' or editor
+ *
+ * @returns {Promise<string>} Non-empty user input OR literal string "exit"
+ * @throws {Error} Only on unrecoverable I/O failures (not on user cancellation)
+ */
 export async function getUserMessage(): Promise<InputResult> {
   let currentBuffer = "";
 
-  const runInputLoop = (): Promise<InputResult> => {
-    return new Promise((resolve) => {
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
-      });
+  // Top-level iterative control flow guarantees O(1) stack depth
+  while (true) {
+    const { action, content } = await runSingleInputSession(currentBuffer);
 
-      const askForLine = () => {
-        const instruction = chalk.green.dim(
-          "Controls: 'e' (editor) | 's' (send) | 'c' (cancel) | 'q' (quit)",
-        );
-        // Explicitly handle the empty string case to prevent starting at index 2
-        const lineCount =
-          currentBuffer === "" ? 0 : currentBuffer.split("\n").length;
-        const promptText =
-          lineCount === 0 ? `${instruction}\n1> ` : `${lineCount + 1}> `;
-        rl.question(promptText, async (input) => {
-          const trimmed = input.trim().toLowerCase();
+    switch (action) {
+      case "send":
+        const trimmed = content.trim();
+        if (trimmed === "") {
+          currentBuffer = "";
+          console.log("Input cancelled (empty message).");
+          continue; // Retry loop with cleared buffer
+        }
+        return trimmed;
 
-          if (["c", "cancel"].includes(trimmed)) {
-            rl.close();
-            console.log("Input cancelled.");
-            resolve(null);
-            return;
-          }
+      case "cancel":
+        currentBuffer = "";
+        console.log("Input cancelled.");
+        continue; // Retry loop with cleared buffer
 
-          if (["s", "send", ".", ";;"].includes(trimmed)) {
-            rl.close();
-            const content = currentBuffer.trim();
-            resolve(content || null);
-            return;
-          }
+      case "exit":
+        return "exit";
+    }
+  }
+}
 
-          if (["q", "quit"].includes(trimmed)) {
-            rl.close();
-            resolve("exit");
-            return;
-          }
+async function runSingleInputSession(
+  initialBuffer: string,
+): Promise<{ action: "send" | "cancel" | "exit"; content: string }> {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
 
-          if (trimmed === "e") {
-            rl.close();
-            const result = await openInEditorWithConfirmation(currentBuffer);
+  // Promisify rl.question for iterative usage
+  const question = (query: string): Promise<string> =>
+    new Promise((resolve) => rl.question(query, resolve));
 
-            if (result.action === "send") {
-              resolve(result.content.trim() || null);
-            } else if (result.action === "exit") {
-              resolve("exit");
-            } else {
-              // cancel: reset buffer and restart loop
-              currentBuffer = "";
-              resolve(await runInputLoop());
-            }
-            return;
-          }
+  let currentBuffer = initialBuffer;
 
-          currentBuffer += (currentBuffer ? "\n" : "") + input;
-          askForLine();
-        });
-      };
+  try {
+    while (true) {
+      const instruction = chalk.green.dim(
+        "Controls: 'e' (editor) | 's' (send) | 'c' (cancel) | 'q' (quit)",
+      );
+      const lineCount =
+        currentBuffer === "" ? 0 : currentBuffer.split("\n").length;
+      const promptText =
+        lineCount === 0 ? `${instruction}\n1> ` : `${lineCount + 1}> `;
 
-      askForLine();
-    });
-  };
+      const input = await question(promptText);
+      const trimmed = input.trim().toLowerCase();
 
-  return runInputLoop();
+      if (["c", "cancel"].includes(trimmed)) {
+        return { action: "cancel", content: "" };
+      }
+
+      if (["s", "send", ".", ";;"].includes(trimmed)) {
+        return { action: "send", content: currentBuffer };
+      }
+
+      if (["q", "quit"].includes(trimmed)) {
+        return { action: "exit", content: "" };
+      }
+
+      if (trimmed === "e") {
+        return await openInEditorWithConfirmation(currentBuffer);
+      }
+
+      currentBuffer += (currentBuffer ? "\n" : "") + input;
+    }
+  } finally {
+    rl.close();
+  }
 }
