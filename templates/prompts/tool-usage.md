@@ -15,3 +15,25 @@ When you need to read files or search for patterns across your codebase, you mus
 - **Path (Optional):** Starting directory for search (defaults to current directory if omitted)
 - **Glob (Optional):** Filter files using glob patterns (e.g., `--glob "**/*.ts"` for TypeScript files)
 - **Use Cases:** Finding function usages, TODO comments, interface implementations, or config values across multiple files.
+
+### Formatting Rules
+
+- **Single Command Block:** Always wrap your command in **one** markdown code block for easy copy-pasting.
+- **Batching:** Combine multiple operations into a single command when possible (e.g., multiple reads). For grep, one search pattern per command.
+- **Choose Wisely:**
+  - Use `read` when you know the exact file(s) and need to inspect content.
+  - Use `grep` when searching for patterns across unknown/many files.
+
+**Example:**
+
+```bash
+spekta read src/main.ts[1,100] src/types.ts 'configs/app settings.json'[20,50]
+```
+
+```bash
+spekta grep "TODO.*" --glob "**/*.ts"
+```
+
+```bash
+spekta grep "interface.*User" src/models --glob "**/*.d.ts"
+```
