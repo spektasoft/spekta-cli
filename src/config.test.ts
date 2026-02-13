@@ -24,6 +24,7 @@ import {
   loadToolDefinitions,
   refreshPaths,
   resetInternalState,
+  getMarkdownPrompt,
 } from "./config";
 import { writeYaml } from "./utils/yaml";
 
@@ -363,5 +364,30 @@ xml_example: "<read />"
     const readTool = tools.find((t) => t.name === "read");
 
     expect(readTool?.description).toBe("Custom Override Description");
+  });
+});
+
+describe("getMarkdownPrompt", () => {
+  const promptsDir = path.join(process.cwd(), "templates", "prompts");
+
+  beforeAll(() => {
+    refreshPaths();
+  });
+
+  it("injects tool usage when placeholder exists", async () => {
+    const file = "test-prompt.md";
+    const toolFile = "tool-usage.md";
+
+    await fs.writeFile(
+      path.join(promptsDir, file),
+      "Header\n\n{{TOOL_USAGE}}\n\nFooter",
+    );
+
+    await fs.writeFile(path.join(promptsDir, toolFile), "Injected Tool Usage");
+
+    const result = await getMarkdownPrompt(file);
+
+    expect(result).toContain("Injected Tool Usage");
+    expect(result).not.toContain("{{TOOL_USAGE}}");
   });
 });

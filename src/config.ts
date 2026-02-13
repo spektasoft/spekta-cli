@@ -106,6 +106,33 @@ export const bootstrap = async () => {
   }
 };
 
+export const getMarkdownPrompt = async (fileName: string): Promise<string> => {
+  const userPath = path.join(HOME_PROMPTS, fileName);
+  const internalPath = path.join(ASSET_PROMPTS, fileName);
+  const toolUsagePath = path.join(ASSET_PROMPTS, "tool-usage.md");
+
+  let content: string;
+
+  if (await fs.pathExists(userPath)) {
+    content = await fs.readFile(userPath, "utf-8");
+  } else if (await fs.pathExists(internalPath)) {
+    content = await fs.readFile(internalPath, "utf-8");
+  } else {
+    throw new Error(`Prompt template not found: ${fileName}.`);
+  }
+
+  if (content.includes("{{TOOL_USAGE}}")) {
+    if (!(await fs.pathExists(toolUsagePath))) {
+      throw new Error("tool-usage.md not found in templates/prompts.");
+    }
+
+    const toolUsage = await fs.readFile(toolUsagePath, "utf-8");
+    content = content.replace("{{TOOL_USAGE}}", toolUsage);
+  }
+
+  return content;
+};
+
 export const getPromptContent = async (
   fileName: string,
   toolLoader: () => Promise<ToolDefinition[]> = loadToolDefinitions,
