@@ -1,5 +1,5 @@
-import path from "path";
 import fs from "fs-extra";
+import path from "path";
 import { getEnv, getPromptContent } from "../config";
 import { openEditor } from "../editor-utils";
 import { generateId, getPlansDir } from "../fs-manager";

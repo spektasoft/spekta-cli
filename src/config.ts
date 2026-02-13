@@ -112,6 +112,8 @@ export const getPromptContent = async (
 ): Promise<string> => {
   const userPath = path.join(HOME_PROMPTS, fileName);
   const internalPath = path.join(ASSET_PROMPTS, fileName);
+  const userToolUsagePath = path.join(HOME_PROMPTS, "tool-usage.md");
+  const internalToolUsagePath = path.join(ASSET_PROMPTS, "tool-usage.md");
 
   let content: string;
 
@@ -121,6 +123,18 @@ export const getPromptContent = async (
     content = await fs.readFile(internalPath, "utf-8");
   } else {
     throw new Error(`Prompt template not found: ${fileName}.`);
+  }
+
+  if (content.includes("{{TOOL_USAGE}}")) {
+    let toolUsageContent: string;
+    if (await fs.pathExists(userToolUsagePath)) {
+      toolUsageContent = await fs.readFile(userToolUsagePath, "utf-8");
+    } else if (await fs.pathExists(internalToolUsagePath)) {
+      toolUsageContent = await fs.readFile(internalToolUsagePath, "utf-8");
+    } else {
+      throw new Error("tool-usage.md not found in user or internal prompts.");
+    }
+    content = content.replace("{{TOOL_USAGE}}", () => toolUsageContent);
   }
 
   // Only inject into the REPL prompt template

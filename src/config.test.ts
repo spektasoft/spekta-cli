@@ -1,17 +1,10 @@
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bootstrap,
+  getEnv,
   getPromptContent,
   getProviders,
   HOME_DIR,
@@ -20,11 +13,11 @@ import {
   HOME_PROVIDERS_FREE,
   HOME_PROVIDERS_USER,
   HOME_TOOLS,
-  getEnv,
   loadToolDefinitions,
   refreshPaths,
   resetInternalState,
 } from "./config";
+import { generateId } from "./fs-manager";
 import { writeYaml } from "./utils/yaml";
 
 describe("Config & Prompt Resolution", () => {
@@ -363,5 +356,44 @@ xml_example: "<read />"
     const readTool = tools.find((t) => t.name === "read");
 
     expect(readTool?.description).toBe("Custom Override Description");
+  });
+});
+
+describe("getPromptContent placeholder injection", () => {
+  const setupTempPrompt = async (content: string, filename: string) => {
+    const tempDir = path.join(os.tmpdir(), `spekta-test-${generateId()}`);
+    await fs.ensureDir(path.join(tempDir, "prompts"));
+    process.env.SPEKTA_HOME_OVERRIDE = tempDir;
+    refreshPaths();
+    await fs.writeFile(path.join(tempDir, "prompts", filename), content);
+    return tempDir;
+  };
+
+  afterEach(() => {
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+    refreshPaths();
+  });
+
+  it("injects TOOL_USAGE when placeholder exists", async () => {
+    const tempDir = await setupTempPrompt(
+      "Header\n{{TOOL_USAGE}}\nFooter",
+      "test.md",
+    );
+    const result = await getPromptContent("test.md");
+    expect(result).toContain("Tool Instructions: `spekta`");
+    expect(result).not.toContain("{{TOOL_USAGE}}");
+    await fs.remove(tempDir);
+  });
+
+  it("preserves content when TOOL_USAGE placeholder absent", async () => {
+    const tempDir = await setupTempPrompt("Plain content", "plain.md");
+    const result = await getPromptContent("plain.md");
+    expect(result).toBe("Plain content");
+    await fs.remove(tempDir);
+  });
+
+  it("correctly injects into internal architect prompts", async () => {
+    const result = await getPromptContent("plan.md");
+    expect(result).toContain("## Tool Instructions: `spekta`");
   });
 });
