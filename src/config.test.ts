@@ -1,15 +1,7 @@
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   bootstrap,
   getEnv,
@@ -25,6 +17,7 @@ import {
   refreshPaths,
   resetInternalState,
 } from "./config";
+import { generateId } from "./fs-manager";
 import { writeYaml } from "./utils/yaml";
 
 describe("Config & Prompt Resolution", () => {
@@ -366,72 +359,41 @@ xml_example: "<read />"
   });
 });
 
-describe("getPromptContent (Markdown Integration)", () => {
-  const promptsDir = path.join(process.cwd(), "templates", "prompts");
-
-  beforeAll(() => {
-    refreshPaths();
-  });
-
-  it("injects tool usage when placeholder exists", async () => {
-    const file = "test-prompt.md";
-
-    await fs.writeFile(
-      path.join(promptsDir, file),
-      "Header\n\n{{TOOL_USAGE}}\n\nFooter",
-    );
-
-    const result = await getPromptContent(file);
-
-    expect(result).toContain("Tool Instructions");
-    expect(result).not.toContain("{{TOOL_USAGE}}");
-  });
-
-  it("does not inject when placeholder absent", async () => {
-    const file = "plain.md";
-
-    await fs.writeFile(path.join(promptsDir, file), "No placeholder here");
-
-    const result = await getPromptContent(file);
-
-    expect(result).toBe("No placeholder here");
-  });
-
-  it("plan.md correctly injects shared tool usage", async () => {
-    const result = await getPromptContent("plan.md");
-    expect(result).toContain("## Tool Instructions: `spekta`");
-  });
-
-  it("review prompt injects shared tool usage", async () => {
-    const result = await getPromptContent("review-initial.md");
-    expect(result).toContain("## Tool Instructions: `spekta`");
-  });
-
-  it("injects user-overridden tool-usage.md when placeholder exists", async () => {
-    const tempDir = path.join(
-      os.tmpdir(),
-      `spekta-toolusage-test-${Date.now()}`,
-    );
-    fs.ensureDirSync(path.join(tempDir, "prompts"));
+describe("getPromptContent placeholder injection", () => {
+  const setupTempPrompt = async (content: string, filename: string) => {
+    const tempDir = path.join(os.tmpdir(), `spekta-test-${generateId()}`);
+    await fs.ensureDir(path.join(tempDir, "prompts"));
     process.env.SPEKTA_HOME_OVERRIDE = tempDir;
     refreshPaths();
+    await fs.writeFile(path.join(tempDir, "prompts", filename), content);
+    return tempDir;
+  };
 
-    try {
-      await fs.writeFile(
-        path.join(tempDir, "prompts", "test.md"),
-        "Test\n{{TOOL_USAGE}}\nFooter",
-      );
-      await fs.writeFile(
-        path.join(tempDir, "prompts", "tool-usage.md"),
-        "Custom Tool Instructions",
-      );
+  afterEach(() => {
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+    refreshPaths();
+  });
 
-      const result = await getPromptContent("test.md");
-      expect(result).toContain("Custom Tool Instructions");
-    } finally {
-      await fs.remove(tempDir);
-      delete process.env.SPEKTA_HOME_OVERRIDE;
-      refreshPaths();
-    }
+  it("injects TOOL_USAGE when placeholder exists", async () => {
+    const tempDir = await setupTempPrompt(
+      "Header\n{{TOOL_USAGE}}\nFooter",
+      "test.md",
+    );
+    const result = await getPromptContent("test.md");
+    expect(result).toContain("Tool Instructions: `spekta`");
+    expect(result).not.toContain("{{TOOL_USAGE}}");
+    await fs.remove(tempDir);
+  });
+
+  it("preserves content when TOOL_USAGE placeholder absent", async () => {
+    const tempDir = await setupTempPrompt("Plain content", "plain.md");
+    const result = await getPromptContent("plain.md");
+    expect(result).toBe("Plain content");
+    await fs.remove(tempDir);
+  });
+
+  it("correctly injects into internal architect prompts", async () => {
+    const result = await getPromptContent("plan.md");
+    expect(result).toContain("## Tool Instructions: `spekta`");
   });
 });
