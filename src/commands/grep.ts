@@ -15,6 +15,11 @@ interface GrepOptions {
 export async function getGrepContent(options: GrepOptions): Promise<string> {
   const { pattern, path: searchPath = ".", globs, case_insensitive } = options;
 
+  // SECURITY: Reject empty/whitespace patterns to prevent full-codebase scans
+  if (!pattern || pattern.trim() === "") {
+    throw new Error("Pattern cannot be empty or whitespace-only.");
+  }
+
   // Security check
   await validatePathAccess(searchPath);
 
