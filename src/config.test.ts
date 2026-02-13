@@ -383,11 +383,19 @@ describe("getMarkdownPrompt", () => {
       "Header\n\n{{TOOL_USAGE}}\n\nFooter",
     );
 
-    await fs.writeFile(path.join(promptsDir, toolFile), "Injected Tool Usage");
+    const result = await getMarkdownPrompt(file);
+
+    expect(result).toContain("Tool Instructions");
+    expect(result).not.toContain("{{TOOL_USAGE}}");
+  });
+
+  it("does not inject when placeholder absent", async () => {
+    const file = "plain.md";
+
+    await fs.writeFile(path.join(promptsDir, file), "No placeholder here");
 
     const result = await getMarkdownPrompt(file);
 
-    expect(result).toContain("Injected Tool Usage");
-    expect(result).not.toContain("{{TOOL_USAGE}}");
+    expect(result).toBe("No placeholder here");
   });
 });
