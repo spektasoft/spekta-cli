@@ -376,7 +376,6 @@ describe("getMarkdownPrompt", () => {
 
   it("injects tool usage when placeholder exists", async () => {
     const file = "test-prompt.md";
-    const toolFile = "tool-usage.md";
 
     await fs.writeFile(
       path.join(promptsDir, file),
@@ -397,5 +396,20 @@ describe("getMarkdownPrompt", () => {
     const result = await getMarkdownPrompt(file);
 
     expect(result).toBe("No placeholder here");
+  });
+
+  it("plan.md correctly injects shared tool usage", async () => {
+    const result = await getMarkdownPrompt("plan.md");
+    expect(result).toContain("## Tool Instructions: `spekta`");
+  });
+
+  it("runPlan uses markdown loader", async () => {
+    const content = await getMarkdownPrompt("plan.md");
+    expect(content).toContain("## Tool Instructions: `spekta`");
+  });
+
+  it("review prompt injects shared tool usage", async () => {
+    const result = await getMarkdownPrompt("review-initial.md");
+    expect(result).toContain("## Tool Instructions: `spekta`");
   });
 });

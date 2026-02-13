@@ -1,6 +1,6 @@
-import path from "path";
 import fs from "fs-extra";
-import { getEnv, getPromptContent } from "../config";
+import path from "path";
+import { getEnv, getMarkdownPrompt } from "../config";
 import { openEditor } from "../editor-utils";
 import { generateId, getPlansDir } from "../fs-manager";
 
@@ -10,7 +10,7 @@ export async function runPlan() {
     const id = generateId();
     const plansDir = await getPlansDir();
 
-    let template = await getPromptContent("plan.md");
+    let template = await getMarkdownPrompt("plan.md");
     if (!/{{ID}}/.test(template)) {
       throw new Error(
         'Template "plan.md" must contain the placeholder {{ID}}.',

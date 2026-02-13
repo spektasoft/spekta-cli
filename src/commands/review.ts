@@ -1,6 +1,6 @@
 import path from "path";
 import fs from "fs-extra";
-import { getEnv, getIgnorePatterns, getPromptContent } from "../config";
+import { getEnv, getIgnorePatterns, getMarkdownPrompt } from "../config";
 import {
   getGitDiff,
   resolveHash,
@@ -87,7 +87,7 @@ export async function runReview() {
       ? "review-initial.md"
       : "review-validation.md";
 
-    let finalPrompt = (await getPromptContent(templateName)) + "\n\n---\n";
+    let finalPrompt = (await getMarkdownPrompt(templateName)) + "\n\n---\n";
 
     // Inject supplemental context if present
     if (supplementalContext) {
