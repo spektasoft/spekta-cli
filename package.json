@@ -7,7 +7,9 @@
     },
     "scripts": {
         "build": "vite build",
+        "deploy": "npm run build && chmod +x dist/index.js",
         "test": "vitest",
+        "test:json": "vitest --reporter=json --outputFile=./spekta/test-results.json",
         "update": "npx npm-check-updates --interactive --format group"
     },
     "dependencies": {
