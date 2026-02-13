@@ -106,10 +106,14 @@ export const bootstrap = async () => {
   }
 };
 
-export const getMarkdownPrompt = async (fileName: string): Promise<string> => {
+export const getPromptContent = async (
+  fileName: string,
+  toolLoader: () => Promise<ToolDefinition[]> = loadToolDefinitions,
+): Promise<string> => {
   const userPath = path.join(HOME_PROMPTS, fileName);
   const internalPath = path.join(ASSET_PROMPTS, fileName);
-  const toolUsagePath = path.join(ASSET_PROMPTS, "tool-usage.md");
+  const userToolUsagePath = path.join(HOME_PROMPTS, "tool-usage.md");
+  const internalToolUsagePath = path.join(ASSET_PROMPTS, "tool-usage.md");
 
   let content: string;
 
@@ -122,32 +126,15 @@ export const getMarkdownPrompt = async (fileName: string): Promise<string> => {
   }
 
   if (content.includes("{{TOOL_USAGE}}")) {
-    if (!(await fs.pathExists(toolUsagePath))) {
-      throw new Error("tool-usage.md not found in templates/prompts.");
+    let toolUsageContent: string;
+    if (await fs.pathExists(userToolUsagePath)) {
+      toolUsageContent = await fs.readFile(userToolUsagePath, "utf-8");
+    } else if (await fs.pathExists(internalToolUsagePath)) {
+      toolUsageContent = await fs.readFile(internalToolUsagePath, "utf-8");
+    } else {
+      throw new Error("tool-usage.md not found in user or internal prompts.");
     }
-
-    const toolUsage = await fs.readFile(toolUsagePath, "utf-8");
-    content = content.replace("{{TOOL_USAGE}}", toolUsage);
-  }
-
-  return content;
-};
-
-export const getPromptContent = async (
-  fileName: string,
-  toolLoader: () => Promise<ToolDefinition[]> = loadToolDefinitions,
-): Promise<string> => {
-  const userPath = path.join(HOME_PROMPTS, fileName);
-  const internalPath = path.join(ASSET_PROMPTS, fileName);
-
-  let content: string;
-
-  if (await fs.pathExists(userPath)) {
-    content = await fs.readFile(userPath, "utf-8");
-  } else if (await fs.pathExists(internalPath)) {
-    content = await fs.readFile(internalPath, "utf-8");
-  } else {
-    throw new Error(`Prompt template not found: ${fileName}.`);
+    content = content.replace("{{TOOL_USAGE}}", () => toolUsageContent);
   }
 
   // Only inject into the REPL prompt template

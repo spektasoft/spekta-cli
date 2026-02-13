@@ -1,22 +1,22 @@
-import path from "path";
+import { input, select } from "@inquirer/prompts";
 import fs from "fs-extra";
-import { getEnv, getIgnorePatterns, getMarkdownPrompt } from "../config";
+import path from "path";
+import { getEnv, getIgnorePatterns, getPromptContent } from "../config";
+import { openEditor } from "../editor-utils";
+import {
+  getHashesFromReviewFile,
+  getReviewDir,
+  getSafeMetadata,
+  listReviewFolders,
+} from "../fs-manager";
 import {
   getGitDiff,
-  resolveHash,
-  getNearestMerge,
   getInitialCommit,
+  getNearestMerge,
+  resolveHash,
 } from "../git";
-import {
-  getReviewDir,
-  listReviewFolders,
-  getHashesFromReviewFile,
-  getSafeMetadata,
-} from "../fs-manager";
-import { input, select } from "@inquirer/prompts";
-import { searchableSelect } from "../ui";
-import { openEditor } from "../editor-utils";
 import { promptHashRange } from "../git-ui";
+import { searchableSelect } from "../ui";
 import { collectSupplementalContext } from "./review-context";
 
 export async function runReview() {
@@ -87,7 +87,7 @@ export async function runReview() {
       ? "review-initial.md"
       : "review-validation.md";
 
-    let finalPrompt = (await getMarkdownPrompt(templateName)) + "\n\n---\n";
+    let finalPrompt = (await getPromptContent(templateName)) + "\n\n---\n";
 
     // Inject supplemental context if present
     if (supplementalContext) {

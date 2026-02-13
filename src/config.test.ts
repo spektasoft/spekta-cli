@@ -12,6 +12,7 @@ import {
 } from "vitest";
 import {
   bootstrap,
+  getEnv,
   getPromptContent,
   getProviders,
   HOME_DIR,
@@ -20,11 +21,9 @@ import {
   HOME_PROVIDERS_FREE,
   HOME_PROVIDERS_USER,
   HOME_TOOLS,
-  getEnv,
   loadToolDefinitions,
   refreshPaths,
   resetInternalState,
-  getMarkdownPrompt,
 } from "./config";
 import { writeYaml } from "./utils/yaml";
 
@@ -367,7 +366,7 @@ xml_example: "<read />"
   });
 });
 
-describe("getMarkdownPrompt", () => {
+describe("getPromptContent (Markdown Integration)", () => {
   const promptsDir = path.join(process.cwd(), "templates", "prompts");
 
   beforeAll(() => {
@@ -382,7 +381,7 @@ describe("getMarkdownPrompt", () => {
       "Header\n\n{{TOOL_USAGE}}\n\nFooter",
     );
 
-    const result = await getMarkdownPrompt(file);
+    const result = await getPromptContent(file);
 
     expect(result).toContain("Tool Instructions");
     expect(result).not.toContain("{{TOOL_USAGE}}");
@@ -393,23 +392,46 @@ describe("getMarkdownPrompt", () => {
 
     await fs.writeFile(path.join(promptsDir, file), "No placeholder here");
 
-    const result = await getMarkdownPrompt(file);
+    const result = await getPromptContent(file);
 
     expect(result).toBe("No placeholder here");
   });
 
   it("plan.md correctly injects shared tool usage", async () => {
-    const result = await getMarkdownPrompt("plan.md");
+    const result = await getPromptContent("plan.md");
     expect(result).toContain("## Tool Instructions: `spekta`");
-  });
-
-  it("runPlan uses markdown loader", async () => {
-    const content = await getMarkdownPrompt("plan.md");
-    expect(content).toContain("## Tool Instructions: `spekta`");
   });
 
   it("review prompt injects shared tool usage", async () => {
-    const result = await getMarkdownPrompt("review-initial.md");
+    const result = await getPromptContent("review-initial.md");
     expect(result).toContain("## Tool Instructions: `spekta`");
+  });
+
+  it("injects user-overridden tool-usage.md when placeholder exists", async () => {
+    const tempDir = path.join(
+      os.tmpdir(),
+      `spekta-toolusage-test-${Date.now()}`,
+    );
+    fs.ensureDirSync(path.join(tempDir, "prompts"));
+    process.env.SPEKTA_HOME_OVERRIDE = tempDir;
+    refreshPaths();
+
+    try {
+      await fs.writeFile(
+        path.join(tempDir, "prompts", "test.md"),
+        "Test\n{{TOOL_USAGE}}\nFooter",
+      );
+      await fs.writeFile(
+        path.join(tempDir, "prompts", "tool-usage.md"),
+        "Custom Tool Instructions",
+      );
+
+      const result = await getPromptContent("test.md");
+      expect(result).toContain("Custom Tool Instructions");
+    } finally {
+      await fs.remove(tempDir);
+      delete process.env.SPEKTA_HOME_OVERRIDE;
+      refreshPaths();
+    }
   });
 });
