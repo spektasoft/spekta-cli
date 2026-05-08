@@ -6,9 +6,12 @@ import { fileURLToPath } from "url";
 import { Logger } from "./utils/logger";
 import { readYaml } from "./utils/yaml";
 
+export type ProviderType = "openrouter" | "gemini";
+
 export interface Provider {
   name: string;
   model: string;
+  type?: ProviderType; // Absent = treated as "openrouter" for backward compatibility
   config?: Record<string, any>;
 }
 

@@ -14,6 +14,7 @@ import {
   HOME_PROVIDERS_USER,
   HOME_TOOLS,
   loadToolDefinitions,
+  Provider,
   refreshPaths,
   resetInternalState,
 } from "./config";
@@ -395,5 +396,21 @@ describe("getPromptContent placeholder injection", () => {
   it("correctly injects into internal architect prompts", async () => {
     const result = await getPromptContent("plan.md");
     expect(result).toContain("## Tool Instructions: `spekta`");
+  });
+});
+
+describe("Provider interface", () => {
+  it("Provider type field is optional and defaults to undefined", () => {
+    const p: Provider = { name: "Test", model: "some/model" };
+    expect(p.type).toBeUndefined();
+  });
+
+  it("Provider accepts gemini type", () => {
+    const p: Provider = {
+      name: "Gemini",
+      model: "gemini-2.0-flash",
+      type: "gemini",
+    };
+    expect(p.type).toBe("gemini");
   });
 });
