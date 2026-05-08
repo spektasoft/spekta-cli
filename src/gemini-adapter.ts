@@ -74,7 +74,22 @@ export const callGemini = async (
   const generativeModel = getModel(client, model, systemInstruction, config);
   const chat = generativeModel.startChat({ history });
   const result = await chat.sendMessage(lastUserMessage);
-  const text = result.response.text();
+
+  const parts: Array<{ text?: string; thought?: boolean }> =
+    result.response.candidates?.[0]?.content?.parts ?? [];
+
+  let contentText = "";
+
+  for (const part of parts) {
+    if ((part as any).thought === true) {
+      continue;
+    }
+    contentText += part.text ?? "";
+  }
+
+  // Final guard: strip any residual Gemma 4 channel token delimiters
+  // that the SDK may surface as raw text rather than flagged parts.
+  const text = stripGemmaThinkingTokens(contentText).trim();
 
   if (!text) {
     throw new Error("The Gemini provider returned an empty response.");
