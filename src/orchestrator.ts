@@ -1,9 +1,8 @@
 import ora from "ora";
-import { callAI, Message } from "./api";
+import { callAIWithProvider, Message } from "./api";
 import { Provider } from "./config";
 
 interface AiExecutionOptions {
-  apiKey: string | undefined;
   provider: Provider;
   messages: Message[];
   spinnerTitle: string;
@@ -13,20 +12,14 @@ interface AiExecutionOptions {
  * Handles the lifecycle of an AI request with consistent UI feedback.
  */
 export async function executeAiAction(
-  options: AiExecutionOptions
+  options: AiExecutionOptions,
 ): Promise<string> {
-  if (!options.apiKey) {
-    throw new Error("Configuration Error: Missing OPENROUTER_API_KEY");
-  }
-
   const spinner = ora(options.spinnerTitle).start();
-
   try {
-    const result = await callAI(
-      options.apiKey,
-      options.provider.model,
+    const result = await callAIWithProvider(
+      options.provider,
       options.messages,
-      options.provider.config || {}
+      options.provider.config || {},
     );
     spinner.succeed("Generation complete.");
     return result;

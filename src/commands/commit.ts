@@ -1,11 +1,6 @@
 import fs from "fs-extra";
 import { registerCleanup } from "../utils/process";
-import {
-  getEnv,
-  getIgnorePatterns,
-  getPromptContent,
-  getProviders,
-} from "../config";
+import { getIgnorePatterns, getPromptContent, getProviders } from "../config";
 import { processOutput } from "../editor-utils";
 import {
   commitWithFile,
@@ -29,9 +24,8 @@ export async function runCommit() {
   const unregister = registerCleanup(cleanup);
 
   try {
-    const [providersData, env, ignorePatterns] = await Promise.all([
+    const [providersData, ignorePatterns] = await Promise.all([
       getProviders(),
-      getEnv(),
       getIgnorePatterns(),
     ]);
 
@@ -66,7 +60,6 @@ export async function runCommit() {
     }
 
     const result = await executeAiAction({
-      apiKey: env.OPENROUTER_API_KEY,
       provider: selection.provider,
       messages: [
         { role: "system", content: systemPrompt },
