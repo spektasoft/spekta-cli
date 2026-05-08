@@ -4,8 +4,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("@google/generative-ai", () => {
   // Define the generator function, but DON'T execute it here
   const createMockStream = async function* () {
-    yield { text: () => "chunk one" };
-    yield { text: () => " chunk two" };
+    yield {
+      candidates: [{ content: { parts: [{ text: "chunk one" }] } }],
+    };
+    yield {
+      candidates: [{ content: { parts: [{ text: " chunk two" }] } }],
+    };
   };
 
   // Use mockImplementation so the logic runs fresh on every call

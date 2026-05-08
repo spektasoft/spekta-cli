@@ -110,22 +110,47 @@ export const callGeminiStream = async (
         err.name = "AbortError";
         throw err;
       }
-      const text = chunk.text();
-      // Emit a minimal object that satisfies the shape consumed by repl.ts
-      yield {
-        id: "",
-        object: "chat.completion.chunk",
-        created: 0,
-        model,
-        choices: [
-          {
-            index: 0,
-            delta: { role: "assistant", content: text },
-            finish_reason: null,
-            logprobs: null,
-          },
-        ],
-      } as unknown as ChatCompletionChunk;
+
+      const parts: Array<{ text?: string; thought?: boolean }> =
+        chunk.candidates?.[0]?.content?.parts ?? [];
+
+      let contentText = "";
+      const thoughtParts: Array<{ text: string }> = [];
+
+      for (const part of parts) {
+        if ((part as any).thought === true) {
+          if (part.text) {
+            thoughtParts.push({ text: part.text });
+          }
+        } else {
+          contentText += part.text ?? "";
+        }
+      }
+
+      // Yield a chunk only when there is at least one non-empty field to emit.
+      // This guards against emitting empty chunks on candidates with no parts.
+      if (contentText || thoughtParts.length > 0) {
+        yield {
+          id: "",
+          object: "chat.completion.chunk",
+          created: 0,
+          model,
+          choices: [
+            {
+              index: 0,
+              delta: {
+                role: "assistant",
+                content: contentText,
+                ...(thoughtParts.length > 0 && {
+                  reasoning_details: thoughtParts,
+                }),
+              },
+              finish_reason: null,
+              logprobs: null,
+            },
+          ],
+        } as unknown as ChatCompletionChunk;
+      }
     }
   }
 
