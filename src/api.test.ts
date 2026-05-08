@@ -1,6 +1,47 @@
 import OpenAI from "openai";
 import { describe, expect, it, vi } from "vitest";
-import { callAI, callAIStream, Message } from "./api";
+import {
+  callAI,
+  callAIStream,
+  Message,
+  resolveApiKey,
+  callAIWithProvider,
+} from "./api";
+import { Provider } from "./config";
+
+describe("resolveApiKey", () => {
+  it("returns OPENROUTER_API_KEY for openrouter providers", () => {
+    process.env.OPENROUTER_API_KEY = "or-key";
+    const p: Provider = { name: "Test", model: "m", type: "openrouter" };
+    expect(resolveApiKey(p)).toBe("or-key");
+  });
+
+  it("returns OPENROUTER_API_KEY when type is absent", () => {
+    process.env.OPENROUTER_API_KEY = "or-key";
+    const p: Provider = { name: "Test", model: "m" };
+    expect(resolveApiKey(p)).toBe("or-key");
+  });
+
+  it("returns GEMINI_API_KEY for gemini providers", () => {
+    process.env.GEMINI_API_KEY = "gem-key";
+    const p: Provider = {
+      name: "Gemini",
+      model: "gemini-2.0-flash",
+      type: "gemini",
+    };
+    expect(resolveApiKey(p)).toBe("gem-key");
+  });
+
+  it("throws if GEMINI_API_KEY is missing", () => {
+    delete process.env.GEMINI_API_KEY;
+    const p: Provider = {
+      name: "Gemini",
+      model: "gemini-2.0-flash",
+      type: "gemini",
+    };
+    expect(() => resolveApiKey(p)).toThrow("GEMINI_API_KEY");
+  });
+});
 
 describe("callAI", () => {
   it("returns content on successful API call", async () => {
