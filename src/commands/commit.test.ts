@@ -19,9 +19,9 @@ vi.mock("../config");
 vi.mock("../git");
 vi.mock("../ui");
 vi.mock("../orchestrator");
+vi.mock("../utils/fs-utils");
 
 describe("Command: runCommit", () => {
-  vi.mock("../utils/fs-utils");
 
   // Spies for console and process
   const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -41,13 +41,11 @@ describe("Command: runCommit", () => {
     (config.getProviders as Mock).mockResolvedValue({
       providers: [{ name: "test-provider", model: "gpt-4" }],
     });
-    (config.getEnv as Mock).mockResolvedValue({
-      OPENROUTER_API_KEY: "sk-test",
-    });
     (config.getIgnorePatterns as Mock).mockResolvedValue([]);
     (config.getPromptContent as Mock).mockResolvedValue(
       "Commit Template: {{diff}}",
     );
+    (config.getEnv as Mock).mockResolvedValue({});
     (fs.writeFile as unknown as Mock).mockResolvedValue(undefined);
     (vi.mocked(fsUtils.getTempPath) as Mock).mockImplementation((prefix) => {
       return `/mock-tmp/${prefix}-12345.md`;
@@ -106,7 +104,6 @@ describe("Command: runCommit", () => {
     // Assert
     expect(orchestrator.executeAiAction).toHaveBeenCalledWith(
       expect.objectContaining({
-        apiKey: "sk-test",
         provider: expect.objectContaining({ model: "gpt-4" }),
         messages: [
           { role: "system", content: expect.stringContaining("{{diff}}") }, // real prompt from disk

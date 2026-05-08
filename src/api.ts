@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { ChatCompletionChunk } from "openai/resources/chat/completions";
-import { OpenRouterModel } from "./config";
+import { OpenRouterModel, Provider } from "./config";
+import { callGemini, callGeminiStream } from "./gemini-adapter";
 
 // Extension interface for OpenAI streaming chunk with reasoning_details
 export interface ChatCompletionChunkWithReasoning {
@@ -122,5 +123,69 @@ export const callAIStream = async (
       ...config,
     },
     { signal },
+  );
+};
+
+/**
+ * Resolves the correct API key for a given provider type from process.env.
+ * Throws a descriptive error if the required key is absent.
+ */
+export function resolveApiKey(provider: Provider): string {
+  const type = provider.type ?? "openrouter";
+  if (type === "gemini") {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) throw new Error("Configuration Error: Missing GEMINI_API_KEY");
+    return key;
+  }
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) throw new Error("Configuration Error: Missing OPENROUTER_API_KEY");
+  return key;
+}
+
+/**
+ * Provider-aware replacement for callAI.
+ * Routes to the correct backend based on provider.type.
+ */
+export const callAIWithProvider = async (
+  provider: Provider,
+  messages: Message[],
+  config: Record<string, any> = {},
+  clientOverride?: OpenAI,
+): Promise<string> => {
+  const type = provider.type ?? "openrouter";
+  const apiKey = resolveApiKey(provider);
+
+  if (type === "gemini") {
+    return callGemini(apiKey, provider.model, messages, config);
+  }
+
+  return callAI(apiKey, provider.model, messages, config, clientOverride);
+};
+
+/**
+ * Provider-aware replacement for callAIStream.
+ * Routes to the correct backend based on provider.type.
+ */
+export const callAIStreamWithProvider = async (
+  provider: Provider,
+  messages: Message[],
+  config: Record<string, any> = {},
+  clientOverride?: OpenAI,
+  signal?: AbortSignal,
+): Promise<AsyncIterable<ChatCompletionChunk>> => {
+  const type = provider.type ?? "openrouter";
+  const apiKey = resolveApiKey(provider);
+
+  if (type === "gemini") {
+    return callGeminiStream(apiKey, provider.model, messages, config, signal);
+  }
+
+  return callAIStream(
+    apiKey,
+    provider.model,
+    messages,
+    config,
+    clientOverride,
+    signal,
   );
 };

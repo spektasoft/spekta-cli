@@ -1,4 +1,4 @@
-import { getEnv, getProviders, getPromptContent } from "../config";
+import { getProviders, getPromptContent } from "../config";
 import {
   getNearestMerge,
   getInitialCommit,
@@ -13,7 +13,7 @@ import { executeAiAction } from "../orchestrator";
 import { processOutput } from "../editor-utils";
 
 export async function runPr() {
-  const [env, providersData] = await Promise.all([getEnv(), getProviders()]);
+  const [providersData] = await Promise.all([getProviders()]);
 
   const suggestedEnd = await resolveHash("HEAD");
   const nearestMerge = await getNearestMerge();
@@ -37,7 +37,6 @@ export async function runPr() {
   }
 
   const result = await executeAiAction({
-    apiKey: env.OPENROUTER_API_KEY,
     provider: selection.provider!,
     messages: [
       { role: "system", content: systemPrompt },

@@ -1,4 +1,4 @@
-import { getEnv, getPromptContent, getProviders } from "../config";
+import { getPromptContent, getProviders } from "../config";
 import { processOutput } from "../editor-utils";
 import {
   formatCommitMessage,
@@ -120,7 +120,7 @@ export async function runCommitRange() {
     }
 
     // Get providers and prompt for selection
-    const [providersData, env] = await Promise.all([getProviders(), getEnv()]);
+    const [providersData] = await Promise.all([getProviders()]);
 
     const selection = await promptProviderSelection(
       finalPromptPayload,
@@ -143,7 +143,6 @@ export async function runCommitRange() {
 
     // Execute LLM call
     const result = await executeAiAction({
-      apiKey: env.OPENROUTER_API_KEY,
       provider: selection.provider,
       messages: [
         { role: "system", content: systemPrompt },

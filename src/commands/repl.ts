@@ -3,11 +3,11 @@ import boxen from "boxen";
 import chalk from "chalk";
 import ora from "ora";
 import {
-  callAIStream,
+  callAIStreamWithProvider,
   ChatCompletionChunkWithReasoning,
   Message,
 } from "../api";
-import { getEnv, getPromptContent, getProviders } from "../config";
+import { getPromptContent, getProviders } from "../config";
 import { promptReplProviderSelection } from "../ui/repl";
 import { executeTool, parseToolCalls } from "../utils/agent-utils";
 import { Logger } from "../utils/logger";
@@ -17,7 +17,6 @@ import { generateSessionId, saveSession } from "../utils/session-utils";
 export class ReplSession {
   private sessionId: string;
   private messages: Message[] = [];
-  private env: any;
   private provider: any;
   private systemPrompt: string = "";
   private pendingToolResults: string = "";
@@ -33,10 +32,8 @@ export class ReplSession {
   }
 
   public async initialize() {
-    this.env = await getEnv();
-    if (!this.env.OPENROUTER_API_KEY) {
-      throw new Error("OPENROUTER_API_KEY is missing.");
-    }
+    // Key validation is now deferred to resolveApiKey() at call time,
+    // which provides a provider-specific error message.
 
     const { providers } = await getProviders();
     this.systemPrompt = await getPromptContent("repl.md");
@@ -155,9 +152,8 @@ export class ReplSession {
       this.currentAbortController = controller;
 
       try {
-        const stream = await callAIStream(
-          this.env.OPENROUTER_API_KEY,
-          this.provider.model,
+        const stream = await callAIStreamWithProvider(
+          this.provider,
           this.messages,
           this.provider.config ?? {},
           undefined,
