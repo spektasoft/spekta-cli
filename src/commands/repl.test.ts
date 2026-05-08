@@ -1,6 +1,6 @@
 import { expect, it, vi, beforeEach } from "vitest";
 import { runRepl, ReplSession } from "./repl";
-import { callAIStream } from "../api";
+import { callAIStreamWithProvider } from "../api";
 import { getUserMessage } from "../utils/multiline-input";
 import { parseToolCalls, executeTool } from "../utils/agent-utils";
 import ora from "ora";
@@ -55,7 +55,7 @@ it("handles immediate interruption before tokens", async () => {
     .mockResolvedValueOnce("exit");
 
   // @ts-ignore
-  vi.mocked(callAIStream).mockImplementation(async function* () {
+  vi.mocked(callAIStreamWithProvider).mockImplementation(async function* () {
     const error = new Error("Aborted");
     error.name = "AbortError";
     throw error;
@@ -85,7 +85,7 @@ it("automatically triggers AI response after successful tool execution", async (
     },
   };
 
-  vi.mocked(callAIStream)
+  vi.mocked(callAIStreamWithProvider)
     .mockResolvedValueOnce(stream1 as any)
     .mockResolvedValueOnce(stream2 as any);
 
@@ -100,7 +100,7 @@ it("automatically triggers AI response after successful tool execution", async (
   const session = new ReplSession();
   await session.start();
 
-  expect(callAIStream).toHaveBeenCalledTimes(2);
+  expect(callAIStreamWithProvider).toHaveBeenCalledTimes(2);
   expect(executeTool).toHaveBeenCalled();
 });
 
@@ -114,12 +114,12 @@ it("processes assistant turn correctly", async () => {
       yield { choices: [{ delta: { content: "AI Response" } }] };
     },
   };
-  vi.mocked(callAIStream).mockResolvedValue(mockStream as any);
+  vi.mocked(callAIStreamWithProvider).mockResolvedValue(mockStream as any);
 
   const session = new ReplSession();
   await session.start();
 
-  expect(callAIStream).toHaveBeenCalled();
+  expect(callAIStreamWithProvider).toHaveBeenCalled();
   const oraMock = vi.mocked(ora);
   expect(oraMock).toHaveBeenCalledWith("Calling assistant...\n");
 });
@@ -134,7 +134,7 @@ it("exits loop when user types exit", async () => {
       yield { choices: [{ delta: { content: "AI Response" } }] };
     },
   };
-  vi.mocked(callAIStream).mockResolvedValue(mockStream as any);
+  vi.mocked(callAIStreamWithProvider).mockResolvedValue(mockStream as any);
 
   await runRepl();
 
@@ -165,16 +165,6 @@ it("handles pending tool results on exit", async () => {
   const messagesArg = lastCall[1];
   const lastMessage = messagesArg[messagesArg.length - 1];
   expect(lastMessage.content).toContain("Previous Tool Result");
-});
-
-it("ReplSession throws when API key is missing", async () => {
-  const { getEnv } = await import("../config");
-  vi.mocked(getEnv).mockResolvedValueOnce({ OPENROUTER_API_KEY: "" });
-
-  const session = new ReplSession();
-  await expect(session.initialize()).rejects.toThrow(
-    "OPENROUTER_API_KEY is missing",
-  );
 });
 
 it("runRepl initializes session successfully", async () => {
@@ -227,11 +217,12 @@ it("removes interruption marker only from the end of the string", () => {
 
 it("resets buffers when a non-abort error occurs during streaming", async () => {
   const session = new ReplSession();
-  (session as any).env = { OPENROUTER_API_KEY: "test" };
   (session as any).provider = { model: "test" };
 
   // Mock a failing stream
-  vi.mocked(callAIStream).mockRejectedValueOnce(new Error("Network Error"));
+  vi.mocked(callAIStreamWithProvider).mockRejectedValueOnce(
+    new Error("Network Error"),
+  );
   // Mock the retry choice to exit
   const { select } = await import("@inquirer/prompts");
   vi.mocked(select).mockResolvedValueOnce("exit");
@@ -269,7 +260,7 @@ it("prints a newline after the stream finishes successfully", async () => {
       yield { choices: [{ delta: { content: "AI Response" } }] };
     },
   };
-  vi.mocked(callAIStream).mockResolvedValue(mockStream as any);
+  vi.mocked(callAIStreamWithProvider).mockResolvedValue(mockStream as any);
 
   // Spy on stdout.write to capture what gets written
   const writeSpy = vi.spyOn(process.stdout, "write");
