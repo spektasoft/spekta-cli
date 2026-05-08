@@ -142,6 +142,12 @@ export const callGeminiStream = async (
         }
       }
 
+      // Guard against raw Gemma 4 channel token delimiters in streamed chunks.
+      // Note: this sanitiser is safe to apply per-chunk because the delimiters
+      // are complete tokens and will not be split across chunk boundaries by
+      // the Gemini streaming API.
+      contentText = stripGemmaThinkingTokens(contentText);
+
       // Yield a chunk only when there is at least one non-empty field to emit.
       // This guards against emitting empty chunks on candidates with no parts.
       if (contentText || thoughtParts.length > 0) {
@@ -184,7 +190,7 @@ export const callGeminiStream = async (
  * multi-line thought blocks are matched correctly.
  */
 export function stripGemmaThinkingTokens(text: string): string {
-  return text.replace(/<\|channel>thought\n[\s\S]*?<channel\|>/g, "").trim();
+  return text.replace(/<\|channel>thought\n[\s\S]*?<channel\|>/g, "");
 }
 
 export const _clearClientCache = () => clientMap.clear();

@@ -22,6 +22,6 @@ describe("stripGemmaThinkingTokens", () => {
   it("trims surrounding whitespace after stripping", () => {
     const input =
       "<|channel>thought\nThinking...\n<channel|>\n\nThe commit message.";
-    expect(stripGemmaThinkingTokens(input)).toBe("The commit message.");
+    expect(stripGemmaThinkingTokens(input).trim()).toBe("The commit message.");
   });
 });

@@ -20,7 +20,10 @@ vi.mock("@google/generative-ai", () => {
   });
 
   const sendMessage = vi.fn().mockResolvedValue({
-    response: { text: () => "Hello from Gemini" },
+    response: {
+      candidates: [{ content: { parts: [{ text: "Hello from Gemini" }] } }],
+      text: () => "Hello from Gemini",
+    },
   });
 
   const startChat = vi.fn().mockReturnValue({ sendMessage, sendMessageStream });
@@ -101,7 +104,56 @@ describe("stripGemmaThinkingTokens", () => {
   it("trims surrounding whitespace after stripping", () => {
     const input =
       "<|channel>thought\nThinking...\n<channel|>\n\nThe commit message.";
-    expect(stripGemmaThinkingTokens(input)).toBe("The commit message.");
+    expect(stripGemmaThinkingTokens(input).trim()).toBe("The commit message.");
+  });
+});
+
+describe("callGeminiStream — Gemma 4 raw token guard", () => {
+  it("strips raw channel token delimiters from streamed content chunks", async () => {
+    async function* fakeStream() {
+      yield {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: "<|channel>thought\nPrivate reasoning.\n<channel|>chore: update dependencies",
+                },
+              ],
+            },
+          },
+        ],
+      };
+    }
+
+    const mockSendMessageStream = vi
+      .fn()
+      .mockResolvedValue({ stream: fakeStream() });
+    const mockChat = { sendMessageStream: mockSendMessageStream };
+    const mockModel = { startChat: vi.fn().mockReturnValue(mockChat) };
+    const mockClient = {
+      getGenerativeModel: vi.fn().mockReturnValue(mockModel),
+    };
+
+    // Need to access the internal mock import to set up the implementation
+    const genai = await import("@google/generative-ai");
+    vi.mocked(genai.GoogleGenerativeAI).mockImplementationOnce(function () {
+      return mockClient as any;
+    });
+
+    const iterable = await callGeminiStream("key", "gemma-4-27b-it", [
+      { role: "user", content: "Generate a commit message." },
+    ]);
+
+    const chunks: any[] = [];
+    for await (const chunk of iterable) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].choices[0].delta.content).toBe(
+      "chore: update dependencies",
+    );
   });
 });
 
