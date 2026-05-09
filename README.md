@@ -12,6 +12,13 @@ AI-powered CLI tools.
 
 Run `spekta` and follow the prompts.
 
+## Environment Variables
+
+You can configure the following environment variables to customize `spekta`'s behavior:
+
+- `SPEKTA_COMPACT_THRESHOLD`: The token threshold above which content is compacted. Defaults to `500`.
+- `SPEKTA_READ_TOKEN_LIMIT`: The maximum number of tokens to read from a file. Defaults to `1000`.
+
 ## Configuring Providers
 
 Providers are defined in ~/.spekta/providers.yaml.
