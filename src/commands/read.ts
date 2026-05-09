@@ -47,7 +47,11 @@ export async function getReadContent(
 
     // Compaction applies ONLY to full files (no range), regardless of mode
     if (!isRangeRequest) {
-      if (content.length > compactThreshold) {
+      const shouldTryCompact = interactive
+        ? true // always attempt in interactive mode
+        : getTokenCount(content) > compactThreshold; // gate only in non-interactive
+
+      if (shouldTryCompact) {
         const result = compactFile(req.path, content, startLineOffset);
         if (result.isCompacted) {
           content = result.content;
