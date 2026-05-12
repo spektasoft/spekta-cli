@@ -48,3 +48,27 @@ providers:
     config:
       temperature: 0.7
 ```
+
+## Configuration
+
+### .spektaignore
+
+Spekta respects a custom ignore file `.spektaignore`. This file uses the same syntax as `.gitignore`.
+
+#### Location & Priority
+
+1. **Global:** `~/.spekta/.spektaignore` (Created automatically on first run)
+2. **Workspace:** `./.spektaignore`
+
+Patterns are cumulative. Workspace patterns take precedence over Global patterns.
+
+#### Whitelisting / Overriding Git
+
+If a file is ignored by `.gitignore` but you want Spekta to have access to it, you can whitelist it using the `!` prefix in your `.spektaignore`:
+
+```text
+# .spektaignore
+!node_modules/my-important-config/
+```
+
+This will allow Spekta tools (read, grep, etc.) to access the path even if it remains ignored by Git.
