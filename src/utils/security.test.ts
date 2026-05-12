@@ -18,6 +18,7 @@ import {
   validateParentDirForCreate,
   validatePathAccess,
   validatePathAccessForWrite,
+  isWhitelisted,
 } from "./security";
 
 // 1. Mock fs-extra with proper return types
@@ -48,6 +49,45 @@ vi.mock("execa", () => ({
 vi.mock("../config", () => ({
   getIgnorePatterns: vi.fn(),
 }));
+
+describe("isWhitelisted", () => {
+  it("should return false when no patterns are provided", () => {
+    expect(isWhitelisted("src/index.ts", [])).toBe(false);
+  });
+
+  it("should return false when no negation patterns are present", () => {
+    expect(isWhitelisted("src/index.ts", ["node_modules/", "dist/"])).toBe(
+      false,
+    );
+  });
+
+  it("should return true for exact match in whitelist", () => {
+    expect(
+      isWhitelisted("src/ignored-but-allowed.ts", [
+        "!src/ignored-but-allowed.ts",
+      ]),
+    ).toBe(true);
+  });
+
+  it("should return true for directory match in whitelist", () => {
+    expect(
+      isWhitelisted("src/allowed-dir/file.ts", ["!src/allowed-dir/"]),
+    ).toBe(true);
+  });
+
+  it("should return false for paths not matching any whitelist pattern", () => {
+    expect(isWhitelisted("src/still-ignored.ts", ["!src/allowed-dir/"])).toBe(
+      false,
+    );
+  });
+
+  it("should handle multiple whitelist patterns", () => {
+    const patterns = ["!src/allowed-dir/", "!src/special.ts"];
+    expect(isWhitelisted("src/allowed-dir/file.ts", patterns)).toBe(true);
+    expect(isWhitelisted("src/special.ts", patterns)).toBe(true);
+    expect(isWhitelisted("src/other.ts", patterns)).toBe(false);
+  });
+});
 
 describe("Security Validation", () => {
   beforeEach(() => {
@@ -136,10 +176,26 @@ describe("Security Validation", () => {
   it("should deny access to files ignored by git", async () => {
     // When git check-ignore succeeds (exitCode 0), it means the file IS ignored
     vi.mocked(execa).mockResolvedValue({ stdout: "ignored.txt" } as any);
+    vi.mocked(getIgnorePatterns).mockResolvedValue([]);
 
     await expect(validatePathAccess("ignored.txt")).rejects.toThrow(
       "Access Denied: ignored.txt is ignored by git.",
     );
+  });
+
+  it("should allow access to git-ignored files if whitelisted in .spektaignore", async () => {
+    // File is ignored by git
+    vi.mocked(execa).mockResolvedValue({ stdout: "git-ignored.txt" } as any);
+    // File is explicitly whitelisted (negation pattern)
+    vi.mocked(getIgnorePatterns).mockResolvedValue(["!git-ignored.txt"]);
+    // Mock stat to ensure file exists
+    mockStat.mockResolvedValue({
+      size: 0,
+      isFile: () => true,
+      isDirectory: () => false,
+    } as any);
+
+    await expect(validatePathAccess("git-ignored.txt")).resolves.not.toThrow();
   });
 
   it("rejects files larger than 10MB", async () => {
