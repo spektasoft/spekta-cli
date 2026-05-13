@@ -18,6 +18,7 @@ import {
   Provider,
   refreshPaths,
   resetInternalState,
+  HOME_DEFAULT_IGNORE,
 } from "./config";
 import { generateId } from "./fs-manager";
 import { writeYaml } from "./utils/yaml";
@@ -478,5 +479,10 @@ describe("getIgnorePatterns", () => {
 
     const patterns = await getIgnorePatterns();
     expect(patterns).toEqual([]);
+  });
+
+  it("should define the managed default ignore path correctly", () => {
+    refreshPaths();
+    expect(HOME_DEFAULT_IGNORE).toContain(".spektadefaultignore");
   });
 });

@@ -53,14 +53,13 @@ providers:
 
 ### .spektaignore
 
-Spekta respects a custom ignore file `.spektaignore`. This file uses the same syntax as `.gitignore`.
+Spekta respects a custom ignore hierarchy. Patterns are cumulative and follow this priority (bottom takes precedence):
 
-#### Location & Priority
+1. **Managed Defaults:** `~/.spekta/.spektadefaultignore` (Automatically updated by Spekta)
+2. **Global User:** `~/.spekta/.spektaignore` (Your personal global defaults)
+3. **Workspace:** `./.spektaignore` (Project-specific overrides)
 
-1. **Global:** `~/.spekta/.spektaignore` (Created automatically on first run)
-2. **Workspace:** `./.spektaignore`
-
-Patterns are cumulative. Workspace patterns take precedence over Global patterns.
+**Note:** Do not edit `.spektadefaultignore` directly as it is overwritten on every run. Use the Global User or Workspace files instead.
 
 #### Whitelisting / Overriding Git
 

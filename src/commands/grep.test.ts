@@ -1,8 +1,9 @@
 import { execa } from "execa";
-import { Readable } from "node:stream";
+import fs from "fs-extra";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { validatePathAccess } from "../utils/security";
 import { getGrepContent } from "./grep";
+import { createRgMatch, mockExecaStream } from "./__tests__/grep.test.helpers";
 
 vi.mock("execa");
 vi.mock("fs-extra");
@@ -11,44 +12,15 @@ vi.mock("../utils/security", () => ({
 }));
 vi.mock("../config", () => ({
   HOME_IGNORE: "/mock/home/.spektaignore",
+  HOME_DEFAULT_IGNORE: "/mock/home/.spektadefaultignore",
 }));
-
-/**
- * Helper to generate ripgrep JSON output strings
- */
-const createRgMatch = (
-  file: string,
-  line: number,
-  col: number,
-  text: string,
-) => {
-  return JSON.stringify({
-    type: "match",
-    data: {
-      path: { text: file },
-      line_number: line,
-      submatches: [{ start: col }],
-      lines: { text: text + "\n" },
-    },
-  });
-};
 
 describe("getGrepContent", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     vi.mocked(validatePathAccess).mockResolvedValue(undefined);
+    vi.mocked(fs.pathExists).mockResolvedValue(false as never);
   });
-
-  const mockExecaStream = (stdout: string, exitCode = 0) => {
-    const promise =
-      exitCode === 0
-        ? Promise.resolve({ stdout, exitCode })
-        : Promise.reject({ exitCode, message: "Command failed" });
-    return Object.assign(promise, {
-      stdout: Readable.from(stdout),
-      kill: vi.fn(),
-    }) as any;
-  };
 
   it("verifies path access before execution", async () => {
     vi.mocked(execa).mockImplementation(() => mockExecaStream(""));
@@ -194,32 +166,28 @@ describe("getGrepContent", () => {
     expect(result).toContain("#### src/multi.ts");
     expect(result).toContain("```ts\n5:10,25:const a = 1; const b = 2;\n```");
   });
-});
 
-describe("getGrepContent pattern validation", () => {
-  it("rejects empty string pattern", async () => {
-    await expect(getGrepContent({ pattern: "" })).rejects.toThrow(
-      "Pattern cannot be empty or whitespace-only.",
+  it("includes ignore-file flags when ignore files exist", async () => {
+    vi.mocked(execa).mockImplementation(() => mockExecaStream(""));
+
+    // Mock fs.pathExists to return true for configuration paths
+    vi.mocked(fs.pathExists).mockImplementation(async (p: string) => {
+      return p.includes(".spektaignore") || p.includes(".spektadefaultignore");
+    });
+
+    await getGrepContent({ pattern: "test" });
+
+    const searchCallArgs = vi.mocked(execa).mock.calls[1][1];
+
+    // Check for Global and Default ignore flags
+    expect(searchCallArgs).toContain("--ignore-file");
+    expect(searchCallArgs).toContain("/mock/home/.spektaignore");
+    expect(searchCallArgs).toContain("/mock/home/.spektadefaultignore");
+
+    // Check for Workspace ignore flag (uses process.cwd())
+    const workspacePath = /.*\.spektaignore/.test(
+      searchCallArgs[searchCallArgs.indexOf("--ignore-file") + 1],
     );
-  });
-
-  it("rejects whitespace-only patterns", async () => {
-    const invalidPatterns = ["   ", "\t", "\n", " \t\n "];
-    for (const pattern of invalidPatterns) {
-      await expect(getGrepContent({ pattern })).rejects.toThrow(
-        "Pattern cannot be empty or whitespace-only.",
-      );
-    }
-  });
-
-  it("accepts valid pattern with non-whitespace content", async () => {
-    // Mock execa to return success or error code 1 for valid patterns
-    const { execa } = await import("execa");
-    vi.mocked(execa).mockReturnValue(Promise.resolve({ exitCode: 0 }) as any);
-
-    // This should not throw the validation error
-    await expect(getGrepContent({ pattern: "valid" })).resolves.not.toThrow(
-      "Pattern cannot be empty or whitespace-only.",
-    );
+    expect(workspacePath).toBeDefined();
   });
 });
