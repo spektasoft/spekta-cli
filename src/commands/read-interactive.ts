@@ -7,26 +7,43 @@ import { getEnv, getIgnorePatterns } from "../config";
 import { openEditor } from "../editor-utils";
 import { NAV_BACK, isCancel } from "../ui";
 import { FileRequest, LineRange } from "../utils/read-utils";
-import { RESTRICTED_FILES } from "../utils/security";
+import { RESTRICTED_FILES, isWhitelisted } from "../utils/security";
 import { runRead } from "./read";
 
 export async function runReadInteractive() {
-  const { stdout } = await execa("git", [
+  // 1. Get standard files (tracked + untracked/non-ignored)
+  const { stdout: stdOut } = await execa("git", [
     "ls-files",
     "--cached",
     "--others",
     "--exclude-standard",
   ]);
-  const allFiles = stdout.split("\n").filter((f) => f.trim() !== "");
+  const normalFiles = stdOut.split("\n").filter((f) => f.trim() !== "");
 
-  const spektaIgnores = await getIgnorePatterns();
-  const ig = ignore().add(spektaIgnores);
+  // 2. Get ignored files
+  const { stdout: ignOut } = await execa("git", [
+    "ls-files",
+    "--others",
+    "--ignored",
+    "--exclude-standard",
+  ]);
+  const ignoredFiles = ignOut.split("\n").filter((f) => f.trim() !== "");
 
-  // Filter files by gitignore, spektaignore, and restricted system files
-  const files = allFiles.filter((f) => {
-    const isIgnored = ig.ignores(f);
+  const spektaPatterns = await getIgnorePatterns();
+  const ig = ignore().add(spektaPatterns);
+
+  // 3. Filter and Merge
+  const whitelistedIgnored = ignoredFiles.filter((f) =>
+    isWhitelisted(f, spektaPatterns),
+  );
+  const allPotentialFiles = [
+    ...new Set([...normalFiles, ...whitelistedIgnored]),
+  ];
+
+  const files = allPotentialFiles.filter((f) => {
+    const isSpektaIgnored = ig.ignores(f);
     const isRestricted = RESTRICTED_FILES.includes(path.basename(f));
-    return !isIgnored && !isRestricted;
+    return !isSpektaIgnored && !isRestricted;
   });
 
   console.log("\nInteractive File Reader");

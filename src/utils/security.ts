@@ -31,6 +31,21 @@ export async function findExistingAncestor(
   return currentPath;
 }
 
+/**
+ * Determines if a path is explicitly whitelisted by negation patterns (!)
+ * in the spektaignore configuration.
+ */
+export const isWhitelisted = (path: string, patterns: string[]): boolean => {
+  const whitelistPatterns = patterns
+    .filter((p) => p.startsWith("!"))
+    .map((p) => p.slice(1));
+
+  if (whitelistPatterns.length === 0) return false;
+
+  const ig = ignore().add(whitelistPatterns);
+  return ig.ignores(path);
+};
+
 export const validatePathAccess = async (targetPath: string): Promise<void> => {
   const absolutePath = path.resolve(targetPath);
   const fileName = path.basename(absolutePath);
@@ -55,13 +70,15 @@ export const validatePathAccess = async (targetPath: string): Promise<void> => {
     // Spektaignore Check
     const spektaIgnores = await getIgnorePatterns();
     const ig = ignore().add(spektaIgnores);
+
+    // 1. Hard Spekta Block
     if (ig.ignores(displayPath)) {
       throw new Error(
         `Access Denied: ${targetPath} is ignored by .spektaignore.`,
       );
     }
 
-    // Gitignore Check
+    // 2. Git Check with Spekta Whitelist Bypass
     let isGitIgnored = false;
     try {
       // git check-ignore returns exitCode 0 if the file IS ignored.
@@ -73,7 +90,10 @@ export const validatePathAccess = async (targetPath: string): Promise<void> => {
     }
 
     if (isGitIgnored) {
-      throw new Error(`Access Denied: ${targetPath} is ignored by git.`);
+      // Bypass if whitelisted
+      if (!isWhitelisted(displayPath, spektaIgnores)) {
+        throw new Error(`Access Denied: ${targetPath} is ignored by git.`);
+      }
     }
   }
 
@@ -128,7 +148,7 @@ export const validatePathAccessForWrite = async (
     );
   }
 
-  // 4. Gitignore Check (for the target file path, even though it doesn't exist yet)
+  // 4. Gitignore Check with Spekta Whitelist Bypass
   let isGitIgnored = false;
   try {
     // git check-ignore returns exitCode 0 if the file WOULD BE ignored.
@@ -139,7 +159,10 @@ export const validatePathAccessForWrite = async (
   }
 
   if (isGitIgnored) {
-    throw new Error(`Access Denied: ${targetPath} would be ignored by git.`);
+    // Bypass if whitelisted
+    if (!isWhitelisted(displayPath, spektaIgnores)) {
+      throw new Error(`Access Denied: ${targetPath} would be ignored by git.`);
+    }
   }
 
   // Note: File size check is intentionally omitted since file doesn't exist

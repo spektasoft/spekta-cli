@@ -41,6 +41,11 @@ const getAssetRoot = () => {
 const ASSET_ROOT = getAssetRoot();
 const ASSET_PROMPTS = path.join(ASSET_ROOT, "templates", "prompts");
 const ASSET_TOOLS = path.join(ASSET_ROOT, "templates", "tools");
+const ASSET_DEFAULT_IGNORE = path.join(
+  ASSET_ROOT,
+  "templates",
+  "default.ignore",
+);
 
 interface ProvidersConfig {
   providers: Provider[];
@@ -64,11 +69,13 @@ export let HOME_DIR: string;
 export let HOME_PROVIDERS_USER: string;
 export let HOME_PROVIDERS_FREE: string;
 export let HOME_PROMPTS: string;
+export let HOME_DEFAULT_IGNORE: string;
 export let HOME_IGNORE: string;
 export let HOME_TOOLS: string;
 
 export const refreshPaths = () => {
   HOME_DIR = GET_HOME_DIR();
+  HOME_DEFAULT_IGNORE = path.join(HOME_DIR, ".spektadefaultignore");
   HOME_PROVIDERS_USER = path.join(HOME_DIR, "providers.yaml");
   HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.yaml");
   HOME_PROMPTS = path.join(HOME_DIR, "prompts");
@@ -94,18 +101,21 @@ export const bootstrap = async () => {
     );
   }
 
+  // Synchronize Managed Defaults
+  if (await fs.pathExists(ASSET_DEFAULT_IGNORE)) {
+    const managedPatterns = await fs.readFile(ASSET_DEFAULT_IGNORE, "utf-8");
+    await fs.writeFile(HOME_DEFAULT_IGNORE, managedPatterns);
+  }
+
+  // Initialize User Global Ignore if missing
   if (!(await fs.pathExists(HOME_IGNORE))) {
-    const defaultIgnores = [
-      "package-lock.json",
-      "yarn.lock",
-      "pnpm-lock.yaml",
-      "composer.lock",
-      "Gemfile.lock",
-      "Cargo.lock",
-      "mix.lock",
+    const userIgnoreTemplate = [
+      "# Spekta User Global Ignore",
+      "# Patterns here apply to all projects.",
+      "",
     ].join("\n");
-    await fs.writeFile(HOME_IGNORE, defaultIgnores);
-    console.log("Created default .spektaignore file");
+    await fs.writeFile(HOME_IGNORE, userIgnoreTemplate);
+    console.log("Created user global .spektaignore file");
   }
 };
 
@@ -232,19 +242,36 @@ export function getCompactThreshold(): number {
   return parsed;
 }
 
-export const getIgnorePatterns = async (): Promise<string[]> => {
-  const workspaceIgnore = path.join(process.cwd(), ".spektaignore");
-  const targetFile = (await fs.pathExists(workspaceIgnore))
-    ? workspaceIgnore
-    : HOME_IGNORE;
-
-  if (!(await fs.pathExists(targetFile))) return [];
-
-  const content = await fs.readFile(targetFile, "utf-8");
+const parseIgnoreContent = (content: string): string[] => {
   return content
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line && !line.startsWith("#"));
+};
+
+export const getIgnorePatterns = async (): Promise<string[]> => {
+  const patterns: string[] = [];
+
+  // 1. Managed Defaults
+  if (await fs.pathExists(HOME_DEFAULT_IGNORE)) {
+    const managedContent = await fs.readFile(HOME_DEFAULT_IGNORE, "utf-8");
+    patterns.push(...parseIgnoreContent(managedContent));
+  }
+
+  // 2. User Global
+  if (await fs.pathExists(HOME_IGNORE)) {
+    const homeContent = await fs.readFile(HOME_IGNORE, "utf-8");
+    patterns.push(...parseIgnoreContent(homeContent));
+  }
+
+  // 3. Workspace
+  const workspaceIgnore = path.join(process.cwd(), ".spektaignore");
+  if (await fs.pathExists(workspaceIgnore)) {
+    const workspaceContent = await fs.readFile(workspaceIgnore, "utf-8");
+    patterns.push(...parseIgnoreContent(workspaceContent));
+  }
+
+  return patterns;
 };
 
 export const getProviders = async (): Promise<ProvidersConfig> => {

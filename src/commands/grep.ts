@@ -1,7 +1,8 @@
 import { execa } from "execa";
 import fs from "fs-extra";
+import path from "node:path";
 import readline from "node:readline";
-import { HOME_IGNORE } from "../config";
+import { HOME_DEFAULT_IGNORE, HOME_IGNORE } from "../config";
 import { Logger } from "../utils/logger";
 import { validatePathAccess } from "../utils/security";
 
@@ -50,7 +51,18 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
   }
 
   if (globs) args.push("-g", globs);
-  if (await fs.pathExists(HOME_IGNORE)) args.push("--ignore-file", HOME_IGNORE);
+  if (await fs.pathExists(HOME_DEFAULT_IGNORE)) {
+    args.push("--ignore-file", HOME_DEFAULT_IGNORE);
+  }
+  if (await fs.pathExists(HOME_IGNORE)) {
+    args.push("--ignore-file", HOME_IGNORE);
+  }
+
+  // Add Workspace Ignore (takes priority if both exist)
+  const workspaceIgnore = path.join(process.cwd(), ".spektaignore");
+  if (await fs.pathExists(workspaceIgnore)) {
+    args.push("--ignore-file", workspaceIgnore);
+  }
 
   const child = execa("rg", args);
   const resultsByFile: Record<string, string[]> = {};
