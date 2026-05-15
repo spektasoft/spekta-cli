@@ -3,7 +3,7 @@ import fs from "fs-extra";
 import autocomplete from "inquirer-autocomplete-standalone"; // Added
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
-import * as fsManager from "../fs-manager";
+import * as fsManager from "../fs/fs-manager";
 import * as git from "../git/git";
 import * as gitUi from "../git/git-ui";
 import { runReview } from "./review";
@@ -14,7 +14,7 @@ vi.mock("@inquirer/prompts");
 vi.mock("inquirer-autocomplete-standalone"); // Added
 vi.mock("../core/config");
 vi.mock("../git/git");
-vi.mock("../fs-manager");
+vi.mock("../fs/fs-manager");
 vi.mock("../git/git-ui");
 vi.mock("execa");
 vi.mock("./review-context");

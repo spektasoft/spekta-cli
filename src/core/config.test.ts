@@ -20,7 +20,7 @@ import {
   resetInternalState,
   HOME_DEFAULT_IGNORE,
 } from "./config";
-import { generateId } from "../fs-manager";
+import { generateId } from "../fs/fs-manager";
 import { writeYaml } from "../utils/yaml";
 
 describe("Config & Prompt Resolution", () => {

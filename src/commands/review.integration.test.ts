@@ -92,7 +92,7 @@ describe("collectSupplementalContext integration", () => {
 
     // Mock the getPlansDir function
     const mockGetPlansDir = vi.fn().mockResolvedValue(testPlansDir);
-    vi.doMock("../fs-manager", () => ({
+    vi.doMock("../fs/fs-manager", () => ({
       getPlansDir: mockGetPlansDir,
     }));
 
@@ -217,7 +217,7 @@ describe("review command prompt integrity", () => {
     await fs.writeFile(testPlanPath, "# Test Plan\n\nTest content.");
 
     const mockGetPlansDir = vi.fn().mockResolvedValue(testPlansDir);
-    vi.doMock("../fs-manager", () => ({
+    vi.doMock("../fs/fs-manager", () => ({
       getPlansDir: mockGetPlansDir,
     }));
 

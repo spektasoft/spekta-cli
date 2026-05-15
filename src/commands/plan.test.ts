@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runPlan } from "./plan";
-import * as fsManager from "../fs-manager";
+import * as fsManager from "../fs/fs-manager";
 import * as config from "../core/config";
 
 vi.mock("../core/config");
-vi.mock("../fs-manager");
+vi.mock("../fs/fs-manager");
 vi.mock("fs-extra");
 vi.mock("execa");
 

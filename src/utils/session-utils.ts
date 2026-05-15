@@ -1,7 +1,7 @@
 import fs from "fs-extra";
 import path from "path";
 import { Message } from "../api/api";
-import { generateId, getSessionsPath } from "../fs-manager";
+import { generateId, getSessionsPath } from "../fs/fs-manager";
 
 export const generateSessionId = generateId;
 

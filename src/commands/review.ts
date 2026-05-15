@@ -8,7 +8,7 @@ import {
   getReviewDir,
   getSafeMetadata,
   listReviewFolders,
-} from "../fs-manager";
+} from "../fs/fs-manager";
 import {
   getGitDiff,
   getInitialCommit,

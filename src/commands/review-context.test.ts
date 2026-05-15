@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { collectSupplementalContext } from "./review-context";
 import fs from "fs-extra";
 import * as prompts from "@inquirer/prompts";
-import * as fsManager from "../fs-manager";
+import * as fsManager from "../fs/fs-manager";
 import * as ui from "../ui/ui";
 
 vi.mock("fs-extra");
 vi.mock("@inquirer/prompts");
-vi.mock("../fs-manager");
+vi.mock("../fs/fs-manager");
 vi.mock("../ui");
 
 describe("collectSupplementalContext", () => {

@@ -8,10 +8,10 @@ import {
   listSessions,
   generateSessionId,
 } from "./session-utils";
-import { getSessionsPath } from "../fs-manager";
+import { getSessionsPath } from "../fs/fs-manager";
 
 // Mock the fs-manager module
-vi.mock("../fs-manager", () => ({
+vi.mock("../fs/fs-manager", () => ({
   generateId: () => "test-session-id",
   getSessionsPath: vi.fn(),
 }));
