@@ -2,7 +2,7 @@ import { input, select } from "@inquirer/prompts";
 import fs from "fs-extra";
 import path from "path";
 import { getEnv, getIgnorePatterns, getPromptContent } from "../core/config";
-import { openEditor } from "../editor-utils";
+import { openEditor } from "../utils/editor-utils";
 import {
   getHashesFromReviewFile,
   getReviewDir,

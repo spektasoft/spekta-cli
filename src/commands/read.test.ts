@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
-import * as editorUtils from "../editor-utils";
+import * as editorUtils from "../utils/editor-utils";
 import * as compactor from "../utils/compactor";
 import * as readUtils from "../utils/read-utils";
 import * as security from "../utils/security";

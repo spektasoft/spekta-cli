@@ -3,7 +3,7 @@ import chalk from "chalk";
 import fs from "fs-extra";
 import * as readline from "readline";
 import { getEnv } from "../core/config";
-import { openEditor } from "../editor-utils";
+import { openEditor } from "./editor-utils";
 import { getTempPath } from "./fs-utils";
 
 type InputResult = string;

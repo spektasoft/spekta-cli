@@ -5,7 +5,7 @@ import {
   getPromptContent,
   getProviders,
 } from "../core/config";
-import { processOutput } from "../editor-utils";
+import { processOutput } from "../utils/editor-utils";
 import {
   commitWithFile,
   formatCommitMessage,

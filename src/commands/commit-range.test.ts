@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
-import * as editorUtils from "../editor-utils";
+import * as editorUtils from "../utils/editor-utils";
 import * as git from "../git/git";
 import * as ui from "../ui/ui";
 import { runCommitRange } from "./commit-range";
@@ -21,7 +21,7 @@ vi.mock("../core/config", () => ({
 }));
 
 // 3. Mock Editor Utils to prevent file writing
-vi.mock("../editor-utils", () => ({
+vi.mock("../utils/editor-utils", () => ({
   processOutput: vi.fn(),
 }));
 

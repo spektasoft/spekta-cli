@@ -3,14 +3,14 @@ import fs from "fs-extra";
 import * as readline from "readline";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getEnv } from "../core/config";
-import { openEditor } from "../editor-utils";
+import { openEditor } from "./editor-utils";
 import { getTempPath } from "./fs-utils";
 import { getUserMessage } from "./multiline-input";
 
 vi.mock("readline");
 vi.mock("@inquirer/prompts");
 vi.mock("fs-extra");
-vi.mock("../editor-utils");
+vi.mock("../utils/editor-utils");
 vi.mock("../core/config");
 vi.mock("./fs-utils");
 

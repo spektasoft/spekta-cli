@@ -10,7 +10,7 @@ import {
 import { promptHashRange } from "../git/git-ui";
 import { promptProviderSelection } from "../ui/ui";
 import { executeAiAction } from "../core/orchestrator";
-import { processOutput } from "../editor-utils";
+import { processOutput } from "../utils/editor-utils";
 
 export async function runPr() {
   const [providersData] = await Promise.all([getProviders()]);

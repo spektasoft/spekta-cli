@@ -3,7 +3,7 @@ import { runReadInteractive } from "./read-interactive";
 import { checkbox, input, select } from "@inquirer/prompts";
 import autocomplete from "inquirer-autocomplete-standalone";
 import * as readCmd from "./read";
-import { openEditor } from "../editor-utils";
+import { openEditor } from "../utils/editor-utils";
 import { execa } from "execa";
 import { getEnv } from "../core/config";
 
@@ -14,7 +14,7 @@ vi.mock("../core/config", () => ({
   getEnv: vi.fn(),
   getIgnorePatterns: vi.fn().mockResolvedValue([]),
 }));
-vi.mock("../editor-utils", () => ({
+vi.mock("../utils/editor-utils", () => ({
   openEditor: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("./read", () => ({
