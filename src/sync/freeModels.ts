@@ -1,4 +1,4 @@
-import { fetchFreeModels } from "../api";
+import { fetchFreeModels } from "../api/api";
 import { HOME_PROVIDERS_FREE, Provider } from "../config";
 import { writeYaml } from "../utils/yaml";
 

@@ -1,6 +1,6 @@
 import { GenerativeModel, GoogleGenerativeAI } from "@google/generative-ai";
 import { ChatCompletionChunk } from "openai/resources/chat/completions";
-import { Message } from "./api";
+import { Message } from "./api/api";
 
 const clientMap = new Map<string, GoogleGenerativeAI>();
 

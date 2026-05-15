@@ -43,7 +43,7 @@ import {
   callGeminiStream,
   stripGemmaThinkingTokens,
 } from "./gemini-adapter";
-import { Message } from "./api";
+import { Message } from "./api/api";
 
 const messages: Message[] = [
   { role: "system", content: "You are helpful." },

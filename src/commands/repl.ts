@@ -6,7 +6,7 @@ import {
   callAIStreamWithProvider,
   ChatCompletionChunkWithReasoning,
   Message,
-} from "../api";
+} from "../api/api";
 import { getPromptContent, getProviders } from "../config";
 import { promptReplProviderSelection } from "../ui/repl";
 import { executeTool, parseToolCalls } from "../utils/agent-utils";
