@@ -31,7 +31,7 @@ const __dirname = path.dirname(__filename);
 
 // Robust ASSET_ROOT resolution for compiled distributions
 const getAssetRoot = () => {
-  const root = path.resolve(__dirname, "../..");
+  const root = path.resolve(__dirname, "..");
   if (fs.existsSync(path.join(root, "templates"))) {
     return root;
   }
