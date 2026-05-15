@@ -1,7 +1,7 @@
 import fs from "fs-extra";
 import { afterEach, beforeEach, describe, expect, it, Mock, vi } from "vitest";
 import * as config from "../core/config";
-import * as git from "../git";
+import * as git from "../git/git";
 import * as orchestrator from "../core/orchestrator";
 import * as ui from "../ui";
 import * as fsUtils from "../utils/fs-utils";
@@ -16,7 +16,7 @@ vi.mock("os", () => ({
   },
 }));
 vi.mock("../core/config");
-vi.mock("../git");
+vi.mock("../git/git");
 vi.mock("../ui");
 vi.mock("../core/orchestrator");
 vi.mock("../utils/fs-utils");

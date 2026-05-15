@@ -5,7 +5,7 @@ import {
   isAncestor,
   resolveHash,
   sanitizeMessageForPrompt,
-} from "../git";
+} from "../git/git";
 import { executeAiAction } from "../core/orchestrator";
 import {
   confirmLargePayload,

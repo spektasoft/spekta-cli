@@ -7,7 +7,7 @@ import {
   resolveHash,
   sanitizeMessageForPrompt,
   stripCodeFences,
-} from "../git";
+} from "../git/git";
 import { executeAiAction } from "../core/orchestrator";
 import {
   confirmLargePayload,

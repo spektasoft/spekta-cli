@@ -11,7 +11,7 @@ import {
   formatCommitMessage,
   getStagedDiff,
   stripCodeFences,
-} from "../git";
+} from "../git/git";
 import { executeAiAction } from "../core/orchestrator";
 import { confirmCommit, promptProviderSelection } from "../ui";
 

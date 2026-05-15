@@ -6,8 +6,8 @@ import {
   getCommitMessages,
   stripCodeFences,
   formatCommitMessage,
-} from "../git";
-import { promptHashRange } from "../git-ui";
+} from "../git/git";
+import { promptHashRange } from "../git/git-ui";
 import { promptProviderSelection } from "../ui";
 import { executeAiAction } from "../core/orchestrator";
 import { processOutput } from "../editor-utils";

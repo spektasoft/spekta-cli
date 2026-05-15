@@ -14,8 +14,8 @@ import {
   getInitialCommit,
   getNearestMerge,
   resolveHash,
-} from "../git";
-import { promptHashRange } from "../git-ui";
+} from "../git/git";
+import { promptHashRange } from "../git/git-ui";
 import { searchableSelect } from "../ui";
 import { collectSupplementalContext } from "./review-context";
 

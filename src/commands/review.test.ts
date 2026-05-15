@@ -4,8 +4,8 @@ import autocomplete from "inquirer-autocomplete-standalone"; // Added
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
 import * as fsManager from "../fs-manager";
-import * as git from "../git";
-import * as gitUi from "../git-ui";
+import * as git from "../git/git";
+import * as gitUi from "../git/git-ui";
 import { runReview } from "./review";
 import * as reviewContext from "./review-context";
 
@@ -13,9 +13,9 @@ vi.mock("fs-extra");
 vi.mock("@inquirer/prompts");
 vi.mock("inquirer-autocomplete-standalone"); // Added
 vi.mock("../core/config");
-vi.mock("../git");
+vi.mock("../git/git");
 vi.mock("../fs-manager");
-vi.mock("../git-ui");
+vi.mock("../git/git-ui");
 vi.mock("execa");
 vi.mock("./review-context");
 

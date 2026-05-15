@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
 import * as editorUtils from "../editor-utils";
-import * as git from "../git";
+import * as git from "../git/git";
 import * as ui from "../ui";
 import { runCommitRange } from "./commit-range";
 
@@ -31,7 +31,7 @@ vi.mock("../orchestrator", () => ({
 }));
 
 // 5. Mock Git module completely
-vi.mock("../git", () => ({
+vi.mock("../git/git", () => ({
   resolveHash: vi.fn(),
   getCommitMessages: vi.fn(),
   isAncestor: vi.fn(),
