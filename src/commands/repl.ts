@@ -7,7 +7,7 @@ import {
   ChatCompletionChunkWithReasoning,
   Message,
 } from "../api/api";
-import { getPromptContent, getProviders } from "../config";
+import { getPromptContent, getProviders } from "../core/config";
 import { promptReplProviderSelection } from "../ui/repl";
 import { executeTool, parseToolCalls } from "../utils/agent-utils";
 import { Logger } from "../utils/logger";

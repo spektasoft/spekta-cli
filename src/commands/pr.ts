@@ -1,4 +1,4 @@
-import { getProviders, getPromptContent } from "../config";
+import { getProviders, getPromptContent } from "../core/config";
 import {
   getNearestMerge,
   getInitialCommit,
@@ -9,7 +9,7 @@ import {
 } from "../git";
 import { promptHashRange } from "../git-ui";
 import { promptProviderSelection } from "../ui";
-import { executeAiAction } from "../orchestrator";
+import { executeAiAction } from "../core/orchestrator";
 import { processOutput } from "../editor-utils";
 
 export async function runPr() {

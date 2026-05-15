@@ -1,4 +1,4 @@
-import { getEnv } from "../config";
+import { getEnv } from "../core/config";
 import { syncFreeModels } from "../adapters/sync/freeModels";
 import ora from "ora";
 

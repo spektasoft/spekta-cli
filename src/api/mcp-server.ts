@@ -5,7 +5,7 @@ import { getGrepContent } from "../commands/grep";
 import { getReadContent } from "../commands/read";
 import { executeSafeReplace } from "../commands/replace";
 import { getWriteContent } from "../commands/write";
-import { bootstrap, loadToolDefinitions, ToolDefinition } from "../config";
+import { bootstrap, loadToolDefinitions, ToolDefinition } from "../core/config";
 import { Logger } from "../utils/logger";
 import { parseFilePathWithRange } from "../utils/read-utils";
 

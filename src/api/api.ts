@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { ChatCompletionChunk } from "openai/resources/chat/completions";
-import { OpenRouterModel, Provider } from "../config";
+import { OpenRouterModel, Provider } from "../core/config";
 import { callGemini, callGeminiStream } from "../adapters/gemini-adapter";
 
 // Extension interface for OpenAI streaming chunk with reasoning_details

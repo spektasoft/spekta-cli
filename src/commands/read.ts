@@ -1,5 +1,5 @@
 import path from "path";
-import { getReadTokenLimit, getCompactThreshold } from "../config";
+import { getReadTokenLimit, getCompactThreshold } from "../core/config";
 import { processOutput } from "../editor-utils";
 import { compactFile } from "../utils/compactor";
 import { Logger } from "../utils/logger";

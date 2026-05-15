@@ -2,7 +2,7 @@ import { execa } from "execa";
 import fs from "fs-extra";
 import ignore from "ignore";
 import path from "path";
-import { getIgnorePatterns } from "../config";
+import { getIgnorePatterns } from "../core/config";
 
 export const RESTRICTED_FILES = [".env", ".gitignore", ".spektaignore"];
 const MAX_FILE_SIZE_MB = 10;

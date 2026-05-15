@@ -20,8 +20,8 @@ import {
   resetInternalState,
   HOME_DEFAULT_IGNORE,
 } from "./config";
-import { generateId } from "./fs-manager";
-import { writeYaml } from "./utils/yaml";
+import { generateId } from "../fs-manager";
+import { writeYaml } from "../utils/yaml";
 
 describe("Config & Prompt Resolution", () => {
   const tempTestDir = path.join(os.tmpdir(), "spekta-tests");

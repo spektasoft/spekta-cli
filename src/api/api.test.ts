@@ -7,7 +7,7 @@ import {
   resolveApiKey,
   callAIWithProvider,
 } from "./api";
-import { Provider } from "../config";
+import { Provider } from "../core/config";
 
 describe("resolveApiKey", () => {
   it("returns OPENROUTER_API_KEY for openrouter providers", () => {

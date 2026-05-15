@@ -2,7 +2,7 @@ import { execa } from "execa";
 import fs from "fs-extra";
 import path from "node:path";
 import readline from "node:readline";
-import { HOME_DEFAULT_IGNORE, HOME_IGNORE } from "../config";
+import { HOME_DEFAULT_IGNORE, HOME_IGNORE } from "../core/config";
 import { Logger } from "../utils/logger";
 import { validatePathAccess } from "../utils/security";
 

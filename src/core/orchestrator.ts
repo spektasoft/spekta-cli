@@ -1,5 +1,5 @@
 import ora from "ora";
-import { callAIWithProvider, Message } from "./api/api";
+import { callAIWithProvider, Message } from "../api/api";
 import { Provider } from "./config";
 
 interface AiExecutionOptions {

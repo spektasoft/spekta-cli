@@ -5,12 +5,12 @@ import autocomplete from "inquirer-autocomplete-standalone";
 import * as readCmd from "./read";
 import { openEditor } from "../editor-utils";
 import { execa } from "execa";
-import { getEnv } from "../config";
+import { getEnv } from "../core/config";
 
 vi.mock("@inquirer/prompts");
 vi.mock("inquirer-autocomplete-standalone");
 vi.mock("execa");
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   getEnv: vi.fn(),
   getIgnorePatterns: vi.fn().mockResolvedValue([]),
 }));

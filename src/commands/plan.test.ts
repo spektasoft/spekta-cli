@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runPlan } from "./plan";
 import * as fsManager from "../fs-manager";
-import * as config from "../config";
+import * as config from "../core/config";
 
-vi.mock("../config");
+vi.mock("../core/config");
 vi.mock("../fs-manager");
 vi.mock("fs-extra");
 vi.mock("execa");
@@ -22,13 +22,13 @@ describe("runPlan", () => {
 
   it("logs error and sets exit code if plan.md template lacks {{ID}} placeholder", async () => {
     vi.mocked(config.getPromptContent).mockResolvedValue(
-      "No placeholder here."
+      "No placeholder here.",
     );
 
     await runPlan();
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      'Error: Template "plan.md" must contain the placeholder {{ID}}.'
+      'Error: Template "plan.md" must contain the placeholder {{ID}}.',
     );
     expect(process.exitCode).toBe(1);
   });
@@ -50,10 +50,10 @@ describe("runPlan", () => {
     await runPlan();
 
     expect(consoleWarnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Failed to open editor")
+      expect.stringContaining("Failed to open editor"),
     );
     expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining("You can manually open the plan at")
+      expect.stringContaining("You can manually open the plan at"),
     );
     // Ensure no error was logged and exit code remains unset (or 0)
     expect(consoleErrorSpy).not.toHaveBeenCalled();

@@ -1,6 +1,6 @@
 import { execa } from "execa";
 import fs from "fs-extra";
-import { getEnv } from "./config";
+import { getEnv } from "./core/config";
 import { getTempPath } from "./utils/fs-utils";
 
 // Use dynamic import for shlex to avoid requiring it during build time

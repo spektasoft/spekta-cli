@@ -3,8 +3,8 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
-import { Logger } from "./utils/logger";
-import { readYaml } from "./utils/yaml";
+import { Logger } from "../utils/logger";
+import { readYaml } from "../utils/yaml";
 
 export type ProviderType = "openrouter" | "gemini";
 
@@ -31,11 +31,11 @@ const __dirname = path.dirname(__filename);
 
 // Robust ASSET_ROOT resolution for compiled distributions
 const getAssetRoot = () => {
-  const root = path.resolve(__dirname, "..");
+  const root = path.resolve(__dirname, "../..");
   if (fs.existsSync(path.join(root, "templates"))) {
     return root;
   }
-  return path.resolve(__dirname, "../../"); // Fallback for nested dist structures
+  return path.resolve(__dirname, "../../../"); // Fallback for nested dist structures
 };
 
 const ASSET_ROOT = getAssetRoot();

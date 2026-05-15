@@ -2,7 +2,7 @@ import { select } from "@inquirer/prompts";
 import fs from "fs-extra";
 import * as readline from "readline";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getEnv } from "../config";
+import { getEnv } from "../core/config";
 import { openEditor } from "../editor-utils";
 import { getTempPath } from "./fs-utils";
 import { getUserMessage } from "./multiline-input";
@@ -11,7 +11,7 @@ vi.mock("readline");
 vi.mock("@inquirer/prompts");
 vi.mock("fs-extra");
 vi.mock("../editor-utils");
-vi.mock("../config");
+vi.mock("../core/config");
 vi.mock("./fs-utils");
 
 describe("getUserMessage", () => {

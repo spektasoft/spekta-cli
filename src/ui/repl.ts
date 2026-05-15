@@ -1,4 +1,4 @@
-import { Provider } from "../config";
+import { Provider } from "../core/config";
 import { searchableSelect, SearchChoice } from "../ui";
 
 export async function promptReplProviderSelection(

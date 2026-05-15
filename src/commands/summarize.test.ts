@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as config from "../config";
+import * as config from "../core/config";
 import * as editorUtils from "../editor-utils";
 import * as git from "../git";
 import * as ui from "../ui";
@@ -14,7 +14,7 @@ vi.mock("../ui", () => ({
 }));
 
 // Mock Config dependencies to prevent file I/O issues
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   getPromptContent: vi.fn(),
   getProviders: vi.fn(),
   getEnv: vi.fn(),
@@ -26,7 +26,7 @@ vi.mock("../editor-utils", () => ({
 }));
 
 // Mock Orchestrator to prevent actual LLM calls
-vi.mock("../orchestrator", () => ({
+vi.mock("../core/orchestrator", () => ({
   executeAiAction: vi.fn(),
 }));
 

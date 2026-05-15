@@ -1,4 +1,4 @@
-import { getPromptContent, getProviders } from "../config";
+import { getPromptContent, getProviders } from "../core/config";
 import { processOutput } from "../editor-utils";
 import {
   formatCommitMessage,
@@ -8,7 +8,7 @@ import {
   sanitizeMessageForPrompt,
   stripCodeFences,
 } from "../git";
-import { executeAiAction } from "../orchestrator";
+import { executeAiAction } from "../core/orchestrator";
 import {
   confirmLargePayload,
   getTokenCount,

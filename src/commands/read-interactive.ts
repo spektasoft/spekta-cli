@@ -3,7 +3,7 @@ import { execa } from "execa";
 import ignore from "ignore";
 import autocomplete from "inquirer-autocomplete-standalone";
 import path from "path";
-import { getEnv, getIgnorePatterns } from "../config";
+import { getEnv, getIgnorePatterns } from "../core/config";
 import { openEditor } from "../editor-utils";
 import { NAV_BACK, isCancel } from "../ui";
 import { FileRequest, LineRange } from "../utils/read-utils";

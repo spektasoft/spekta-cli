@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, Mock, vi } from "vitest";
-import * as config from "../config";
+import * as config from "../core/config";
 import * as git from "../git";
 import * as gitUi from "../git-ui";
 import * as ui from "../ui";
-import * as orchestrator from "../orchestrator";
+import * as orchestrator from "../core/orchestrator";
 import * as editorUtils from "../editor-utils";
 import { runPr } from "./pr";
 
-vi.mock("../config");
+vi.mock("../core/config");
 vi.mock("../git");
 vi.mock("../git-ui");
 vi.mock("../ui");
-vi.mock("../orchestrator");
+vi.mock("../core/orchestrator");
 vi.mock("../editor-utils");
 
 describe("Command: runPr", () => {

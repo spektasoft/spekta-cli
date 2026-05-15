@@ -1,6 +1,10 @@
 import fs from "fs-extra";
 import { registerCleanup } from "../utils/process";
-import { getIgnorePatterns, getPromptContent, getProviders } from "../config";
+import {
+  getIgnorePatterns,
+  getPromptContent,
+  getProviders,
+} from "../core/config";
 import { processOutput } from "../editor-utils";
 import {
   commitWithFile,
@@ -8,7 +12,7 @@ import {
   getStagedDiff,
   stripCodeFences,
 } from "../git";
-import { executeAiAction } from "../orchestrator";
+import { executeAiAction } from "../core/orchestrator";
 import { confirmCommit, promptProviderSelection } from "../ui";
 
 export async function runCommit() {
