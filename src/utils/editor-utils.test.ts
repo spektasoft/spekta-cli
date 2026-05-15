@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { processOutput, openEditor } from "../src/editor-utils";
+import { processOutput, openEditor } from "./editor-utils";
 
-vi.mock("../src/editor-utils", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../src/editor-utils")>();
+vi.mock("./editor-utils", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./editor-utils")>();
   return { ...actual, openEditor: vi.fn() };
 });
 

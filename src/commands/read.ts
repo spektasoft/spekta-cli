@@ -1,6 +1,6 @@
 import path from "path";
-import { getReadTokenLimit, getCompactThreshold } from "../config";
-import { processOutput } from "../editor-utils";
+import { getReadTokenLimit, getCompactThreshold } from "../core/config";
+import { processOutput } from "../utils/editor-utils";
 import { compactFile } from "../utils/compactor";
 import { Logger } from "../utils/logger";
 import { FileRequest, getFileLines, getTokenCount } from "../utils/read-utils";

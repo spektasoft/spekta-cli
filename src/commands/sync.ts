@@ -1,5 +1,5 @@
-import { getEnv } from "../config";
-import { syncFreeModels } from "../sync/freeModels";
+import { getEnv } from "../core/config";
+import { syncFreeModels } from "../adapters/sync/freeModels";
 import ora from "ora";
 
 export async function runSync() {

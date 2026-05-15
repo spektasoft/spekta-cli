@@ -1,4 +1,4 @@
-import { getProviders, getPromptContent } from "../config";
+import { getProviders, getPromptContent } from "../core/config";
 import {
   getNearestMerge,
   getInitialCommit,
@@ -6,11 +6,11 @@ import {
   getCommitMessages,
   stripCodeFences,
   formatCommitMessage,
-} from "../git";
-import { promptHashRange } from "../git-ui";
-import { promptProviderSelection } from "../ui";
-import { executeAiAction } from "../orchestrator";
-import { processOutput } from "../editor-utils";
+} from "../git/git";
+import { promptHashRange } from "../git/git-ui";
+import { promptProviderSelection } from "../ui/ui";
+import { executeAiAction } from "../core/orchestrator";
+import { processOutput } from "../utils/editor-utils";
 
 export async function runPr() {
   const [providersData] = await Promise.all([getProviders()]);

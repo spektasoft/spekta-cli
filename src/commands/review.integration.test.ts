@@ -9,8 +9,8 @@ vi.mock("inquirer-autocomplete-standalone", () => ({
   default: vi.fn(),
 }));
 
-vi.mock("../ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../ui")>();
+vi.mock("../ui/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../ui/ui")>();
   return {
     ...actual,
     searchableSelect: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock("../ui", async (importOriginal) => {
 });
 
 // Import the mocked functions we need to control in tests
-import { searchableSelect } from "../ui";
+import { searchableSelect } from "../ui/ui";
 
 // Helper to mock all prompts consistently
 function mockAllPrompts(
@@ -92,7 +92,7 @@ describe("collectSupplementalContext integration", () => {
 
     // Mock the getPlansDir function
     const mockGetPlansDir = vi.fn().mockResolvedValue(testPlansDir);
-    vi.doMock("../fs-manager", () => ({
+    vi.doMock("../fs/fs-manager", () => ({
       getPlansDir: mockGetPlansDir,
     }));
 
@@ -217,7 +217,7 @@ describe("review command prompt integrity", () => {
     await fs.writeFile(testPlanPath, "# Test Plan\n\nTest content.");
 
     const mockGetPlansDir = vi.fn().mockResolvedValue(testPlansDir);
-    vi.doMock("../fs-manager", () => ({
+    vi.doMock("../fs/fs-manager", () => ({
       getPlansDir: mockGetPlansDir,
     }));
 

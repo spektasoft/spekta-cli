@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { executeAiAction } from "../src/orchestrator";
-import * as api from "../src/api";
+import { executeAiAction } from "./orchestrator";
+import * as api from "../api/api";
 
 vi.mock("../src/api");
 

@@ -1,22 +1,22 @@
 import { input, select } from "@inquirer/prompts";
 import fs from "fs-extra";
 import path from "path";
-import { getEnv, getIgnorePatterns, getPromptContent } from "../config";
-import { openEditor } from "../editor-utils";
+import { getEnv, getIgnorePatterns, getPromptContent } from "../core/config";
+import { openEditor } from "../utils/editor-utils";
 import {
   getHashesFromReviewFile,
   getReviewDir,
   getSafeMetadata,
   listReviewFolders,
-} from "../fs-manager";
+} from "../fs/fs-manager";
 import {
   getGitDiff,
   getInitialCommit,
   getNearestMerge,
   resolveHash,
-} from "../git";
-import { promptHashRange } from "../git-ui";
-import { searchableSelect } from "../ui";
+} from "../git/git";
+import { promptHashRange } from "../git/git-ui";
+import { searchableSelect } from "../ui/ui";
 import { collectSupplementalContext } from "./review-context";
 
 export async function runReview() {

@@ -1,9 +1,9 @@
 import fs from "fs-extra";
 import { afterEach, beforeEach, describe, expect, it, Mock, vi } from "vitest";
-import * as config from "../config";
-import * as git from "../git";
-import * as orchestrator from "../orchestrator";
-import * as ui from "../ui";
+import * as config from "../core/config";
+import * as git from "../git/git";
+import * as orchestrator from "../core/orchestrator";
+import * as ui from "../ui/ui";
 import * as fsUtils from "../utils/fs-utils";
 import { runCommit } from "./commit";
 
@@ -15,14 +15,13 @@ vi.mock("os", () => ({
     homedir: () => "/tmp/mock-home-dir",
   },
 }));
-vi.mock("../config");
-vi.mock("../git");
-vi.mock("../ui");
-vi.mock("../orchestrator");
+vi.mock("../core/config");
+vi.mock("../git/git");
+vi.mock("../ui/ui");
+vi.mock("../core/orchestrator");
 vi.mock("../utils/fs-utils");
 
 describe("Command: runCommit", () => {
-
   // Spies for console and process
   const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
   const consoleWarnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});

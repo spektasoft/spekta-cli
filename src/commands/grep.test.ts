@@ -10,7 +10,7 @@ vi.mock("fs-extra");
 vi.mock("../utils/security", () => ({
   validatePathAccess: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   HOME_IGNORE: "/mock/home/.spektaignore",
   HOME_DEFAULT_IGNORE: "/mock/home/.spektadefaultignore",
 }));

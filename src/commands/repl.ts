@@ -6,8 +6,8 @@ import {
   callAIStreamWithProvider,
   ChatCompletionChunkWithReasoning,
   Message,
-} from "../api";
-import { getPromptContent, getProviders } from "../config";
+} from "../api/api";
+import { getPromptContent, getProviders } from "../core/config";
 import { promptReplProviderSelection } from "../ui/repl";
 import { executeTool, parseToolCalls } from "../utils/agent-utils";
 import { Logger } from "../utils/logger";

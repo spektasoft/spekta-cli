@@ -1,18 +1,18 @@
-import { getPromptContent, getProviders } from "../config";
-import { processOutput } from "../editor-utils";
+import { getPromptContent, getProviders } from "../core/config";
+import { processOutput } from "../utils/editor-utils";
 import {
   getCommitMessages,
   isAncestor,
   resolveHash,
   sanitizeMessageForPrompt,
-} from "../git";
-import { executeAiAction } from "../orchestrator";
+} from "../git/git";
+import { executeAiAction } from "../core/orchestrator";
 import {
   confirmLargePayload,
   getTokenCount,
   promptCommitHash,
   promptProviderSelection,
-} from "../ui";
+} from "../ui/ui";
 
 export async function runSummarize() {
   try {

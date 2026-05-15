@@ -1,15 +1,19 @@
 import fs from "fs-extra";
 import { registerCleanup } from "../utils/process";
-import { getIgnorePatterns, getPromptContent, getProviders } from "../config";
-import { processOutput } from "../editor-utils";
+import {
+  getIgnorePatterns,
+  getPromptContent,
+  getProviders,
+} from "../core/config";
+import { processOutput } from "../utils/editor-utils";
 import {
   commitWithFile,
   formatCommitMessage,
   getStagedDiff,
   stripCodeFences,
-} from "../git";
-import { executeAiAction } from "../orchestrator";
-import { confirmCommit, promptProviderSelection } from "../ui";
+} from "../git/git";
+import { executeAiAction } from "../core/orchestrator";
+import { confirmCommit, promptProviderSelection } from "../ui/ui";
 
 export async function runCommit() {
   let tempFilePath: string | undefined;

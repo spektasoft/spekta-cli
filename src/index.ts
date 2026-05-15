@@ -12,10 +12,10 @@ import { runReview } from "./commands/review";
 import { runSummarize } from "./commands/summarize";
 import { runSync } from "./commands/sync";
 import { runWrite } from "./commands/write";
-import { bootstrap, getEnv, HOME_PROVIDERS_FREE } from "./config";
-import { runMcpServer } from "./mcp-server";
-import { syncFreeModels } from "./sync/freeModels";
-import { searchableSelect } from "./ui";
+import { bootstrap, getEnv, HOME_PROVIDERS_FREE } from "./core/config";
+import { runMcpServer } from "./api/mcp-server";
+import { syncFreeModels } from "./adapters/sync/freeModels";
+import { searchableSelect } from "./ui/ui";
 import { parseFilePathWithRange } from "./utils/read-utils";
 
 interface CommandDefinition {

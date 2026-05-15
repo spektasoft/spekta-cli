@@ -1,8 +1,8 @@
 import fs from "fs-extra";
 import path from "path";
-import { getEnv, getPromptContent } from "../config";
-import { openEditor } from "../editor-utils";
-import { generateId, getPlansDir } from "../fs-manager";
+import { getEnv, getPromptContent } from "../core/config";
+import { openEditor } from "../utils/editor-utils";
+import { generateId, getPlansDir } from "../fs/fs-manager";
 
 export async function runPlan() {
   try {

@@ -10,7 +10,7 @@ import {
   vi,
   type Mock,
 } from "vitest";
-import { getIgnorePatterns } from "../config";
+import { getIgnorePatterns } from "../core/config";
 import {
   findExistingAncestor,
   validateEditAccess,
@@ -46,7 +46,7 @@ vi.mock("execa", () => ({
 }));
 
 // 3. Mock config (named export)
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   getIgnorePatterns: vi.fn(),
 }));
 

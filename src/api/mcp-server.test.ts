@@ -1,12 +1,12 @@
 import { describe, it, expectTypeOf, vi, expect } from "vitest";
 import { TOOL_REGISTRY } from "./mcp-server";
-import { getGrepContent } from "./commands/grep";
+import { getGrepContent } from "../commands/grep";
 
-vi.mock("./commands/read", () => ({ getReadContent: vi.fn() }));
-vi.mock("./commands/replace", () => ({ executeSafeReplace: vi.fn() }));
-vi.mock("./commands/write", () => ({ getWriteContent: vi.fn() }));
-vi.mock("./commands/grep", () => ({ getGrepContent: vi.fn() }));
-vi.mock("./config", () => ({
+vi.mock("../commands/read", () => ({ getReadContent: vi.fn() }));
+vi.mock("../commands/replace", () => ({ executeSafeReplace: vi.fn() }));
+vi.mock("../commands/write", () => ({ getWriteContent: vi.fn() }));
+vi.mock("../commands/grep", () => ({ getGrepContent: vi.fn() }));
+vi.mock("../config", () => ({
   bootstrap: vi.fn(),
   loadToolDefinitions: vi.fn().mockResolvedValue([]),
 }));

@@ -1,13 +1,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getGrepContent } from "./commands/grep";
-import { getReadContent } from "./commands/read";
-import { executeSafeReplace } from "./commands/replace";
-import { getWriteContent } from "./commands/write";
-import { bootstrap, loadToolDefinitions, ToolDefinition } from "./config";
-import { Logger } from "./utils/logger";
-import { parseFilePathWithRange } from "./utils/read-utils";
+import { getGrepContent } from "../commands/grep";
+import { getReadContent } from "../commands/read";
+import { executeSafeReplace } from "../commands/replace";
+import { getWriteContent } from "../commands/write";
+import { bootstrap, loadToolDefinitions, ToolDefinition } from "../core/config";
+import { Logger } from "../utils/logger";
+import { parseFilePathWithRange } from "../utils/read-utils";
 
 /**
  * Validates that all tools defined in YAML have corresponding logic

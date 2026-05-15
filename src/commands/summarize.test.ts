@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as config from "../config";
-import * as editorUtils from "../editor-utils";
-import * as git from "../git";
-import * as ui from "../ui";
+import * as config from "../core/config";
+import * as editorUtils from "../utils/editor-utils";
+import * as git from "../git/git";
+import * as ui from "../ui/ui";
 import { runSummarize } from "./summarize";
 
 // Mock UI dependencies to handle direct imports
-vi.mock("../ui", () => ({
+vi.mock("../ui/ui", () => ({
   getTokenCount: vi.fn(),
   confirmLargePayload: vi.fn(),
   promptProviderSelection: vi.fn(),
@@ -14,24 +14,24 @@ vi.mock("../ui", () => ({
 }));
 
 // Mock Config dependencies to prevent file I/O issues
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   getPromptContent: vi.fn(),
   getProviders: vi.fn(),
   getEnv: vi.fn(),
 }));
 
 // Mock Editor Utils to prevent file writing
-vi.mock("../editor-utils", () => ({
+vi.mock("../utils/editor-utils", () => ({
   processOutput: vi.fn(),
 }));
 
 // Mock Orchestrator to prevent actual LLM calls
-vi.mock("../orchestrator", () => ({
+vi.mock("../core/orchestrator", () => ({
   executeAiAction: vi.fn(),
 }));
 
 // Mock Git module with isAncestor
-vi.mock("../git", () => ({
+vi.mock("../git/git", () => ({
   resolveHash: vi.fn(),
   getCommitMessages: vi.fn(),
   isAncestor: vi.fn(),

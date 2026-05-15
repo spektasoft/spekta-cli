@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as config from "../config";
-import * as editorUtils from "../editor-utils";
+import * as config from "../core/config";
+import * as editorUtils from "../utils/editor-utils";
 import * as compactor from "../utils/compactor";
 import * as readUtils from "../utils/read-utils";
 import * as security from "../utils/security";
 import { Logger } from "../utils/logger";
 import { getReadContent, runRead } from "./read";
 
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   getReadTokenLimit: vi.fn().mockReturnValue(1000),
   getCompactThreshold: vi.fn().mockReturnValue(2000),
   getEnv: vi.fn().mockResolvedValue({ SPEKTA_READ_TOKEN_LIMIT: "1000" }),

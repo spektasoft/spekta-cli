@@ -1,13 +1,13 @@
 import { expect, it, vi, beforeEach } from "vitest";
 import { runRepl, ReplSession } from "./repl";
-import { callAIStreamWithProvider } from "../api";
+import { callAIStreamWithProvider } from "../api/api";
 import { getUserMessage } from "../utils/multiline-input";
 import { parseToolCalls, executeTool } from "../utils/agent-utils";
 import ora from "ora";
 import { saveSession } from "../utils/session-utils";
 
 // Mocks
-vi.mock("../api");
+vi.mock("../api/api");
 vi.mock("../config", () => ({
   getEnv: vi.fn().mockResolvedValue({ OPENROUTER_API_KEY: "test-key" }),
   getProviders: vi.fn().mockResolvedValue({ providers: [] }),

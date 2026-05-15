@@ -2,8 +2,8 @@ import { select } from "@inquirer/prompts";
 import chalk from "chalk";
 import fs from "fs-extra";
 import * as readline from "readline";
-import { getEnv } from "../config";
-import { openEditor } from "../editor-utils";
+import { getEnv } from "../core/config";
+import { openEditor } from "./editor-utils";
 import { getTempPath } from "./fs-utils";
 
 type InputResult = string;
