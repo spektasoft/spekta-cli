@@ -3,7 +3,7 @@ import { collectSupplementalContext } from "./review-context";
 import fs from "fs-extra";
 import * as prompts from "@inquirer/prompts";
 import * as fsManager from "../fs-manager";
-import * as ui from "../ui";
+import * as ui from "../ui/ui";
 
 vi.mock("fs-extra");
 vi.mock("@inquirer/prompts");

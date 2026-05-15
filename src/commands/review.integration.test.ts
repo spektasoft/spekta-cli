@@ -9,8 +9,8 @@ vi.mock("inquirer-autocomplete-standalone", () => ({
   default: vi.fn(),
 }));
 
-vi.mock("../ui", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../ui")>();
+vi.mock("../ui/ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../ui/ui")>();
   return {
     ...actual,
     searchableSelect: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock("../ui", async (importOriginal) => {
 });
 
 // Import the mocked functions we need to control in tests
-import { searchableSelect } from "../ui";
+import { searchableSelect } from "../ui/ui";
 
 // Helper to mock all prompts consistently
 function mockAllPrompts(

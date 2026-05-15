@@ -12,7 +12,7 @@ import {
   getTokenCount,
   promptCommitHash,
   promptProviderSelection,
-} from "../ui";
+} from "../ui/ui";
 
 export async function runSummarize() {
   try {

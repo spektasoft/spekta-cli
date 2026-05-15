@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, Mock, vi } from "vitest";
 import * as config from "../core/config";
 import * as git from "../git/git";
 import * as gitUi from "../git/git-ui";
-import * as ui from "../ui";
+import * as ui from "../ui/ui";
 import * as orchestrator from "../core/orchestrator";
 import * as editorUtils from "../editor-utils";
 import { runPr } from "./pr";
@@ -10,7 +10,7 @@ import { runPr } from "./pr";
 vi.mock("../core/config");
 vi.mock("../git/git");
 vi.mock("../git/git-ui");
-vi.mock("../ui");
+vi.mock("../ui/ui");
 vi.mock("../core/orchestrator");
 vi.mock("../editor-utils");
 

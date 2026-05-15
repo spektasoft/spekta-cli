@@ -13,7 +13,7 @@ import {
   stripCodeFences,
 } from "../git/git";
 import { executeAiAction } from "../core/orchestrator";
-import { confirmCommit, promptProviderSelection } from "../ui";
+import { confirmCommit, promptProviderSelection } from "../ui/ui";
 
 export async function runCommit() {
   let tempFilePath: string | undefined;

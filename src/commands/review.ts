@@ -16,7 +16,7 @@ import {
   resolveHash,
 } from "../git/git";
 import { promptHashRange } from "../git/git-ui";
-import { searchableSelect } from "../ui";
+import { searchableSelect } from "../ui/ui";
 import { collectSupplementalContext } from "./review-context";
 
 export async function runReview() {

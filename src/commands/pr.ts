@@ -8,7 +8,7 @@ import {
   formatCommitMessage,
 } from "../git/git";
 import { promptHashRange } from "../git/git-ui";
-import { promptProviderSelection } from "../ui";
+import { promptProviderSelection } from "../ui/ui";
 import { executeAiAction } from "../core/orchestrator";
 import { processOutput } from "../editor-utils";
 

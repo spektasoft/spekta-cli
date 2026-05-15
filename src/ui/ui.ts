@@ -1,7 +1,7 @@
 import { input, select, confirm } from "@inquirer/prompts";
 import { encode } from "gpt-tokenizer";
 import autocomplete from "inquirer-autocomplete-standalone";
-import { Provider } from "./core/config";
+import { Provider } from "../core/config";
 
 export const NAV_BACK = "__BACK__";
 export const EXIT_KEYWORDS = ["c", "q", "back", "cancel"];

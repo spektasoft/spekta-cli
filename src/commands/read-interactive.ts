@@ -5,7 +5,7 @@ import autocomplete from "inquirer-autocomplete-standalone";
 import path from "path";
 import { getEnv, getIgnorePatterns } from "../core/config";
 import { openEditor } from "../editor-utils";
-import { NAV_BACK, isCancel } from "../ui";
+import { NAV_BACK, isCancel } from "../ui/ui";
 import { FileRequest, LineRange } from "../utils/read-utils";
 import { RESTRICTED_FILES, isWhitelisted } from "../utils/security";
 import { runRead } from "./read";

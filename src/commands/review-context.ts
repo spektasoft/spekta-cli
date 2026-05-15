@@ -4,7 +4,7 @@ import { encode } from "gpt-tokenizer";
 import isBinaryPath from "is-binary-path";
 import path from "path";
 import { getPlansDir } from "../fs-manager";
-import { NAV_BACK, searchableSelect } from "../ui";
+import { NAV_BACK, searchableSelect } from "../ui/ui";
 import { RESTRICTED_FILES } from "../utils/security";
 
 export interface SelectedItem {

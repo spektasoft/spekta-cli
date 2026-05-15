@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
 import * as editorUtils from "../editor-utils";
 import * as git from "../git/git";
-import * as ui from "../ui";
+import * as ui from "../ui/ui";
 import { runCommitRange } from "./commit-range";
 
 // 1. Mock UI dependencies to handle direct imports
-vi.mock("../ui", () => ({
+vi.mock("../ui/ui", () => ({
   getTokenCount: vi.fn(),
   confirmLargePayload: vi.fn(),
   promptProviderSelection: vi.fn(),
