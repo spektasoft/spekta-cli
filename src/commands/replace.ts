@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import fs from "fs-extra";
-import { formatFile } from "../utils/format-utils";
+import { formatFileInPlace } from "../utils/format-utils";
 import { Logger } from "../utils/logger";
 import {
   applyReplacements,
@@ -133,17 +133,17 @@ export async function executeSafeReplace(
       };
     }
 
-    // 5. Canonicalize formatting
-    const content = await formatFile(request.path, replacedContent);
-
-    // 6. Stale-write check
+    // 5. Stale-write check (Performed BEFORE writing unformatted content)
     const currentContent = await fs.readFile(request.path, "utf-8");
     if (getFileHash(currentContent) !== initialHash) {
       throw new Error("File was modified by another process during execution.");
     }
 
-    // 7. Write
-    await fs.writeFile(request.path, content, "utf-8");
+    // 6. Write unformatted content
+    await fs.writeFile(request.path, replacedContent, "utf-8");
+
+    // 7. Format in-place
+    await formatFileInPlace(request.path);
 
     return { message, appliedCount };
   } catch (error: any) {

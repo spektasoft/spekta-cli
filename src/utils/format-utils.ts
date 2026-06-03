@@ -1,24 +1,41 @@
 import prettier from "prettier";
+import path from "path";
+import fs from "fs-extra";
+import { execa } from "execa";
 
-export async function formatFile(
-  filePath: string,
-  content: string,
-): Promise<string> {
+async function runPintInPlace(filePath: string): Promise<boolean> {
+  const pintPath = "./vendor/bin/pint";
   try {
-    // Resolve the configuration based on the file location
-    const options = await prettier.resolveConfig(filePath);
-
-    // Format the entire file, inferring the parser from the file extension
-    return await prettier.format(content, {
-      ...options,
-      filepath: filePath,
-    });
-  } catch (err: any) {
-    // Graceful degradation: log the warning but return original content
-    // This ensures the tool remains runnable even if formatting fails
+    const pintExists = await fs.pathExists(pintPath);
+    if (!pintExists) return false;
+    await execa(pintPath, [filePath]);
+    return true;
+  } catch (err) {
     console.warn(
-      `Prettier formatting failed for ${filePath}: ${err.message}. Returning original content.`,
+      `Pint formatting failed for ${filePath}. Falling back to Prettier.`,
     );
-    return content;
+    return false;
+  }
+}
+
+export async function formatFileInPlace(filePath: string): Promise<void> {
+  const isPhp = filePath.toLowerCase().endsWith(".php");
+  if (isPhp) {
+    if (await runPintInPlace(filePath)) return;
+  }
+
+  try {
+    const absolutePath = path.resolve(filePath);
+    const content = await fs.readFile(absolutePath, "utf-8");
+    const options = await prettier.resolveConfig(absolutePath);
+    const formatted = await prettier.format(content, {
+      ...options,
+      filepath: absolutePath,
+    });
+    if (content !== formatted) {
+      await fs.writeFile(absolutePath, formatted, "utf-8");
+    }
+  } catch (err: any) {
+    console.warn(`Prettier formatting failed for ${filePath}: ${err.message}.`);
   }
 }
