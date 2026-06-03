@@ -14,8 +14,8 @@ vi.mock("../utils/logger");
 describe("write command logic", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(formatUtils.formatFile).mockImplementation(
-      async (_, content) => content,
+    vi.mocked(formatUtils.formatFileInPlace).mockImplementation(
+      async (_) => {},
     );
     process.exitCode = 0;
   });

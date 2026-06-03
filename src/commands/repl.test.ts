@@ -8,7 +8,7 @@ import { saveSession } from "../utils/session-utils";
 
 // Mocks
 vi.mock("../api/api");
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   getEnv: vi.fn().mockResolvedValue({ OPENROUTER_API_KEY: "test-key" }),
   getProviders: vi.fn().mockResolvedValue({ providers: [] }),
   getPromptContent: vi.fn().mockResolvedValue("system prompt"),

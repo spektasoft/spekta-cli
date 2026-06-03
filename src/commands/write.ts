@@ -2,7 +2,7 @@ import fs from "fs-extra";
 import path from "path";
 import { Logger } from "../utils/logger";
 import { validateParentDirForCreate } from "../utils/security";
-import { formatFile } from "../utils/format-utils";
+import { formatFileInPlace } from "../utils/format-utils";
 import { validatePathAccessForWrite } from "../utils/security";
 
 export async function getWriteContent(
@@ -24,24 +24,20 @@ export async function getWriteContent(
     };
   }
 
-  // 4. Format content (consistency with replace)
-  let formattedContent: string;
-  try {
-    formattedContent = await formatFile(filePath, content);
-  } catch (err: any) {
-    Logger.warn(
-      `Formatting failed: ${err.message}. Writing unformatted content.`,
-    );
-    formattedContent = content;
-  }
-
-  // 5. Write
+  // 4. Write unformatted content
   await fs.ensureDir(path.dirname(absolutePath));
-  await fs.writeFile(absolutePath, formattedContent, "utf-8");
+  await fs.writeFile(absolutePath, content, "utf-8");
+
+  // 5. Format in-place
+  try {
+    await formatFileInPlace(filePath);
+  } catch (err: any) {
+    Logger.warn(`Formatting failed: ${err.message}.`);
+  }
 
   return {
     success: true,
-    message: `Successfully created and wrote ${filePath} (${formattedContent.length} bytes after formatting)`,
+    message: `Successfully created and wrote ${filePath}`,
   };
 }
 

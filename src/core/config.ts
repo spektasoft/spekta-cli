@@ -31,21 +31,31 @@ const __dirname = path.dirname(__filename);
 
 // Robust ASSET_ROOT resolution for compiled distributions
 const getAssetRoot = () => {
-  const root = path.resolve(__dirname, "..");
-  if (fs.existsSync(path.join(root, "templates"))) {
-    return root;
+  if (process.env.SPEKTA_ASSET_ROOT_OVERRIDE) {
+    return process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
+  }
+  // Try 1 level up (e.g., if inside dist/ and templates is inside dist/)
+  const root1 = path.resolve(__dirname, "..");
+  if (fs.existsSync(path.join(root1, "templates"))) {
+    return root1;
+  }
+  // Try 2 levels up (e.g., if inside src/core/ and templates is in project root)
+  const root2 = path.resolve(__dirname, "../..");
+  if (fs.existsSync(path.join(root2, "templates"))) {
+    return root2;
   }
   return path.resolve(__dirname, "../../../"); // Fallback for nested dist structures
 };
 
-const ASSET_ROOT = getAssetRoot();
-const ASSET_PROMPTS = path.join(ASSET_ROOT, "templates", "prompts");
-const ASSET_TOOLS = path.join(ASSET_ROOT, "templates", "tools");
-const ASSET_DEFAULT_IGNORE = path.join(
-  ASSET_ROOT,
-  "templates",
-  "default.ignore",
-);
+const getAssetPaths = () => ({
+  ASSET_PROMPTS: path.join(getAssetRoot(), "templates", "prompts"),
+  ASSET_TOOLS: path.join(getAssetRoot(), "templates", "tools"),
+  ASSET_DEFAULT_IGNORE: path.join(
+    getAssetRoot(),
+    "templates",
+    "default.ignore",
+  ),
+});
 
 interface ProvidersConfig {
   providers: Provider[];
@@ -94,6 +104,8 @@ export const bootstrap = async () => {
   await fs.ensureDir(HOME_PROMPTS);
   await fs.ensureDir(HOME_TOOLS);
 
+  const { ASSET_TOOLS, ASSET_DEFAULT_IGNORE } = getAssetPaths();
+
   // Asset Integrity Check
   if (!(await fs.pathExists(ASSET_TOOLS))) {
     throw new Error(
@@ -123,6 +135,7 @@ export const getPromptContent = async (
   fileName: string,
   toolLoader: () => Promise<ToolDefinition[]> = loadToolDefinitions,
 ): Promise<string> => {
+  const { ASSET_PROMPTS } = getAssetPaths();
   const userPath = path.join(HOME_PROMPTS, fileName);
   const internalPath = path.join(ASSET_PROMPTS, fileName);
   const userToolUsagePath = path.join(HOME_PROMPTS, "tool-usage.md");
@@ -320,6 +333,7 @@ export const loadToolDefinitions = async (
   const toolNames = ["read", "replace", "write", "grep"] as const;
   const tools: ToolDefinition[] = [];
 
+  const { ASSET_TOOLS } = getAssetPaths();
   for (const name of toolNames) {
     const userPath = path.join(HOME_TOOLS, `${name}.yaml`);
     const internalPath = path.join(ASSET_TOOLS, `${name}.yaml`);
