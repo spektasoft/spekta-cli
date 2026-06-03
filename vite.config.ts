@@ -22,10 +22,11 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
-          src: "templates/*",
+          src: "templates/**/*",
           dest: ".",
         },
       ],
+      environment: "ssr",
     }),
   ],
   test: {
