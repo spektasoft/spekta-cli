@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { formatFile } from "./format-utils";
+import { formatFileInPlace } from "./format-utils";
 import prettier from "prettier";
 import { execa } from "execa";
 import fs from "fs-extra";
+import path from "path";
 
 vi.mock("prettier", () => ({
   default: {
@@ -32,44 +33,54 @@ describe("formatFile", () => {
   it("uses Prettier for non-PHP files", async () => {
     const content = "const x = 1";
     const filePath = "test.ts";
+    const absolutePath = path.resolve(filePath);
+
+    vi.mocked(fs.readFile).mockResolvedValue(content);
     vi.mocked(prettier.resolveConfig).mockResolvedValue({ semi: true });
     vi.mocked(prettier.format).mockResolvedValue("const x = 1;");
 
-    const result = await formatFile(filePath, content);
+    await formatFileInPlace(filePath);
 
     expect(prettier.format).toHaveBeenCalledWith(
       content,
-      expect.objectContaining({ filepath: filePath }),
+      expect.objectContaining({ filepath: absolutePath }),
     );
-    expect(result).toBe("const x = 1;");
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      absolutePath,
+      "const x = 1;",
+      "utf-8",
+    );
   });
 
   it("uses Pint for PHP files when vendor/bin/pint exists", async () => {
-    const content = "<?php echo 'hi';";
     const filePath = "test.php";
-    vi.mocked(fs.pathExists).mockResolvedValue(true); // Pint exists
-    vi.mocked(fs.readFile).mockResolvedValue("<?php echo 'hi';\n");
-
-    const result = await formatFile(filePath, content);
-
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.any(String),
-      content,
-      "utf-8",
+    vi.mocked(fs.pathExists).mockImplementation(
+      async (p) => p === "./vendor/bin/pint",
     );
+
+    await formatFileInPlace(filePath);
+
     expect(execa).toHaveBeenCalledWith("./vendor/bin/pint", [filePath]);
-    expect(result).toBe("<?php echo 'hi';\n");
+    expect(fs.writeFile).not.toHaveBeenCalled();
+    expect(prettier.format).not.toHaveBeenCalled();
   });
 
   it("falls back to Prettier for PHP files when Pint is missing", async () => {
     const content = "<?php echo 'hi';";
     const filePath = "test.php";
+    const absolutePath = path.resolve(filePath);
+
     vi.mocked(fs.pathExists).mockResolvedValue(false); // Pint missing
+    vi.mocked(fs.readFile).mockResolvedValue(content);
     vi.mocked(prettier.format).mockResolvedValue("<?php\n\necho 'hi';");
 
-    const result = await formatFile(filePath, content);
+    await formatFileInPlace(filePath);
 
     expect(prettier.format).toHaveBeenCalled();
-    expect(result).toContain("<?php");
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      absolutePath,
+      "<?php\n\necho 'hi';",
+      "utf-8",
+    );
   });
 });
