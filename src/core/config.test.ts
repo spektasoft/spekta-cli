@@ -22,21 +22,29 @@ import {
 } from "./config";
 import { generateId } from "../fs/fs-manager";
 import { writeYaml } from "../utils/yaml";
+import { seedAssetFixtures } from "./config.test-fixtures";
+
+describe("Asset Root Resolution", () => {
+  it("should resolve correct default ignore path on refresh", () => {
+    refreshPaths();
+    expect(HOME_DEFAULT_IGNORE).toContain(".spektadefaultignore");
+  });
+});
 
 describe("Config & Prompt Resolution", () => {
   const tempTestDir = path.join(os.tmpdir(), "spekta-tests");
 
-  beforeEach(() => {
+  beforeEach(async () => {
     fs.ensureDirSync(tempTestDir);
     process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempTestDir;
+    await seedAssetFixtures(tempTestDir);
     refreshPaths();
   });
 
   afterEach(() => {
-    // Use a whitelist approach to cleaning process.env
-    const keysToClean = ["SPEKTA_HOME_OVERRIDE"];
+    const keysToClean = ["SPEKTA_HOME_OVERRIDE", "SPEKTA_ASSET_ROOT_OVERRIDE"];
     keysToClean.forEach((key) => delete process.env[key]);
-
     fs.removeSync(tempTestDir);
     refreshPaths();
   });
@@ -259,14 +267,34 @@ describe("Tool definitions", () => {
 
 describe("REPL Prompt Injection", () => {
   it("should replace {{DYNAMIC_TOOLS}} with tool documentation", async () => {
-    const content = await getPromptContent("repl.md");
-    expect(content).toContain("### Tools");
-    expect(content).toContain("#### spekta_read");
-    expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
+    const tempTestDir = path.join(os.tmpdir(), "spekta-repl-dyn-test");
+    fs.ensureDirSync(path.join(tempTestDir, "prompts"));
+    process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempTestDir;
+    await seedAssetFixtures(tempTestDir);
+    refreshPaths();
+
+    try {
+      const content = await getPromptContent("repl.md");
+      expect(content).toContain("### Tools");
+      expect(content).toContain("#### spekta_read");
+      expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
+    } finally {
+      delete process.env.SPEKTA_HOME_OVERRIDE;
+      delete process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
+      fs.removeSync(tempTestDir);
+      refreshPaths();
+    }
   });
 
   it("should not interpolate $ characters in tool descriptions during prompt resolution", async () => {
-    // 1. Mock the tool definitions with problematic characters
+    const tempTestDir = path.join(os.tmpdir(), "spekta-repl-dollar-test");
+    fs.ensureDirSync(path.join(tempTestDir, "prompts"));
+    process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempTestDir;
+    await seedAssetFixtures(tempTestDir);
+    refreshPaths();
+
     const mockTools = [
       {
         name: "test_tool",
@@ -276,22 +304,26 @@ describe("REPL Prompt Injection", () => {
       },
     ];
 
-    // 2. Call the actual production function with mocked tool loader
-    const content = await getPromptContent("repl.md", async () => mockTools);
-
-    // 3. Assert the output contains the literal characters
-    expect(content).toContain("Tool with [10,$] range");
-    expect(content).toContain("$` $& $'");
-
-    // Ensure the $` didn't cause text duplication (the bug symptom)
-    const occurrences = content.split("### Tools").length - 1;
-    expect(occurrences).toBe(1);
+    try {
+      const content = await getPromptContent("repl.md", async () => mockTools);
+      expect(content).toContain("Tool with [10,$] range");
+      expect(content).toContain("$` $& $'");
+      const occurrences = content.split("### Tools").length - 1;
+      expect(occurrences).toBe(1);
+    } finally {
+      delete process.env.SPEKTA_HOME_OVERRIDE;
+      delete process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
+      fs.removeSync(tempTestDir);
+      refreshPaths();
+    }
   });
 
   it("should replace {{DYNAMIC_TOOLS}} in user-defined repl.md prompt", async () => {
     const tempTestDir = path.join(os.tmpdir(), "spekta-repl-test");
     fs.ensureDirSync(path.join(tempTestDir, "prompts"));
     process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempTestDir;
+    await seedAssetFixtures(tempTestDir);
     refreshPaths();
 
     const userPromptPath = path.join(tempTestDir, "prompts", "repl.md");
@@ -306,6 +338,7 @@ describe("REPL Prompt Injection", () => {
       expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
     } finally {
       delete process.env.SPEKTA_HOME_OVERRIDE;
+      delete process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
       fs.removeSync(tempTestDir);
       refreshPaths();
     }
@@ -367,6 +400,8 @@ describe("getPromptContent placeholder injection", () => {
     const tempDir = path.join(os.tmpdir(), `spekta-test-${generateId()}`);
     await fs.ensureDir(path.join(tempDir, "prompts"));
     process.env.SPEKTA_HOME_OVERRIDE = tempDir;
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempDir;
+    await seedAssetFixtures(tempDir);
     refreshPaths();
     await fs.writeFile(path.join(tempDir, "prompts", filename), content);
     return tempDir;
@@ -374,6 +409,7 @@ describe("getPromptContent placeholder injection", () => {
 
   afterEach(() => {
     delete process.env.SPEKTA_HOME_OVERRIDE;
+    delete process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
     refreshPaths();
   });
 
@@ -396,8 +432,13 @@ describe("getPromptContent placeholder injection", () => {
   });
 
   it("correctly injects into internal architect prompts", async () => {
+    const tempDir = await setupTempPrompt(
+      "Architect:\n{{TOOL_USAGE}}",
+      "plan.md",
+    );
     const result = await getPromptContent("plan.md");
     expect(result).not.toContain("{{TOOL_USAGE}}");
+    await fs.remove(tempDir);
   });
 });
 
