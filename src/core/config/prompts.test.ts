@@ -188,4 +188,25 @@ describe("Prompts, REPL Injection & Placeholders", () => {
 
     await fs.remove(tempHome);
   });
+
+  it("should render templates using Nunjucks and safe global context", async () => {
+    const tempTestDir = path.join(os.tmpdir(), "spekta-nunjucks-ctx-test");
+    fs.ensureDirSync(path.join(tempTestDir, "prompts"));
+    process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempTestDir;
+    seedAssetFixtures(tempTestDir);
+    refreshPaths();
+
+    const promptPath = path.join(tempTestDir, "prompts", "ctx-test.md");
+    await fs.writeFile(
+      promptPath,
+      "---\nname: Context Test\n---\nCWD: {{ cwd }}\nTime: {{ timestamp }}",
+    );
+
+    const result = await renderPrompt("ctx-test.md");
+    expect(result).toContain("CWD: ");
+    expect(result).toContain("Time: ");
+
+    fs.removeSync(tempTestDir);
+  });
 });

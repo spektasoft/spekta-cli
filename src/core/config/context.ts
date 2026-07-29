@@ -22,6 +22,10 @@ export const getSafeGitDiff = (): string => {
   }
 };
 
+/**
+ * Global prompt context provider for Nunjucks templates.
+ * Exposes safe environment variables like cwd, git_diff, and timestamp.
+ */
 export const getGlobalPromptContext = (
   extraContext: Record<string, any> = {},
 ): GlobalPromptContext => {
