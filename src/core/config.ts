@@ -5,6 +5,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { Logger } from "../utils/logger";
 import { readYaml } from "../utils/yaml";
+import matter from "gray-matter";
+import nunjucks from "nunjucks";
 
 export type ProviderType = "openrouter" | "gemini";
 
@@ -24,6 +26,13 @@ export interface ToolDefinition {
   description: string;
   params: Record<string, ToolParamDefinition>;
   xml_example: string;
+}
+
+export interface PromptMetadata {
+  filename: string;
+  name: string;
+  description: string;
+  [key: string]: any;
 }
 
 const __filename = fileURLToPath(import.meta.url);
@@ -131,55 +140,118 @@ export const bootstrap = async () => {
   }
 };
 
+export const listPrompts = async (): Promise<PromptMetadata[]> => {
+  const assetPaths = getAssetPaths();
+  const promptMap = new Map<string, PromptMetadata>();
+
+  // 1. Scan asset paths first
+  if (await fs.pathExists(assetPaths.ASSET_PROMPTS)) {
+    const assetFiles = await fs.readdir(assetPaths.ASSET_PROMPTS);
+    for (const file of assetFiles) {
+      if (file.endsWith(".md")) {
+        try {
+          const content = await fs.readFile(
+            path.join(assetPaths.ASSET_PROMPTS, file),
+            "utf-8",
+          );
+          const parsed = matter(content);
+          promptMap.set(file, {
+            filename: file,
+            name: parsed.data.name || file.replace(".md", ""),
+            description: parsed.data.description || "",
+            ...parsed.data,
+          });
+        } catch (err) {
+          Logger.warn(
+            `Failed to parse frontmatter for asset prompt ${file}: ${err}`,
+          );
+        }
+      }
+    }
+  }
+
+  // 2. Scan user home prompts (overriding assets with same filename)
+  if (await fs.pathExists(HOME_PROMPTS)) {
+    const userFiles = await fs.readdir(HOME_PROMPTS);
+    for (const file of userFiles) {
+      if (file.endsWith(".md")) {
+        try {
+          const content = await fs.readFile(
+            path.join(HOME_PROMPTS, file),
+            "utf-8",
+          );
+          const parsed = matter(content);
+          promptMap.set(file, {
+            filename: file,
+            name: parsed.data.name || file.replace(".md", ""),
+            description: parsed.data.description || "",
+            ...parsed.data,
+          });
+        } catch (err) {
+          Logger.warn(
+            `Failed to parse frontmatter for user prompt ${file}: ${err}`,
+          );
+        }
+      }
+    }
+  }
+
+  return Array.from(promptMap.values());
+};
+
+export const renderPrompt = async (
+  fileName: string,
+  context: Record<string, any> = {},
+): Promise<string> => {
+  const assetPaths = getAssetPaths();
+
+  // Setup Nunjucks environment with multi-path loaders (user dir first, then asset dir)
+  const loaders = [
+    new nunjucks.FileSystemLoader(HOME_PROMPTS, { noCache: true }),
+  ];
+  if (await fs.pathExists(assetPaths.ASSET_PROMPTS)) {
+    loaders.push(
+      new nunjucks.FileSystemLoader(assetPaths.ASSET_PROMPTS, {
+        noCache: true,
+      }),
+    );
+  }
+
+  const env = new nunjucks.Environment(loaders, { autoescape: false });
+
+  // Resolve template content to separate frontmatter from template body if needed,
+  // or let nunjucks render template including tags.
+  // We look up file path to grab raw file text for frontmatter stripping.
+  let filePath = path.join(HOME_PROMPTS, fileName);
+  if (!(await fs.pathExists(filePath))) {
+    filePath = path.join(assetPaths.ASSET_PROMPTS, fileName);
+  }
+  if (!(await fs.pathExists(filePath))) {
+    throw new Error(`Prompt file not found: ${fileName}`);
+  }
+
+  const rawContent = await fs.readFile(filePath, "utf-8");
+  const parsed = matter(rawContent);
+
+  // Render the markdown body using Nunjucks
+  const renderedBody = env.renderString(parsed.content, context);
+  return renderedBody;
+};
+
 export const getPromptContent = async (
   fileName: string,
   toolLoader: () => Promise<ToolDefinition[]> = loadToolDefinitions,
 ): Promise<string> => {
-  const { ASSET_PROMPTS } = getAssetPaths();
-  const userPath = path.join(HOME_PROMPTS, fileName);
-  const internalPath = path.join(ASSET_PROMPTS, fileName);
-  const userToolUsagePath = path.join(HOME_PROMPTS, "tool-usage.md");
-  const internalToolUsagePath = path.join(ASSET_PROMPTS, "tool-usage.md");
+  // Backwards compatible wrapper using renderPrompt with minimal context
+  const tools = await toolLoader();
+  const toolUsageText = tools
+    .map(
+      (t) =>
+        `<tool>\n<name>${t.name}</name>\n<description>${t.description}</description>\n</tool>`,
+    )
+    .join("\n\n");
 
-  let content: string;
-
-  if (await fs.pathExists(userPath)) {
-    content = await fs.readFile(userPath, "utf-8");
-  } else if (await fs.pathExists(internalPath)) {
-    content = await fs.readFile(internalPath, "utf-8");
-  } else {
-    throw new Error(`Prompt template not found: ${fileName}.`);
-  }
-
-  if (content.includes("{{TOOL_USAGE}}")) {
-    let toolUsageContent: string;
-    if (await fs.pathExists(userToolUsagePath)) {
-      toolUsageContent = await fs.readFile(userToolUsagePath, "utf-8");
-    } else if (await fs.pathExists(internalToolUsagePath)) {
-      toolUsageContent = await fs.readFile(internalToolUsagePath, "utf-8");
-    } else {
-      throw new Error("tool-usage.md not found in user or internal prompts.");
-    }
-    content = content.replace("{{TOOL_USAGE}}", () => toolUsageContent);
-  }
-
-  // Only inject into the REPL prompt template
-  if (fileName === "repl.md") {
-    const tools = await toolLoader();
-    const toolSections = tools
-      .map((tool) => {
-        return `#### ${tool.name}\n\n${tool.description}\n\nExample:\n\n\`\`\`xml\n${tool.xml_example}\n\`\`\``;
-      })
-      .join("\n\n---\n\n");
-
-    // Use a function for the second argument to avoid $ interpretation
-    content = content.replace(
-      "{{DYNAMIC_TOOLS}}",
-      () => `### Tools\n\n${toolSections}`,
-    );
-  }
-
-  return content;
+  return renderPrompt(fileName, { tools, TOOL_USAGE: toolUsageText });
 };
 
 let envLoaded = false;

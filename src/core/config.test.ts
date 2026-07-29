@@ -19,6 +19,8 @@ import {
   refreshPaths,
   resetInternalState,
   HOME_DEFAULT_IGNORE,
+  listPrompts,
+  renderPrompt,
 } from "./config";
 import { generateId } from "../fs/fs-manager";
 import { writeYaml } from "../utils/yaml";
@@ -525,5 +527,44 @@ describe("getIgnorePatterns", () => {
   it("should define the managed default ignore path correctly", () => {
     refreshPaths();
     expect(HOME_DEFAULT_IGNORE).toContain(".spektadefaultignore");
+  });
+});
+
+describe("Dynamic Prompt System Configuration", () => {
+  const tempHome = path.join(os.tmpdir(), `spekta-test-${Date.now()}`);
+
+  beforeEach(async () => {
+    process.env.SPEKTA_HOME_OVERRIDE = tempHome;
+    resetInternalState();
+    await bootstrap();
+  });
+
+  afterEach(async () => {
+    await fs.remove(tempHome);
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+  });
+
+  it("should list prompts including bootstrapped defaults", async () => {
+    const prompts = await listPrompts();
+    expect(prompts.length).toBeGreaterThan(0);
+    const hasDefault = prompts.some(
+      (p) => p.filename === "plan.md" || p.filename === "commit.md",
+    );
+    expect(hasDefault).toBe(true);
+  });
+
+  it("should render a prompt template with custom context via Nunjucks", async () => {
+    const customPromptPath = path.join(tempHome, "prompts", "test.md");
+    await fs.outputFile(
+      customPromptPath,
+      "---\nname: Test Prompt\ndescription: A test prompt\n---\nHello {{ name }}! {% if includeExtra %}Extra: {{ extra }}{% endif %}",
+    );
+
+    const rendered = await renderPrompt("test.md", {
+      name: "World",
+      includeExtra: true,
+      extra: "123",
+    });
+    expect(rendered.trim()).toBe("Hello World! Extra: 123");
   });
 });
