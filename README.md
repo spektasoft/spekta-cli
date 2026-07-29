@@ -14,7 +14,23 @@ Run `spekta` and follow the prompts.
 
 ## Prompt Templates & Nunjucks Engine
 
-Spekta features a dynamic Nunjucks-based prompt template system located in `./templates/prompts/` and user home directory `~/.spekta/prompts/`.
+Spekta features a dynamic Nunjucks-based prompt template system located in `templates/prompts/` (or directly in the asset root) and user home directory `~/.spekta/prompts/`.
+
+## Asset Directory Resolution
+
+Spekta resolves internal tools, prompt templates, and default ignore patterns dynamically. It supports both nested build structures and flat deployment layouts:
+
+1. **Nested Structure (Default Build Output):**
+   - `<ASSET_ROOT>/templates/tools/`
+   - `<ASSET_ROOT>/templates/prompts/`
+   - `<ASSET_ROOT>/templates/default.ignore`
+
+2. **Flat Structure (Direct Deployment / Home Directories):**
+   - `<ASSET_ROOT>/tools/`
+   - `<ASSET_ROOT>/prompts/`
+   - `<ASSET_ROOT>/default.ignore`
+
+At startup, the runtime checks for `templates/<subfolder>` and falls back to `<ASSET_ROOT>/<subfolder>` automatically, ensuring compatibility with custom installations and flattened package deployments.
 
 ### Prompt Structure & Metadata
 

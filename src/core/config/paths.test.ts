@@ -1,17 +1,50 @@
-import { describe, expect, it } from "vitest";
+import fs from "fs-extra";
+import os from "os";
+import path from "path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  HOME_DIR,
+  getAssetPaths,
   HOME_DEFAULT_IGNORE,
-  HOME_PROVIDERS_USER,
-  HOME_PROVIDERS_FREE,
-  HOME_PROMPTS,
+  HOME_DIR,
   HOME_IGNORE,
+  HOME_PROMPTS,
+  HOME_PROVIDERS_FREE,
+  HOME_PROVIDERS_USER,
   HOME_TOOLS,
   refreshPaths,
 } from "./paths";
-import os from "os";
-import path from "path";
-import { vi } from "vitest";
+
+describe("Asset Root Resolution & Dual Path Layouts", () => {
+  const tempDir = path.join(os.tmpdir(), "spekta-path-tests");
+
+  beforeEach(async () => {
+    await fs.ensureDir(tempDir);
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempDir;
+    refreshPaths();
+  });
+
+  afterEach(async () => {
+    delete process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
+    await fs.remove(tempDir);
+    refreshPaths();
+  });
+
+  it("should resolve nested asset paths when templates subfolder exists", async () => {
+    const nestedTools = path.join(tempDir, "templates", "tools");
+    await fs.ensureDir(nestedTools);
+
+    const paths = getAssetPaths();
+    expect(paths.ASSET_TOOLS).toBe(nestedTools);
+  });
+
+  it("should resolve flat asset paths when assets exist directly at root without templates subfolder", async () => {
+    const flatTools = path.join(tempDir, "tools");
+    await fs.ensureDir(flatTools);
+
+    const paths = getAssetPaths();
+    expect(paths.ASSET_TOOLS).toBe(flatTools);
+  });
+});
 
 describe("Asset Root Resolution & Paths", () => {
   it("should resolve correct default ignore path on refresh", () => {

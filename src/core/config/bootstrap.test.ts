@@ -45,3 +45,42 @@ describe("Bootstrap Logic", () => {
     }
   });
 });
+
+describe("Bootstrap Logic - Dual Directory Structure", () => {
+  const tempTestDir = path.join(os.tmpdir(), "spekta-bootstrap-flat-test");
+
+  beforeEach(async () => {
+    await fs.ensureDir(tempTestDir);
+    process.env.SPEKTA_HOME_OVERRIDE = path.join(tempTestDir, "home");
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = path.join(tempTestDir, "assets");
+
+    // Seed flat assets directly in asset root without templates/ parent folder
+    await fs.ensureDir(path.join(tempTestDir, "assets", "tools"));
+    await fs.ensureDir(path.join(tempTestDir, "assets", "prompts"));
+    await fs.writeFile(
+      path.join(tempTestDir, "assets", "prompts", "test-prompt.md"),
+      "Test Content",
+    );
+
+    refreshPaths();
+  });
+
+  afterEach(async () => {
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+    delete process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
+    await fs.remove(tempTestDir);
+    refreshPaths();
+  });
+
+  it("should complete bootstrap without throwing when assets exist in flat layout", async () => {
+    await expect(bootstrap()).resolves.not.toThrow();
+
+    const seededPrompt = path.join(
+      tempTestDir,
+      "home",
+      "prompts",
+      "test-prompt.md",
+    );
+    expect(await fs.pathExists(seededPrompt)).toBe(true);
+  });
+});

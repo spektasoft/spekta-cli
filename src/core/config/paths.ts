@@ -11,28 +11,44 @@ export const getAssetRoot = () => {
   if (process.env.SPEKTA_ASSET_ROOT_OVERRIDE) {
     return process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
   }
-  // Try 1 level up (e.g., if inside dist/ and templates is inside dist/)
+  // Try 1 level up (e.g., if inside dist/ and templates/tools is inside dist/)
   const root1 = path.resolve(__dirname, "..", "..");
-  if (fs.existsSync(path.join(root1, "templates"))) {
+  if (
+    fs.existsSync(path.join(root1, "templates")) ||
+    fs.existsSync(path.join(root1, "tools"))
+  ) {
     return root1;
   }
-  // Try 2 levels up (e.g., if inside src/core/ and templates is in project root)
+  // Try 2 levels up (e.g., if inside src/core/ and templates/tools is in project root)
   const root2 = path.resolve(__dirname, "../../..");
-  if (fs.existsSync(path.join(root2, "templates"))) {
+  if (
+    fs.existsSync(path.join(root2, "templates")) ||
+    fs.existsSync(path.join(root2, "tools"))
+  ) {
     return root2;
   }
-  return path.resolve(__dirname, "../../../../"); // Fallback for nested dist structures
+  return path.resolve(__dirname, "../../../../");
 };
 
-export const getAssetPaths = () => ({
-  ASSET_PROMPTS: path.join(getAssetRoot(), "templates", "prompts"),
-  ASSET_TOOLS: path.join(getAssetRoot(), "templates", "tools"),
-  ASSET_DEFAULT_IGNORE: path.join(
-    getAssetRoot(),
-    "templates",
-    "default.ignore",
-  ),
-});
+export const getAssetPaths = () => {
+  const root = getAssetRoot();
+
+  const resolveSubpath = (subName: string): string => {
+    const nestedPath = path.join(root, "templates", subName);
+    const flatPath = path.join(root, subName);
+
+    if (fs.existsSync(nestedPath)) {
+      return nestedPath;
+    }
+    return flatPath;
+  };
+
+  return {
+    ASSET_PROMPTS: resolveSubpath("prompts"),
+    ASSET_TOOLS: resolveSubpath("tools"),
+    ASSET_DEFAULT_IGNORE: resolveSubpath("default.ignore"),
+  };
+};
 
 export const GET_HOME_DIR = () =>
   process.env.SPEKTA_HOME_OVERRIDE || path.join(os.homedir(), ".spekta");
