@@ -6,6 +6,7 @@ import { Logger } from "../../utils/logger";
 import { getAssetPaths, HOME_PROMPTS } from "./paths.js";
 import { loadToolDefinitions } from "./tools.js";
 import { PromptMetadata, ToolDefinition } from "./types.js";
+import { getGlobalPromptContext } from "./context.js";
 
 export const listPrompts = async (): Promise<PromptMetadata[]> => {
   const assetPaths = getAssetPaths();
@@ -68,7 +69,7 @@ export const listPrompts = async (): Promise<PromptMetadata[]> => {
 
 export const renderPrompt = async (
   fileName: string,
-  context: Record<string, any> = {},
+  extraContext: Record<string, any> = {},
 ): Promise<string> => {
   const assetPaths = getAssetPaths();
 
@@ -97,7 +98,9 @@ export const renderPrompt = async (
   const rawContent = await fs.readFile(filePath, "utf-8");
   const parsed = matter(rawContent);
 
-  const renderedBody = env.renderString(parsed.content, context);
+  // Combine safe global context with extra context passed in
+  const globalContext = getGlobalPromptContext(extraContext);
+  const renderedBody = env.renderString(parsed.content, globalContext);
   return renderedBody;
 };
 
@@ -106,12 +109,5 @@ export const getPromptContent = async (
   toolLoader: () => Promise<ToolDefinition[]> = loadToolDefinitions,
 ): Promise<string> => {
   const tools = await toolLoader();
-  const toolUsageText = tools
-    .map(
-      (t) =>
-        `<tool>\n<name>${t.name}</name>\n<description>${t.description}</description>\n</tool>`,
-    )
-    .join("\n\n");
-
-  return renderPrompt(fileName, { tools, TOOL_USAGE: toolUsageText });
+  return renderPrompt(fileName, { tools });
 };
