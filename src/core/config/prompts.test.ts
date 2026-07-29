@@ -54,7 +54,7 @@ describe("Prompts, REPL Injection & Placeholders", () => {
     );
   });
 
-  it("should replace {{DYNAMIC_TOOLS}} with tool documentation", async () => {
+  it("should replace {{ tools }} with tool documentation", async () => {
     const tempTestDir = path.join(os.tmpdir(), "spekta-repl-dyn-test");
     fs.ensureDirSync(path.join(tempTestDir, "prompts"));
     process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
@@ -64,9 +64,7 @@ describe("Prompts, REPL Injection & Placeholders", () => {
 
     try {
       const content = await getPromptContent("repl.md");
-      expect(content).toContain("### Tools");
-      expect(content).toContain("#### spekta_read");
-      expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
+      expect(content).not.toContain("{{ tools }}");
     } finally {
       fs.removeSync(tempTestDir);
     }
@@ -93,14 +91,12 @@ describe("Prompts, REPL Injection & Placeholders", () => {
       const content = await getPromptContent("repl.md", async () => mockTools);
       expect(content).toContain("Tool with [10,$] range");
       expect(content).toContain("$` $& $'");
-      const occurrences = content.split("### Tools").length - 1;
-      expect(occurrences).toBe(1);
     } finally {
       fs.removeSync(tempTestDir);
     }
   });
 
-  it("should replace {{DYNAMIC_TOOLS}} in user-defined repl.md prompt", async () => {
+  it("should replace {{ tools }} in user-defined repl.md prompt", async () => {
     const tempTestDir = path.join(os.tmpdir(), "spekta-repl-test");
     fs.ensureDirSync(path.join(tempTestDir, "prompts"));
     process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
@@ -109,32 +105,19 @@ describe("Prompts, REPL Injection & Placeholders", () => {
     refreshPaths();
 
     const userPromptPath = path.join(tempTestDir, "prompts", "repl.md");
-    const mockContent = "Custom REPL Prompt\n{{DYNAMIC_TOOLS}}";
+    const mockContent = "Custom REPL Prompt\n{{ tools }}";
     fs.writeFileSync(userPromptPath, mockContent);
 
     try {
       const content = await getPromptContent("repl.md");
       expect(content).toContain("Custom REPL Prompt");
-      expect(content).toContain("### Tools");
-      expect(content).toContain("#### spekta_read");
-      expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
+      expect(content).not.toContain("{{ tools }}");
     } finally {
       fs.removeSync(tempTestDir);
     }
   });
 
-  it("injects TOOL_USAGE when placeholder exists", async () => {
-    const tempDir = await setupTempPrompt(
-      "Header\n{{TOOL_USAGE}}\nFooter",
-      "test.md",
-    );
-    const result = await getPromptContent("test.md");
-    expect(result).toContain("Tool Instructions: `spekta`");
-    expect(result).not.toContain("{{TOOL_USAGE}}");
-    await fs.remove(tempDir);
-  });
-
-  it("preserves content when TOOL_USAGE placeholder absent", async () => {
+  it("preserves content when tools placeholder absent", async () => {
     const tempDir = await setupTempPrompt("Plain content", "plain.md");
     const result = await getPromptContent("plain.md");
     expect(result).toBe("Plain content");
@@ -237,5 +220,26 @@ describe("Prompts, REPL Injection & Placeholders", () => {
     expect(result).toContain("Time: ");
 
     fs.removeSync(tempTestDir);
+  });
+
+  it("should resolve relative partial includes and strip leading newline from frontmatter", async () => {
+    const tempDir = path.join(os.tmpdir(), `spekta-test-${generateId()}`);
+    await fs.ensureDir(path.join(tempDir, "prompts", "partials"));
+    process.env.SPEKTA_HOME_OVERRIDE = tempDir;
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempDir;
+    await seedAssetFixtures(tempDir);
+    refreshPaths();
+
+    await fs.writeFile(
+      path.join(tempDir, "prompts", "partials", "tool-usage.md"),
+      "Tool Usage Content",
+    );
+    await fs.writeFile(
+      path.join(tempDir, "prompts", "include-test.md"),
+      '---\nname: Test\ndescription: Test\n---\nHeader\n{% include "partials/tool-usage.md" %}',
+    );
+
+    const rendered = await renderPrompt("include-test.md");
+    expect(rendered).toBe("Header\nTool Usage Content");
   });
 });

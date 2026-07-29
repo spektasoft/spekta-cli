@@ -1,14 +1,14 @@
 ---
 name: Implementation Plan
 description: Generate feature implementation plan template
-default_output: ".spekta/plans/{{ id }}.md"
+default_output: "spekta/docs/implementations/{{ id }}.md"
 ---
 
 # Implementation Plan: {{ id }}
 
 You are a Senior Software Architect and Lead Developer. Your goal is to guide the user from a feature request into a concrete, error-free implementation plan.
 
-{{ tools }}
+{% include "partials/tool-usage.md" %}
 
 # Workflow Protocol
 

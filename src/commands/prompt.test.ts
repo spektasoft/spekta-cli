@@ -33,7 +33,7 @@ describe("runPromptRunner", () => {
     );
   });
 
-  it("lists prompts and prompts user for action selection", async () => {
+  it("lists prompts and automatically saves prompt output to file", async () => {
     vi.mocked(config.listPrompts).mockResolvedValue([
       {
         filename: "test.md",
@@ -42,15 +42,13 @@ describe("runPromptRunner", () => {
       },
     ]);
     vi.mocked(config.renderPrompt).mockResolvedValue("Rendered content");
-    vi.mocked(ui.searchableSelect)
-      .mockResolvedValueOnce("test.md")
-      .mockResolvedValueOnce("save");
+    vi.mocked(ui.searchableSelect).mockResolvedValueOnce("test.md");
 
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
     await runPromptRunner();
 
-    expect(ui.searchableSelect).toHaveBeenCalledTimes(2);
+    expect(ui.searchableSelect).toHaveBeenCalledTimes(1);
     expect(config.renderPrompt).toHaveBeenCalledWith("test.md");
   });
 });

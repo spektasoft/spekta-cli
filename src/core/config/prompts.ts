@@ -61,13 +61,19 @@ export const renderPrompt = async (
 ): Promise<string> => {
   const assetPaths = getAssetPaths();
 
-  // Setup Nunjucks environment with multi-path loaders (user dir first, then asset dir)
-  const loaders = [
+  // Setup Nunjucks environment with multi-path loaders (prompts dir & parent dirs for partials)
+  const loaders: nunjucks.ILoader[] = [
     new nunjucks.FileSystemLoader(HOME_PROMPTS, { noCache: true }),
+    new nunjucks.FileSystemLoader(path.dirname(HOME_PROMPTS), {
+      noCache: true,
+    }),
   ];
   if (await fs.pathExists(assetPaths.ASSET_PROMPTS)) {
     loaders.push(
       new nunjucks.FileSystemLoader(assetPaths.ASSET_PROMPTS, {
+        noCache: true,
+      }),
+      new nunjucks.FileSystemLoader(path.dirname(assetPaths.ASSET_PROMPTS), {
         noCache: true,
       }),
     );
@@ -89,13 +95,18 @@ export const renderPrompt = async (
   // Combine safe global context with extra context passed in
   const globalContext = getGlobalPromptContext(extraContext);
   const renderedBody = env.renderString(parsed.content, globalContext);
-  return renderedBody;
+  return renderedBody.replace(/^\r?\n/, "");
 };
 
 export const getPromptContent = async (
   fileName: string,
   toolLoader: () => Promise<ToolDefinition[]> = loadToolDefinitions,
 ): Promise<string> => {
-  const tools = await toolLoader();
+  const tools = (await toolLoader())
+    .map(
+      (t) =>
+        `<tool>\n<name>${t.name}</name>\n<description>${t.description}</description>\n</tool>`,
+    )
+    .join("\n\n");
   return renderPrompt(fileName, { tools });
 };
