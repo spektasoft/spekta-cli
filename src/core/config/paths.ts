@@ -7,27 +7,32 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Robust ASSET_ROOT resolution for compiled distributions
-export const getAssetRoot = () => {
+export const getAssetRoot = (): string => {
   if (process.env.SPEKTA_ASSET_ROOT_OVERRIDE) {
     return process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
   }
-  // Try 1 level up (e.g., if inside dist/ and templates/tools is inside dist/)
-  const root1 = path.resolve(__dirname, "..", "..");
-  if (
-    fs.existsSync(path.join(root1, "templates")) ||
-    fs.existsSync(path.join(root1, "tools"))
-  ) {
-    return root1;
+
+  let current = __dirname;
+  while (true) {
+    const nestedTools = path.join(current, "templates", "tools");
+    const flatTools = path.join(current, "tools");
+    const flatPrompts = path.join(current, "prompts");
+
+    if (
+      fs.existsSync(nestedTools) ||
+      (fs.existsSync(flatTools) && fs.existsSync(flatPrompts))
+    ) {
+      return current;
+    }
+
+    const parent = path.dirname(current);
+    if (parent === current) {
+      break;
+    }
+    current = parent;
   }
-  // Try 2 levels up (e.g., if inside src/core/ and templates/tools is in project root)
-  const root2 = path.resolve(__dirname, "../../..");
-  if (
-    fs.existsSync(path.join(root2, "templates")) ||
-    fs.existsSync(path.join(root2, "tools"))
-  ) {
-    return root2;
-  }
-  return path.resolve(__dirname, "../../../../");
+
+  return path.resolve(__dirname, "..", "..");
 };
 
 export const getAssetPaths = () => {
@@ -40,7 +45,10 @@ export const getAssetPaths = () => {
     if (fs.existsSync(nestedPath)) {
       return nestedPath;
     }
-    return flatPath;
+    if (fs.existsSync(flatPath)) {
+      return flatPath;
+    }
+    return nestedPath;
   };
 
   return {

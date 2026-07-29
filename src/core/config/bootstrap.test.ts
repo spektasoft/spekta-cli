@@ -46,22 +46,13 @@ describe("Bootstrap Logic", () => {
   });
 });
 
-describe("Bootstrap Logic - Dual Directory Structure", () => {
-  const tempTestDir = path.join(os.tmpdir(), "spekta-bootstrap-flat-test");
+describe("Bootstrap Logic - Asset Discovery Integration", () => {
+  const tempTestDir = path.join(os.tmpdir(), "spekta-bootstrap-discovery-test");
 
   beforeEach(async () => {
-    await fs.ensureDir(tempTestDir);
-    process.env.SPEKTA_HOME_OVERRIDE = path.join(tempTestDir, "home");
-    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = path.join(tempTestDir, "assets");
-
-    // Seed flat assets directly in asset root without templates/ parent folder
-    await fs.ensureDir(path.join(tempTestDir, "assets", "tools"));
-    await fs.ensureDir(path.join(tempTestDir, "assets", "prompts"));
-    await fs.writeFile(
-      path.join(tempTestDir, "assets", "prompts", "test-prompt.md"),
-      "Test Content",
-    );
-
+    await fs.emptyDir(tempTestDir);
+    process.env.SPEKTA_HOME_OVERRIDE = path.join(tempTestDir, ".spekta");
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempTestDir;
     refreshPaths();
   });
 
@@ -69,18 +60,22 @@ describe("Bootstrap Logic - Dual Directory Structure", () => {
     delete process.env.SPEKTA_HOME_OVERRIDE;
     delete process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
     await fs.remove(tempTestDir);
-    refreshPaths();
   });
 
-  it("should complete bootstrap without throwing when assets exist in flat layout", async () => {
-    await expect(bootstrap()).resolves.not.toThrow();
-
-    const seededPrompt = path.join(
-      tempTestDir,
-      "home",
-      "prompts",
-      "test-prompt.md",
+  it("should complete bootstrap successfully when nested template assets exist", async () => {
+    await fs.ensureDir(path.join(tempTestDir, "templates", "tools"));
+    await fs.ensureDir(path.join(tempTestDir, "templates", "prompts"));
+    await fs.writeFile(
+      path.join(tempTestDir, "templates", "default.ignore"),
+      "# Default ignore\n",
     );
-    expect(await fs.pathExists(seededPrompt)).toBe(true);
+
+    await expect(bootstrap()).resolves.not.toThrow();
+  });
+
+  it("should throw a clear error when asset tools directory is missing", async () => {
+    await expect(bootstrap()).rejects.toThrow(
+      /Critical Error: Internal tool templates not found at/,
+    );
   });
 });

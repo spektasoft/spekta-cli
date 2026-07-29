@@ -39,10 +39,21 @@ describe("Asset Root Resolution & Dual Path Layouts", () => {
 
   it("should resolve flat asset paths when assets exist directly at root without templates subfolder", async () => {
     const flatTools = path.join(tempDir, "tools");
+    const flatPrompts = path.join(tempDir, "prompts");
     await fs.ensureDir(flatTools);
+    await fs.ensureDir(flatPrompts);
 
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempDir;
     const paths = getAssetPaths();
+
     expect(paths.ASSET_TOOLS).toBe(flatTools);
+  });
+
+  it("should default to nested path when neither nested nor flat subpath exists", () => {
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempDir;
+    const paths = getAssetPaths();
+
+    expect(paths.ASSET_TOOLS).toBe(path.join(tempDir, "templates", "tools"));
   });
 });
 
