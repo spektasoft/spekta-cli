@@ -20,17 +20,12 @@ describe("runPlan", () => {
     consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  it("logs error and sets exit code if plan.md template lacks {{ID}} placeholder", async () => {
-    vi.mocked(config.getPromptContent).mockResolvedValue(
-      "No placeholder here.",
+  it("should generate plan file with Nunjucks rendered ID", async () => {
+    vi.mocked(config.renderPrompt).mockResolvedValue(
+      "# Implementation Plan: 12345",
     );
-
     await runPlan();
-
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
-      'Error: Template "plan.md" must contain the placeholder {{ID}}.',
-    );
-    expect(process.exitCode).toBe(1);
+    expect(config.renderPrompt).toHaveBeenCalledWith("plan.md");
   });
 
   it("handles editor launch failure gracefully", async () => {

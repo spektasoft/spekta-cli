@@ -8,7 +8,15 @@ describe("Interactive menu command visibility", () => {
   });
 
   it("critical user commands remain visible", () => {
-    const visibleCommands = ["commit", "read", "repl", "plan", "review", "pr"];
+    const visibleCommands = [
+      "commit",
+      "read",
+      "repl",
+      "plan",
+      "review",
+      "pr",
+      "prompt",
+    ];
     for (const cmd of visibleCommands) {
       expect(COMMANDS[cmd]).toBeDefined();
       expect(COMMANDS[cmd].hidden).not.toBe(true);

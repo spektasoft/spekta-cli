@@ -1,22 +1,18 @@
 import fs from "fs-extra";
 import path from "path";
-import { getEnv, getPromptContent } from "../core/config";
+import { getEnv, renderPrompt } from "../core/config";
 import { openEditor } from "../utils/editor-utils";
 import { generateId, getPlansDir } from "../fs/fs-manager";
 
 export async function runPlan() {
   try {
     const env = await getEnv();
-    const id = generateId();
     const plansDir = await getPlansDir();
 
-    let template = await getPromptContent("plan.md");
-    if (!/{{ID}}/.test(template)) {
-      throw new Error(
-        'Template "plan.md" must contain the placeholder {{ID}}.',
-      );
-    }
-    const content = template.replace(/{{ID}}/g, id);
+    const content = await renderPrompt("plan.md");
+
+    const idMatch = content.match(/# Implementation Plan: ([a-f0-9]+)/);
+    const id = idMatch ? idMatch[1] : generateId();
 
     const fileName = `${id}.md`;
     const filePath = path.join(plansDir, fileName);

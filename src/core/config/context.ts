@@ -1,7 +1,9 @@
 import { execSync } from "child_process";
+import { generateId } from "../../fs/fs-manager";
 import { Logger } from "../../utils/logger";
 
 export interface GlobalPromptContext {
+  id: string;
   cwd: string;
   git_diff: string;
   timestamp: string;
@@ -30,6 +32,7 @@ export const getGlobalPromptContext = (
   extraContext: Record<string, any> = {},
 ): GlobalPromptContext => {
   return {
+    id: generateId(),
     cwd: process.cwd(),
     git_diff: getSafeGitDiff(),
     timestamp: new Date().toISOString(),

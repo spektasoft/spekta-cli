@@ -151,7 +151,7 @@ describe("Prompts, REPL Injection & Placeholders", () => {
     await fs.remove(tempDir);
   });
 
-  it("should list prompts including bootstrapped defaults", async () => {
+  it("should list prompts including bootstrapped defaults with valid frontmatter", async () => {
     const tempHome = path.join(os.tmpdir(), `spekta-test-${Date.now()}`);
     process.env.SPEKTA_HOME_OVERRIDE = tempHome;
     resetInternalState();
@@ -165,6 +165,35 @@ describe("Prompts, REPL Injection & Placeholders", () => {
     expect(hasDefault).toBe(true);
 
     await fs.remove(tempHome);
+  });
+
+  it("should exclude prompts in partials directory and prompts missing name or description", async () => {
+    const tempDir = path.join(os.tmpdir(), `spekta-test-${generateId()}`);
+    await fs.ensureDir(path.join(tempDir, "prompts", "partials"));
+    process.env.SPEKTA_HOME_OVERRIDE = tempDir;
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempDir;
+    refreshPaths();
+
+    // Partial file
+    await fs.writeFile(
+      path.join(tempDir, "prompts", "partials", "partial.md"),
+      "---\nname: Partial\ndescription: Subtemplate\n---\nPartial content",
+    );
+    // Non-frontmatter file
+    await fs.writeFile(
+      path.join(tempDir, "prompts", "no-meta.md"),
+      "Raw markdown without frontmatter",
+    );
+    // Valid prompt
+    await fs.writeFile(
+      path.join(tempDir, "prompts", "valid.md"),
+      "---\nname: Valid Prompt\ndescription: A valid prompt\n---\nBody text",
+    );
+
+    const prompts = await listPrompts();
+    expect(prompts.some((p) => p.filename === "partial.md")).toBe(false);
+    expect(prompts.some((p) => p.filename === "no-meta.md")).toBe(false);
+    expect(prompts.some((p) => p.filename === "valid.md")).toBe(true);
   });
 
   it("should render a prompt template with custom context via Nunjucks", async () => {

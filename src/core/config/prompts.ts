@@ -12,56 +12,44 @@ export const listPrompts = async (): Promise<PromptMetadata[]> => {
   const assetPaths = getAssetPaths();
   const promptMap = new Map<string, PromptMetadata>();
 
-  // 1. Scan asset paths first
-  if (await fs.pathExists(assetPaths.ASSET_PROMPTS)) {
-    const assetFiles = await fs.readdir(assetPaths.ASSET_PROMPTS);
-    for (const file of assetFiles) {
-      if (file.endsWith(".md")) {
-        try {
-          const content = await fs.readFile(
-            path.join(assetPaths.ASSET_PROMPTS, file),
-            "utf-8",
-          );
-          const parsed = matter(content);
-          promptMap.set(file, {
-            filename: file,
-            name: parsed.data.name || file.replace(".md", ""),
-            description: parsed.data.description || "",
-            ...parsed.data,
-          });
-        } catch (err) {
-          Logger.warn(
-            `Failed to parse frontmatter for asset prompt ${file}: ${err}`,
-          );
-        }
-      }
-    }
-  }
+  const scanDirectory = async (dirPath: string) => {
+    if (!(await fs.pathExists(dirPath))) return;
+    const entries = await fs.readdir(dirPath, { withFileTypes: true });
 
-  // 2. Scan user home prompts (overriding assets with same filename)
-  if (await fs.pathExists(HOME_PROMPTS)) {
-    const userFiles = await fs.readdir(HOME_PROMPTS);
-    for (const file of userFiles) {
-      if (file.endsWith(".md")) {
+    for (const entry of entries) {
+      if (entry.isDirectory() && entry.name === "partials") {
+        continue;
+      }
+
+      if (entry.isFile() && entry.name.endsWith(".md")) {
         try {
-          const content = await fs.readFile(
-            path.join(HOME_PROMPTS, file),
-            "utf-8",
-          );
+          const filePath = path.join(dirPath, entry.name);
+          const content = await fs.readFile(filePath, "utf-8");
           const parsed = matter(content);
-          promptMap.set(file, {
-            filename: file,
-            name: parsed.data.name || file.replace(".md", ""),
-            description: parsed.data.description || "",
-            ...parsed.data,
-          });
+
+          if (parsed.data && parsed.data.name && parsed.data.description) {
+            promptMap.set(entry.name, {
+              filename: entry.name,
+              name: parsed.data.name,
+              description: parsed.data.description,
+              ...parsed.data,
+            });
+          }
         } catch (err) {
           Logger.warn(
-            `Failed to parse frontmatter for user prompt ${file}: ${err}`,
+            `Failed to parse frontmatter for prompt ${entry.name}: ${err}`,
           );
         }
       }
     }
+  };
+
+  // Scan internal asset prompt directory first, then allow user HOME_PROMPTS overrides
+  if (await fs.pathExists(assetPaths.ASSET_PROMPTS)) {
+    await scanDirectory(assetPaths.ASSET_PROMPTS);
+  }
+  if (await fs.pathExists(HOME_PROMPTS)) {
+    await scanDirectory(HOME_PROMPTS);
   }
 
   return Array.from(promptMap.values());

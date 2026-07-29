@@ -2,6 +2,7 @@ import fs from "fs-extra";
 import { syncFreeModels } from "./adapters/sync/freeModels";
 import { runMcpServer } from "./api/mcp-server";
 import { runCommit } from "./commands/commit";
+import { runPromptRunner } from "./commands/prompt";
 import { runCommitRange } from "./commands/commit-range";
 import { runGrep } from "./commands/grep";
 import { runPr } from "./commands/pr";
@@ -63,6 +64,10 @@ export const COMMANDS: Record<string, CommandDefinition> = {
   "commit-range": {
     name: "Generate Commit Message from Range",
     run: runCommitRange,
+  },
+  prompt: {
+    name: "Run Composable Prompt",
+    run: runPromptRunner,
   },
   summarize: {
     name: "Generate Summary from Commit Range",
