@@ -9,6 +9,7 @@ import {
   HOME_TOOLS,
   refreshPaths,
 } from "./paths.js";
+import path from "path";
 
 export const bootstrap = async () => {
   await getEnv();
@@ -18,7 +19,7 @@ export const bootstrap = async () => {
   await fs.ensureDir(HOME_PROMPTS);
   await fs.ensureDir(HOME_TOOLS);
 
-  const { ASSET_TOOLS, ASSET_DEFAULT_IGNORE } = getAssetPaths();
+  const { ASSET_TOOLS, ASSET_DEFAULT_IGNORE, ASSET_PROMPTS } = getAssetPaths();
 
   // Asset Integrity Check
   if (!(await fs.pathExists(ASSET_TOOLS))) {
@@ -31,6 +32,19 @@ export const bootstrap = async () => {
   if (await fs.pathExists(ASSET_DEFAULT_IGNORE)) {
     const managedPatterns = await fs.readFile(ASSET_DEFAULT_IGNORE, "utf-8");
     await fs.writeFile(HOME_DEFAULT_IGNORE, managedPatterns);
+  }
+
+  // Synchronize Default Prompts (Only copy if missing to preserve user edits)
+  if (await fs.pathExists(ASSET_PROMPTS)) {
+    const assetPrompts = await fs.readdir(ASSET_PROMPTS);
+    for (const promptFile of assetPrompts) {
+      const assetPromptPath = path.join(ASSET_PROMPTS, promptFile);
+      const userPromptPath = path.join(HOME_PROMPTS, promptFile);
+      const stat = await fs.stat(assetPromptPath);
+      if (stat.isFile() && !(await fs.pathExists(userPromptPath))) {
+        await fs.copy(assetPromptPath, userPromptPath);
+      }
+    }
   }
 
   // Initialize User Global Ignore if missing

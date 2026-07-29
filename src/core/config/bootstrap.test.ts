@@ -1,10 +1,10 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
-import { bootstrap } from "./bootstrap";
-import { refreshPaths, HOME_DIR } from "./paths";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { seedAssetFixtures } from "../config.test-fixtures";
+import { bootstrap } from "./bootstrap";
+import { getAssetPaths, HOME_DIR, refreshPaths } from "./paths";
 
 describe("Bootstrap Logic", () => {
   const tempTestDir = path.join(os.tmpdir(), "spekta-tests");
@@ -28,8 +28,20 @@ describe("Bootstrap Logic", () => {
     expect(HOME_DIR).toBe(tempTestDir);
   });
 
-  it("should create necessary directories on bootstrap", async () => {
+  it("should initialize user directories, ignore files, and seed default prompts", async () => {
     await bootstrap();
     expect(fs.existsSync(path.join(tempTestDir, "prompts"))).toBe(true);
+    // Verify prompts from asset paths were seeded if present
+    const ASSET_PROMPTS = getAssetPaths().ASSET_PROMPTS;
+    if (await fs.pathExists(ASSET_PROMPTS)) {
+      const assetFiles = await fs.readdir(ASSET_PROMPTS);
+      for (const file of assetFiles) {
+        if (file.endsWith(".md")) {
+          expect(
+            await fs.pathExists(path.join(tempTestDir, "prompts", file)),
+          ).toBe(true);
+        }
+      }
+    }
   });
 });
