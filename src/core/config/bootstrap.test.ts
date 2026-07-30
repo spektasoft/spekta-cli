@@ -28,19 +28,18 @@ describe("Bootstrap Logic", () => {
     expect(HOME_DIR).toBe(tempTestDir);
   });
 
-  it("should initialize user directories, ignore files, and seed default prompts", async () => {
+  it("should initialize user directories and ignore files without seeding default prompts into prompts directory", async () => {
     await bootstrap();
+    expect(fs.existsSync(tempTestDir)).toBe(true);
     expect(fs.existsSync(path.join(tempTestDir, "prompts"))).toBe(true);
-    // Verify prompts from asset paths were seeded if present
-    const ASSET_PROMPTS = getAssetPaths().ASSET_PROMPTS;
-    if (await fs.pathExists(ASSET_PROMPTS)) {
-      const assetFiles = await fs.readdir(ASSET_PROMPTS);
+    // Verify default prompts are NOT seeded into HOME_PROMPTS
+    const assetPrompts = getAssetPaths().ASSET_PROMPTS;
+    if (await fs.pathExists(assetPrompts)) {
+      const assetFiles = await fs.readdir(assetPrompts);
       for (const file of assetFiles) {
-        if (file.endsWith(".md")) {
-          expect(
-            await fs.pathExists(path.join(tempTestDir, "prompts", file)),
-          ).toBe(true);
-        }
+        expect(
+          await fs.pathExists(path.join(tempTestDir, "prompts", file)),
+        ).toBe(false);
       }
     }
   });

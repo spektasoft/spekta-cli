@@ -34,19 +34,6 @@ export const bootstrap = async () => {
     await fs.writeFile(HOME_DEFAULT_IGNORE, managedPatterns);
   }
 
-  // Synchronize Default Prompts (Only copy if missing to preserve user edits)
-  if (await fs.pathExists(ASSET_PROMPTS)) {
-    const assetPrompts = await fs.readdir(ASSET_PROMPTS);
-    for (const promptFile of assetPrompts) {
-      const assetPromptPath = path.join(ASSET_PROMPTS, promptFile);
-      const userPromptPath = path.join(HOME_PROMPTS, promptFile);
-      const stat = await fs.stat(assetPromptPath);
-      if (stat.isFile() && !(await fs.pathExists(userPromptPath))) {
-        await fs.copy(assetPromptPath, userPromptPath);
-      }
-    }
-  }
-
   // Initialize User Global Ignore if missing
   if (!(await fs.pathExists(HOME_IGNORE))) {
     const userIgnoreTemplate = [
