@@ -12,6 +12,7 @@ import {
 } from "../core/config";
 import { searchableSelect } from "../ui/ui";
 import { openEditor } from "../utils/editor-utils";
+import { getUncategorizedBasePath } from "../fs/fs-manager";
 
 export async function runPromptRunner(): Promise<void> {
   const prompts = await listPrompts();
@@ -51,7 +52,7 @@ export async function runPromptRunner(): Promise<void> {
 
   const targetPath = defaultOutput
     ? path.resolve(process.cwd(), defaultOutput)
-    : path.join(process.cwd(), `prompt-output-${context.id}.md`);
+    : path.join(getUncategorizedBasePath(), `${context.id}.md`);
 
   await fs.ensureDir(path.dirname(targetPath));
   await fs.writeFile(targetPath, renderedBody, "utf-8");

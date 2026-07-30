@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { runPromptRunner } from "./prompt";
+import fs from "fs-extra";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
 import * as ui from "../ui/ui";
+import { runPromptRunner } from "./prompt";
 
 vi.mock("../core/config", async (importOriginal) => {
   const actual: any = await importOriginal();
@@ -10,12 +11,15 @@ vi.mock("../core/config", async (importOriginal) => {
     listPrompts: vi.fn(),
     renderPrompt: vi.fn(),
     getEnv: vi.fn().mockResolvedValue({}),
+    getGlobalPromptContext: vi.fn().mockReturnValue({ id: "test-id" }),
   };
 });
 
 vi.mock("../ui/ui", () => ({
   searchableSelect: vi.fn(),
 }));
+
+vi.mock("fs-extra");
 
 describe("runPromptRunner", () => {
   beforeEach(() => {
@@ -33,7 +37,7 @@ describe("runPromptRunner", () => {
     );
   });
 
-  it("lists prompts and automatically saves prompt output to file", async () => {
+  it("lists prompts and automatically saves prompt output to uncategorized path", async () => {
     vi.mocked(config.listPrompts).mockResolvedValue([
       {
         filename: "test.md",
@@ -44,11 +48,14 @@ describe("runPromptRunner", () => {
     vi.mocked(config.renderPrompt).mockResolvedValue("Rendered content");
     vi.mocked(ui.searchableSelect).mockResolvedValueOnce("test.md");
 
-    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-
     await runPromptRunner();
 
     expect(ui.searchableSelect).toHaveBeenCalledTimes(1);
     expect(config.renderPrompt).toHaveBeenCalledWith("test.md");
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining("spekta/docs/uncategorized"),
+      "Rendered content",
+      "utf-8",
+    );
   });
 });

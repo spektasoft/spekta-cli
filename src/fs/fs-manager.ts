@@ -5,6 +5,8 @@ const getSpektaBase = () => path.join(process.cwd(), "spekta");
 const getReviewsBasePath = () => path.join(getSpektaBase(), "docs", "reviews");
 const getPlansBasePath = () =>
   path.join(getSpektaBase(), "docs", "implementations");
+export const getUncategorizedBasePath = () =>
+  path.join(getSpektaBase(), "docs", "uncategorized");
 export const getSessionsPath = async () => {
   const basePath = path.join(getSpektaBase(), "sessions");
   await ensureIgnoredDir(basePath);
