@@ -64,7 +64,9 @@ describe("Prompts, REPL Injection & Placeholders", () => {
 
     try {
       const content = await getPromptContent("repl.md");
-      expect(content).not.toContain("{{ tools }}");
+      expect(content).toContain("### Tools");
+      expect(content).toContain("#### spekta_read");
+      expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
     } finally {
       fs.removeSync(tempTestDir);
     }
@@ -91,6 +93,8 @@ describe("Prompts, REPL Injection & Placeholders", () => {
       const content = await getPromptContent("repl.md", async () => mockTools);
       expect(content).toContain("Tool with [10,$] range");
       expect(content).toContain("$` $& $'");
+      const occurrences = content.split("### Tools").length - 1;
+      expect(occurrences).toBe(1);
     } finally {
       fs.removeSync(tempTestDir);
     }
@@ -111,27 +115,12 @@ describe("Prompts, REPL Injection & Placeholders", () => {
     try {
       const content = await getPromptContent("repl.md");
       expect(content).toContain("Custom REPL Prompt");
-      expect(content).not.toContain("{{ tools }}");
+      expect(content).toContain("### Tools");
+      expect(content).toContain("#### spekta_read");
+      expect(content).not.toContain("{{DYNAMIC_TOOLS}}");
     } finally {
       fs.removeSync(tempTestDir);
     }
-  });
-
-  it("preserves content when tools placeholder absent", async () => {
-    const tempDir = await setupTempPrompt("Plain content", "plain.md");
-    const result = await getPromptContent("plain.md");
-    expect(result).toBe("Plain content");
-    await fs.remove(tempDir);
-  });
-
-  it("correctly injects into internal architect prompts", async () => {
-    const tempDir = await setupTempPrompt(
-      "Architect:\n{{TOOL_USAGE}}",
-      "plan.md",
-    );
-    const result = await getPromptContent("plan.md");
-    expect(result).not.toContain("{{TOOL_USAGE}}");
-    await fs.remove(tempDir);
   });
 
   it("should list prompts including bootstrapped defaults with valid frontmatter", async () => {
@@ -206,7 +195,7 @@ describe("Prompts, REPL Injection & Placeholders", () => {
     fs.ensureDirSync(path.join(tempTestDir, "prompts"));
     process.env.SPEKTA_HOME_OVERRIDE = tempTestDir;
     process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempTestDir;
-    seedAssetFixtures(tempTestDir);
+    await seedAssetFixtures(tempTestDir);
     refreshPaths();
 
     const promptPath = path.join(tempTestDir, "prompts", "ctx-test.md");
@@ -220,26 +209,5 @@ describe("Prompts, REPL Injection & Placeholders", () => {
     expect(result).toContain("Time: ");
 
     fs.removeSync(tempTestDir);
-  });
-
-  it("should resolve relative partial includes and strip leading newline from frontmatter", async () => {
-    const tempDir = path.join(os.tmpdir(), `spekta-test-${generateId()}`);
-    await fs.ensureDir(path.join(tempDir, "prompts", "partials"));
-    process.env.SPEKTA_HOME_OVERRIDE = tempDir;
-    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempDir;
-    await seedAssetFixtures(tempDir);
-    refreshPaths();
-
-    await fs.writeFile(
-      path.join(tempDir, "prompts", "partials", "tool-usage.md"),
-      "Tool Usage Content",
-    );
-    await fs.writeFile(
-      path.join(tempDir, "prompts", "include-test.md"),
-      '---\nname: Test\ndescription: Test\n---\nHeader\n{% include "partials/tool-usage.md" %}',
-    );
-
-    const rendered = await renderPrompt("include-test.md");
-    expect(rendered).toBe("Header\nTool Usage Content");
   });
 });

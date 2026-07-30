@@ -18,12 +18,6 @@ You are a pair programmer.
 {{ tools }}
 `;
 
-export const MINIMAL_TOOL_USAGE_MD = `\
-## Tool Instructions: \`spekta\`
-
-Use spekta read and spekta grep.
-`;
-
 export async function seedAssetFixtures(rootDir: string): Promise<void> {
   const toolsDir = path.join(rootDir, "templates", "tools");
   const promptsDir = path.join(rootDir, "templates", "prompts");
@@ -46,8 +40,4 @@ export async function seedAssetFixtures(rootDir: string): Promise<void> {
   );
 
   await fs.writeFile(path.join(promptsDir, "repl.md"), MINIMAL_REPL_MD);
-  await fs.writeFile(
-    path.join(promptsDir, "tool-usage.md"),
-    MINIMAL_TOOL_USAGE_MD,
-  );
 }

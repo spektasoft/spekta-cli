@@ -6,20 +6,26 @@ import { getAssetPaths, HOME_TOOLS } from "./paths.js";
 import { ToolDefinition } from "./types.js";
 
 let cachedTools: ToolDefinition[] | null = null;
+let cachedToolsKey: string | null = null;
 
 export const resetCachedTools = () => {
   cachedTools = null;
+  cachedToolsKey = null;
 };
 
 export const loadToolDefinitions = async (
   forceRefresh = false,
 ): Promise<ToolDefinition[]> => {
-  if (cachedTools && !forceRefresh) return cachedTools;
+  const { ASSET_TOOLS } = getAssetPaths();
+  const cacheKey = `${HOME_TOOLS}::${ASSET_TOOLS}`;
+
+  if (cachedTools && !forceRefresh && cachedToolsKey === cacheKey) {
+    return cachedTools;
+  }
 
   const toolNames = ["read", "replace", "write", "grep"] as const;
   const tools: ToolDefinition[] = [];
 
-  const { ASSET_TOOLS } = getAssetPaths();
   for (const name of toolNames) {
     const userPath = path.join(HOME_TOOLS, `${name}.yaml`);
     const internalPath = path.join(ASSET_TOOLS, `${name}.yaml`);
@@ -78,5 +84,6 @@ export const loadToolDefinitions = async (
   }
 
   cachedTools = tools;
+  cachedToolsKey = cacheKey;
   return tools;
 };

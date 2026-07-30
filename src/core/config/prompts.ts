@@ -102,11 +102,13 @@ export const getPromptContent = async (
   fileName: string,
   toolLoader: () => Promise<ToolDefinition[]> = loadToolDefinitions,
 ): Promise<string> => {
-  const tools = (await toolLoader())
-    .map(
-      (t) =>
-        `<tool>\n<name>${t.name}</name>\n<description>${t.description}</description>\n</tool>`,
-    )
-    .join("\n\n");
+  const toolDefs = await toolLoader();
+  const toolSections = toolDefs.map(
+    (t) =>
+      `#### ${t.name}\n\n${t.description}\n\nExample:\n\n\`\`\`xml\n${t.xml_example}\n\`\`\``,
+  );
+  const tools = toolDefs.length
+    ? `### Tools\n\n${toolSections.join("\n\n")}`
+    : "";
   return renderPrompt(fileName, { tools });
 };
