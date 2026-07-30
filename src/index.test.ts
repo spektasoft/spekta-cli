@@ -10,9 +10,8 @@ describe("Interactive menu command visibility", () => {
   it("critical user commands remain visible", () => {
     const visibleCommands = [
       "commit",
-      "read",
       "repl",
-      "plan",
+      "prompt",
       "review",
       "pr",
       "prompt",

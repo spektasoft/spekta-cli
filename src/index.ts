@@ -33,6 +33,10 @@ export const COMMANDS: Record<string, CommandDefinition> = {
     name: "Start Refactoring REPL",
     run: runRepl,
   },
+  prompt: {
+    name: "Run Composable Prompt",
+    run: runPromptRunner,
+  },
   review: {
     name: "Run Git Review",
     run: runReview,
@@ -51,6 +55,7 @@ export const COMMANDS: Record<string, CommandDefinition> = {
         await runRead(requests, { save: isSave });
       }
     },
+    hidden: true,
   },
   grep: {
     name: "Search Project (grep)",
@@ -64,10 +69,6 @@ export const COMMANDS: Record<string, CommandDefinition> = {
   "commit-range": {
     name: "Generate Commit Message from Range",
     run: runCommitRange,
-  },
-  prompt: {
-    name: "Run Composable Prompt",
-    run: runPromptRunner,
   },
   summarize: {
     name: "Generate Summary from Commit Range",
