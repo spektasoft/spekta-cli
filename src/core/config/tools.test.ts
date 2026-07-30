@@ -1,10 +1,10 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
-import { loadToolDefinitions } from "./tools";
-import { resetInternalState } from "./env";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { resetInternalState } from "../config";
 import { refreshPaths } from "./paths";
+import { loadToolDefinitions } from "./tools";
 
 describe("Tool Definitions & Overrides", () => {
   const testHome = path.join(os.tmpdir(), "spekta-test-overrides");
