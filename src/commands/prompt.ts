@@ -46,6 +46,10 @@ export async function renderAndSavePrompt(
   args: PromptArgs,
 ): Promise<void> {
   const renderedBody = await renderPrompt(filename);
+  if (args.stdout) {
+    process.stdout.write(renderedBody);
+    return;
+  }
   const context = getGlobalPromptContext();
   const defaultOutput = metadata.default_output
     ? nunjucks.renderString(metadata.default_output, context)
@@ -58,14 +62,9 @@ export async function renderAndSavePrompt(
   await fs.ensureDir(path.dirname(targetPath));
   await fs.writeFile(targetPath, renderedBody, "utf-8");
   const diagnostic = `Prompt output saved to: ${targetPath}`;
-  if (args.stdout) {
-    console.error(diagnostic);
-    process.stdout.write(renderedBody);
-  } else {
-    console.log(diagnostic);
-    const env = await getEnv();
-    if (env.SPEKTA_EDITOR) await openEditor(env.SPEKTA_EDITOR, targetPath);
-  }
+  console.log(diagnostic);
+  const env = await getEnv();
+  if (env.SPEKTA_EDITOR) await openEditor(env.SPEKTA_EDITOR, targetPath);
 }
 
 export async function runPromptRunner(rawArgs: string[] = []): Promise<void> {

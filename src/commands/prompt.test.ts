@@ -74,7 +74,26 @@ describe("prompt CLI", () => {
     );
   });
 
-  it("writes explicit output and emits only rendered content to stdout", async () => {
+  it("writes explicit output", async () => {
+    const prompt = {
+      filename: "test.md",
+      name: "Test",
+      description: "desc",
+      default_output: "default.md",
+    };
+    vi.mocked(config.listPrompts).mockResolvedValue([prompt]);
+    vi.mocked(config.resolvePrompt).mockResolvedValue(prompt);
+    vi.mocked(config.renderPrompt).mockResolvedValue("Rendered content");
+    await runPromptRunner(["Test", "--output", "nested/a.md"]);
+    expect(fs.ensureDir).toHaveBeenCalled();
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining("nested/a.md"),
+      "Rendered content",
+      "utf-8",
+    );
+  });
+
+  it("writes rendered content to stdout without persisting or opening an editor", async () => {
     const prompt = {
       filename: "test.md",
       name: "Test",
@@ -87,14 +106,11 @@ describe("prompt CLI", () => {
     const stdout = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
-    await runPromptRunner(["Test", "--output", "nested/a.md", "--stdout"]);
-    expect(fs.ensureDir).toHaveBeenCalled();
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.stringContaining("nested/a.md"),
-      "Rendered content",
-      "utf-8",
-    );
+    await runPromptRunner(["Test", "--stdout"]);
     expect(stdout).toHaveBeenCalledWith("Rendered content");
+    expect(fs.ensureDir).not.toHaveBeenCalled();
+    expect(fs.writeFile).not.toHaveBeenCalled();
+    expect(config.getEnv).not.toHaveBeenCalled();
     stdout.mockRestore();
   });
 

@@ -139,10 +139,10 @@ spekta prompt review-validation.md
 spekta prompt "Review Validation"
 ```
 
-Every invocation writes an audit file. Spekta uses the prompt's rendered `default_output` when present; otherwise it writes to the existing uncategorized output directory. Use `--output` to override the destination. Parent directories are created automatically, and relative paths are resolved from the current working directory.
+By default, Spekta persists the rendered prompt. It uses the prompt's rendered `default_output` when present, `--output` when provided, or the existing uncategorized output directory as a fallback. Parent directories are created automatically, and relative paths are resolved from the current working directory. Use `--stdout` to emit the rendered prompt only to standard output without writing to disk; `--output` has no persistence effect when used with `--stdout`.
 
 ```bash
-# Always writes the audit file and also emits content.
+# Emit rendered content without writing an output file.
 spekta prompt plan.md --stdout
 
 # Override the default output destination.
@@ -150,7 +150,7 @@ spekta prompt plan.md \
   --output .spekta/audits/plan.md
 ```
 
-The prompt is always written to an audit file. `--stdout` additionally emits the rendered prompt content for pipelines and AI-agent skills. Diagnostics are sent to stderr in stdout mode, so this captures only the rendered prompt:
+`--stdout` emits the rendered prompt content for pipelines and AI-agent skills. Diagnostics are sent to stderr, so command substitution captures only the rendered prompt:
 
 ```bash
 rendered_prompt=$(
