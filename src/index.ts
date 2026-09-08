@@ -1,8 +1,10 @@
 import fs from "fs-extra";
+import { syncFreeModels } from "./adapters/sync/freeModels";
+import { runMcpServer } from "./api/mcp-server";
 import { runCommit } from "./commands/commit";
+import { runPromptRunner } from "./commands/prompt";
 import { runCommitRange } from "./commands/commit-range";
 import { runGrep } from "./commands/grep";
-import { runPlan } from "./commands/plan";
 import { runPr } from "./commands/pr";
 import { runRead } from "./commands/read";
 import { runReadInteractive } from "./commands/read-interactive";
@@ -13,8 +15,6 @@ import { runSummarize } from "./commands/summarize";
 import { runSync } from "./commands/sync";
 import { runWrite } from "./commands/write";
 import { bootstrap, getEnv, HOME_PROVIDERS_FREE } from "./core/config";
-import { runMcpServer } from "./api/mcp-server";
-import { syncFreeModels } from "./adapters/sync/freeModels";
 import { searchableSelect } from "./ui/ui";
 import { parseFilePathWithRange } from "./utils/read-utils";
 
@@ -33,9 +33,9 @@ export const COMMANDS: Record<string, CommandDefinition> = {
     name: "Start Refactoring REPL",
     run: runRepl,
   },
-  plan: {
-    name: "Generate Implementation Plan",
-    run: runPlan,
+  prompt: {
+    name: "Run Composable Prompt",
+    run: runPromptRunner,
   },
   review: {
     name: "Run Git Review",
@@ -55,6 +55,7 @@ export const COMMANDS: Record<string, CommandDefinition> = {
         await runRead(requests, { save: isSave });
       }
     },
+    hidden: true,
   },
   grep: {
     name: "Search Project (grep)",

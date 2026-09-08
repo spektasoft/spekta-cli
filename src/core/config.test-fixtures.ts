@@ -15,19 +15,7 @@ xml_example: |
 export const MINIMAL_REPL_MD = `\
 You are a pair programmer.
 
-{{DYNAMIC_TOOLS}}
-`;
-
-export const MINIMAL_PLAN_MD = `\
-You are an architect.
-
-{{TOOL_USAGE}}
-`;
-
-export const MINIMAL_TOOL_USAGE_MD = `\
-## Tool Instructions: \`spekta\`
-
-Use spekta read and spekta grep.
+{{ tools }}
 `;
 
 export async function seedAssetFixtures(rootDir: string): Promise<void> {
@@ -52,9 +40,4 @@ export async function seedAssetFixtures(rootDir: string): Promise<void> {
   );
 
   await fs.writeFile(path.join(promptsDir, "repl.md"), MINIMAL_REPL_MD);
-  await fs.writeFile(path.join(promptsDir, "plan.md"), MINIMAL_PLAN_MD);
-  await fs.writeFile(
-    path.join(promptsDir, "tool-usage.md"),
-    MINIMAL_TOOL_USAGE_MD,
-  );
 }

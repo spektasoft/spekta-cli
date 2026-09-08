@@ -12,6 +12,59 @@ AI-powered CLI tools.
 
 Run `spekta` and follow the prompts.
 
+## Prompt Templates & Nunjucks Engine
+
+Spekta features a dynamic Nunjucks-based prompt template system located in `templates/prompts/` (or directly in the asset root) and user home directory `~/.spekta/prompts/`.
+
+## Asset Directory Resolution
+
+Spekta resolves internal tools, prompt templates, and default ignore patterns dynamically. It supports both nested build structures and flat deployment layouts:
+
+1. **Nested Structure (Default Build Output):**
+   - `<ASSET_ROOT>/templates/tools/`
+   - `<ASSET_ROOT>/templates/prompts/`
+   - `<ASSET_ROOT>/templates/default.ignore`
+
+2. **Flat Structure (Direct Deployment / Home Directories):**
+   - `<ASSET_ROOT>/tools/`
+   - `<ASSET_ROOT>/prompts/`
+   - `<ASSET_ROOT>/default.ignore`
+
+At startup, the runtime checks for `templates/<subfolder>` and falls back to `<ASSET_ROOT>/<subfolder>` automatically, ensuring compatibility with custom installations and flattened package deployments.
+
+### Prompt Structure & Metadata
+
+Composable prompts use standard markdown files with YAML frontmatter metadata:
+
+```yaml
+---
+name: Feature Audit
+description: Run structured code audit on recent changes
+default_output: ".spekta/audits/{{ id }}.md"
+---
+# Audit Report: {{ id }}
+Working Directory: {{ cwd }}
+Timestamp: {{ timestamp }}
+
+## Changes
+{{ git_diff }}
+```
+
+### Subfolders & Partials
+
+- **Main Prompts (`templates/prompts/*.md`):** Prompts with `name` and `description` YAML frontmatter are listed automatically in the `spekta prompt` UI menu.
+- **Partials (`templates/prompts/partials/*.md`):** Reusable partial snippets (e.g., `partials/tool-usage.md`). Excluded from command selection menus and included in templates via `{% include "partials/tool-usage.md" %}`.
+
+### Standard Global Context Variables
+
+The following read-only variables are automatically injected into all prompt templates:
+
+- `id`: A unique 12-character hex ID string generated per prompt execution.
+- `cwd`: Current working directory path (`process.cwd()`).
+- `git_diff`: Safe read-only output of `git diff --no-ext-diff`.
+- `timestamp`: Current ISO timestamp string.
+- `tools`: Available Spekta AI tools array documentation.
+
 ## Environment Variables
 
 You can configure the following environment variables to customize `spekta`'s behavior:
