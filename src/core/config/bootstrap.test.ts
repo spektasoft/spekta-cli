@@ -32,6 +32,9 @@ describe("Bootstrap Logic", () => {
     await bootstrap();
     expect(fs.existsSync(tempTestDir)).toBe(true);
     expect(fs.existsSync(path.join(tempTestDir, "prompts"))).toBe(true);
+    expect(fs.existsSync(path.join(tempTestDir, ".spektadefaultignore"))).toBe(
+      false,
+    );
     // Verify default prompts are NOT seeded into HOME_PROMPTS
     const assetPrompts = getAssetPaths().ASSET_PROMPTS;
     if (await fs.pathExists(assetPrompts)) {
@@ -42,6 +45,16 @@ describe("Bootstrap Logic", () => {
         ).toBe(false);
       }
     }
+  });
+
+  it("should not create user home state in read-only mode", async () => {
+    const readOnlyHome = path.join(tempTestDir, "home");
+    process.env.SPEKTA_HOME_OVERRIDE = readOnlyHome;
+    refreshPaths();
+
+    await bootstrap({ writeUserHome: false });
+
+    expect(fs.existsSync(readOnlyHome)).toBe(false);
   });
 });
 
@@ -74,6 +87,12 @@ describe("Bootstrap Logic - Asset Discovery Integration", () => {
 
   it("should throw a clear error when asset tools directory is missing", async () => {
     await expect(bootstrap()).rejects.toThrow(
+      /Critical Error: Internal tool templates not found at/,
+    );
+  });
+
+  it("should validate assets in read-only mode", async () => {
+    await expect(bootstrap({ writeUserHome: false })).rejects.toThrow(
       /Critical Error: Internal tool templates not found at/,
     );
   });

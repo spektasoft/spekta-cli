@@ -119,6 +119,10 @@ You can configure the following environment variables to customize `spekta`'s be
 
 Providers are defined in ~/.spekta/providers.yaml.
 
+## Headless CLI usage and global state
+
+Starting `spekta` without arguments opens the interactive menu and may initialize user state under `~/.spekta`, including global ignore and provider files. Direct commands such as `spekta prompt plan.md` are read-only with respect to this initialization: existing configuration remains readable, but bootstrap does not create or update home-managed files. `SPEKTA_HOME_OVERRIDE` is intended for tests and development; it is not required as an agent integration mechanism.
+
 ### OpenRouter (default)
 
 Providers without a `type` field default to OpenRouter and require OPENROUTER_API_KEY.
@@ -149,11 +153,11 @@ providers:
 
 Spekta respects a custom ignore hierarchy. Patterns are cumulative and follow this priority (bottom takes precedence):
 
-1. **Managed Defaults:** `~/.spekta/.spektadefaultignore` (Automatically updated by Spekta)
+1. **Managed Defaults:** the packaged `default.ignore` asset shipped with Spekta
 2. **Global User:** `~/.spekta/.spektaignore` (Your personal global defaults)
 3. **Workspace:** `./.spektaignore` (Project-specific overrides)
 
-**Note:** Do not edit `.spektadefaultignore` directly as it is overwritten on every run. Use the Global User or Workspace files instead.
+**Note:** Add personal global patterns to `~/.spekta/.spektaignore` or project-specific patterns to `./.spektaignore`. Existing `.spektadefaultignore` files are legacy and are no longer read or modified.
 
 #### Whitelisting / Overriding Git
 

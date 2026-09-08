@@ -3,7 +3,7 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 import { getIgnorePatterns } from "./ignore";
-import { HOME_IGNORE, HOME_DEFAULT_IGNORE, refreshPaths } from "./paths";
+import { getAssetPaths, HOME_IGNORE, refreshPaths } from "./paths";
 
 describe("getIgnorePatterns", () => {
   const tempHome = path.join(os.tmpdir(), "spekta-ignore-home");
@@ -13,6 +13,7 @@ describe("getIgnorePatterns", () => {
     await fs.ensureDir(tempHome);
     await fs.ensureDir(tempWorkspace);
     process.env.SPEKTA_HOME_OVERRIDE = tempHome;
+    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempHome;
     refreshPaths();
     vi.spyOn(process, "cwd").mockReturnValue(tempWorkspace);
   });
@@ -20,10 +21,20 @@ describe("getIgnorePatterns", () => {
   afterEach(async () => {
     await fs.remove(tempHome);
     await fs.remove(tempWorkspace);
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+    delete process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
     vi.restoreAllMocks();
   });
 
   it("should combine patterns from home and workspace directories in the correct order", async () => {
+    await fs.writeFile(
+      path.join(tempHome, "default.ignore"),
+      "default-pattern\n",
+    );
+    await fs.writeFile(
+      path.join(tempHome, ".spektadefaultignore"),
+      "stale-pattern\n",
+    );
     await fs.writeFile(
       HOME_IGNORE,
       "home-pattern-1\n# comment\nhome-pattern-2",
@@ -35,6 +46,7 @@ describe("getIgnorePatterns", () => {
 
     const patterns = await getIgnorePatterns();
     expect(patterns).toEqual([
+      "default-pattern",
       "home-pattern-1",
       "home-pattern-2",
       "work-pattern-1",
@@ -69,8 +81,18 @@ describe("getIgnorePatterns", () => {
     expect(patterns).toEqual([]);
   });
 
-  it("should define the managed default ignore path correctly", () => {
-    refreshPaths();
-    expect(HOME_DEFAULT_IGNORE).toContain(".spektadefaultignore");
+  it("uses the packaged default asset instead of a stale home file", async () => {
+    await fs.writeFile(
+      path.join(tempHome, "default.ignore"),
+      "default-pattern\n",
+    );
+    await fs.writeFile(
+      path.join(tempHome, ".spektadefaultignore"),
+      "stale-pattern\n",
+    );
+    expect(getAssetPaths().ASSET_DEFAULT_IGNORE).toBe(
+      path.join(tempHome, "default.ignore"),
+    );
+    expect(await getIgnorePatterns()).toEqual(["default-pattern"]);
   });
 });

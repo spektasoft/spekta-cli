@@ -96,14 +96,13 @@ export const COMMANDS: Record<string, CommandDefinition> = {
 };
 
 async function main() {
-  await bootstrap();
-
   const args = process.argv.slice(2);
   const commandArg = args[0];
-  const isHeadlessPrompt = commandArg === "prompt" && args.length > 1;
+  const isInteractiveMenu = args.length === 0;
+  await bootstrap({ writeUserHome: isInteractiveMenu });
 
   // Initial free models sync if file doesn't exist
-  if (!isHeadlessPrompt && !(await fs.pathExists(HOME_PROVIDERS_FREE))) {
+  if (isInteractiveMenu && !(await fs.pathExists(HOME_PROVIDERS_FREE))) {
     const env = await getEnv();
     if (env.OPENROUTER_API_KEY) {
       try {

@@ -66,13 +66,11 @@ export let HOME_DIR: string;
 export let HOME_PROVIDERS_USER: string;
 export let HOME_PROVIDERS_FREE: string;
 export let HOME_PROMPTS: string;
-export let HOME_DEFAULT_IGNORE: string;
 export let HOME_IGNORE: string;
 export let HOME_TOOLS: string;
 
 export const refreshPaths = () => {
   HOME_DIR = GET_HOME_DIR();
-  HOME_DEFAULT_IGNORE = path.join(HOME_DIR, ".spektadefaultignore");
   HOME_PROVIDERS_USER = path.join(HOME_DIR, "providers.yaml");
   HOME_PROVIDERS_FREE = path.join(HOME_DIR, "providers-free.yaml");
   HOME_PROMPTS = path.join(HOME_DIR, "prompts");
