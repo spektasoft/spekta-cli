@@ -35,7 +35,7 @@ export const COMMANDS: Record<string, CommandDefinition> = {
   },
   prompt: {
     name: "Run Composable Prompt",
-    run: runPromptRunner,
+    run: async (args?: string[]) => { await runPromptRunner(args || []); },
   },
   review: {
     name: "Run Git Review",
@@ -98,26 +98,27 @@ export const COMMANDS: Record<string, CommandDefinition> = {
 async function main() {
   await bootstrap();
 
+  const args = process.argv.slice(2);
+  const commandArg = args[0];
+  const isHeadlessPrompt = commandArg === "prompt" && args.length > 1;
+
   // Initial free models sync if file doesn't exist
-  if (!(await fs.pathExists(HOME_PROVIDERS_FREE))) {
+  if (!isHeadlessPrompt && !(await fs.pathExists(HOME_PROVIDERS_FREE))) {
     const env = await getEnv();
     if (env.OPENROUTER_API_KEY) {
       try {
         await syncFreeModels(env.OPENROUTER_API_KEY);
       } catch (e: any) {
-        console.warn(
+        console.error(
           "Notice: Initial model sync skipped (OpenRouter unreachable).",
         );
       }
     } else {
-      console.warn(
+      console.error(
         "Warning: OPENROUTER_API_KEY not found. Free models won't be fetched.",
       );
     }
   }
-
-  const args = process.argv.slice(2);
-  const commandArg = args[0];
 
   // 1. Check CLI Arguments
   if (commandArg && COMMANDS[commandArg]) {

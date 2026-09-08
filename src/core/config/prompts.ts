@@ -55,6 +55,13 @@ export const listPrompts = async (): Promise<PromptMetadata[]> => {
   return Array.from(promptMap.values());
 };
 
+export const resolvePrompt = async (selector: string): Promise<PromptMetadata> => {
+  const prompts = await listPrompts();
+  const resolved = prompts.find((p) => p.filename === selector) ?? prompts.find((p) => p.name === selector);
+  if (!resolved) throw new Error(`Prompt '${selector}' could not be resolved as a filename or YAML metadata name. Available prompts: ${prompts.map((p) => `${p.filename} (${p.name})`).join(", ") || "none"}`);
+  return resolved;
+};
+
 export const renderPrompt = async (
   fileName: string,
   extraContext: Record<string, any> = {},

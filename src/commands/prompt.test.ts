@@ -2,59 +2,111 @@ import fs from "fs-extra";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
 import * as ui from "../ui/ui";
-import { runPromptRunner } from "./prompt";
+import { parsePromptArgs, runPromptRunner } from "./prompt";
 
-vi.mock("../core/config", async (importOriginal) => {
-  const actual: any = await importOriginal();
-  return {
-    ...actual,
-    listPrompts: vi.fn(),
-    renderPrompt: vi.fn(),
-    getEnv: vi.fn().mockResolvedValue({}),
-    getGlobalPromptContext: vi.fn().mockReturnValue({ id: "test-id" }),
-  };
-});
-
-vi.mock("../ui/ui", () => ({
-  searchableSelect: vi.fn(),
+vi.mock("../core/config", async (importOriginal) => ({
+  ...(await importOriginal<any>()),
+  listPrompts: vi.fn(),
+  renderPrompt: vi.fn(),
+  resolvePrompt: vi.fn(),
+  getEnv: vi.fn().mockResolvedValue({}),
+  getGlobalPromptContext: vi.fn().mockReturnValue({ id: "test-id" }),
 }));
-
+vi.mock("../ui/ui", () => ({ searchableSelect: vi.fn() }));
 vi.mock("fs-extra");
 
-describe("runPromptRunner", () => {
+describe("prompt CLI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(fs.pathExists).mockResolvedValue(false);
   });
 
-  it("prints message if no prompts exist", async () => {
-    const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.mocked(config.listPrompts).mockResolvedValue([]);
+  it("parses supported arguments", () => {
+    expect(
+      parsePromptArgs(["review.md", "--stdout", "--output", "out.md"]),
+    ).toEqual({ selector: "review.md", stdout: true, output: "out.md" });
+    expect(parsePromptArgs([])).toEqual({
+      selector: undefined,
+      stdout: false,
+      output: undefined,
+    });
+  });
+  it.each([["--unknown"], ["--output"]])("rejects invalid options", (arg) =>
+    expect(() => parsePromptArgs([arg])).toThrow(),
+  );
+  it("rejects multiple selectors", () =>
+    expect(() => parsePromptArgs(["a.md", "b.md"])).toThrow());
 
+  it("preserves interactive selection with no arguments", async () => {
+    const prompt = { filename: "test.md", name: "Test", description: "desc" };
+    vi.mocked(config.listPrompts).mockResolvedValue([prompt]);
+    vi.mocked(config.renderPrompt).mockResolvedValue("Rendered");
+    vi.mocked(ui.searchableSelect).mockResolvedValue("test.md");
     await runPromptRunner();
+    expect(ui.searchableSelect).toHaveBeenCalledTimes(1);
+  });
 
-    expect(consoleSpy).toHaveBeenCalledWith(
-      "No custom or composable prompts found.",
+  it.each([["test.md"], ["Test Prompt"]])(
+    "bypasses interactive selection for %s",
+    async (selector) => {
+      const prompt = {
+        filename: "test.md",
+        name: "Test Prompt",
+        description: "desc",
+      };
+      vi.mocked(config.listPrompts).mockResolvedValue([prompt]);
+      vi.mocked(config.resolvePrompt).mockResolvedValue(prompt);
+      vi.mocked(config.renderPrompt).mockResolvedValue("Rendered");
+      await runPromptRunner([selector]);
+      expect(ui.searchableSelect).not.toHaveBeenCalled();
+    },
+  );
+
+  it("fails unknown selectors", async () => {
+    vi.mocked(config.listPrompts).mockResolvedValue([
+      { filename: "test.md", name: "Test", description: "desc" },
+    ]);
+    vi.mocked(config.resolvePrompt).mockRejectedValue(
+      new Error("unknown selector"),
+    );
+    await expect(runPromptRunner(["missing.md"])).rejects.toThrow(
+      "unknown selector",
     );
   });
 
-  it("lists prompts and automatically saves prompt output to uncategorized path", async () => {
-    vi.mocked(config.listPrompts).mockResolvedValue([
-      {
-        filename: "test.md",
-        name: "Test Prompt",
-        description: "Test Description",
-      },
-    ]);
+  it("writes explicit output and emits only rendered content to stdout", async () => {
+    const prompt = {
+      filename: "test.md",
+      name: "Test",
+      description: "desc",
+      default_output: "default.md",
+    };
+    vi.mocked(config.listPrompts).mockResolvedValue([prompt]);
+    vi.mocked(config.resolvePrompt).mockResolvedValue(prompt);
     vi.mocked(config.renderPrompt).mockResolvedValue("Rendered content");
-    vi.mocked(ui.searchableSelect).mockResolvedValueOnce("test.md");
+    const stdout = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await runPromptRunner(["Test", "--output", "nested/a.md", "--stdout"]);
+    expect(fs.ensureDir).toHaveBeenCalled();
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.stringContaining("nested/a.md"),
+      "Rendered content",
+      "utf-8",
+    );
+    expect(stdout).toHaveBeenCalledWith("Rendered content");
+    stdout.mockRestore();
+  });
 
-    await runPromptRunner();
-
-    expect(ui.searchableSelect).toHaveBeenCalledTimes(1);
-    expect(config.renderPrompt).toHaveBeenCalledWith("test.md");
+  it("uses the uncategorized fallback when no default output exists", async () => {
+    const prompt = { filename: "test.md", name: "Test", description: "desc" };
+    vi.mocked(config.listPrompts).mockResolvedValue([prompt]);
+    vi.mocked(config.resolvePrompt).mockResolvedValue(prompt);
+    vi.mocked(config.renderPrompt).mockResolvedValue("Rendered");
+    await runPromptRunner(["Test"]);
     expect(fs.writeFile).toHaveBeenCalledWith(
       expect.stringContaining("spekta/docs/uncategorized"),
-      "Rendered content",
+      "Rendered",
       "utf-8",
     );
   });

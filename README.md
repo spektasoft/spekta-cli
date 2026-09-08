@@ -124,3 +124,38 @@ If a file is ignored by `.gitignore` but you want Spekta to have access to it, y
 ```
 
 This will allow Spekta tools (read, grep, etc.) to access the path even if it remains ignored by Git.
+
+## Composable Prompt CLI
+
+Composable prompts are discovered from the built-in prompt directory and your user prompt directory (`~/.spekta/prompts`). A prompt must define YAML `name` and `description` metadata to appear in the prompt menu.
+
+Invoke a prompt by filename or by its exact YAML metadata name:
+
+```bash
+# Use the prompt filename.
+spekta prompt review-validation.md
+
+# Use the YAML frontmatter name.
+spekta prompt "Review Validation"
+```
+
+Every invocation writes an audit file. Spekta uses the prompt's rendered `default_output` when present; otherwise it writes to the existing uncategorized output directory. Use `--output` to override the destination. Parent directories are created automatically, and relative paths are resolved from the current working directory.
+
+```bash
+# Always writes the audit file and also emits content.
+spekta prompt plan.md --stdout
+
+# Override the default output destination.
+spekta prompt plan.md \
+  --output .spekta/audits/plan.md
+```
+
+The prompt is always written to an audit file. `--stdout` additionally emits the rendered prompt content for pipelines and AI-agent skills. Diagnostics are sent to stderr in stdout mode, so this captures only the rendered prompt:
+
+```bash
+rendered_prompt=$(
+  spekta prompt "Review Validation" --stdout
+)
+```
+
+Running `spekta prompt` without a selector preserves the interactive prompt menu. Invalid selectors, unknown options, missing option values, and multiple selectors return a nonzero exit status.
