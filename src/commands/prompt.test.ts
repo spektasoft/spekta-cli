@@ -18,16 +18,29 @@ vi.mock("fs-extra");
 describe("prompt CLI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(config.getEnv).mockResolvedValue({});
     vi.mocked(fs.pathExists).mockResolvedValue(false);
   });
 
   it("parses supported arguments", () => {
     expect(
       parsePromptArgs(["review.md", "--stdout", "--output", "out.md"]),
-    ).toEqual({ selector: "review.md", stdout: true, output: "out.md" });
+    ).toEqual({
+      selector: "review.md",
+      stdout: true,
+      noEditor: false,
+      output: "out.md",
+    });
     expect(parsePromptArgs([])).toEqual({
       selector: undefined,
       stdout: false,
+      noEditor: false,
+      output: undefined,
+    });
+    expect(parsePromptArgs(["review.md", "--no-editor"])).toEqual({
+      selector: "review.md",
+      stdout: false,
+      noEditor: true,
       output: undefined,
     });
   });
@@ -91,6 +104,16 @@ describe("prompt CLI", () => {
       "Rendered content",
       "utf-8",
     );
+  });
+
+  it("writes output without opening the editor when --no-editor is set", async () => {
+    const prompt = { filename: "test.md", name: "Test", description: "desc" };
+    vi.mocked(config.listPrompts).mockResolvedValue([prompt]);
+    vi.mocked(config.resolvePrompt).mockResolvedValue(prompt);
+    vi.mocked(config.renderPrompt).mockResolvedValue("Rendered content");
+    vi.mocked(config.getEnv).mockResolvedValue({ SPEKTA_EDITOR: "editor" });
+    await runPromptRunner(["Test", "--no-editor"]);
+    expect(fs.writeFile).toHaveBeenCalled();
   });
 
   it("writes rendered content to stdout without persisting or opening an editor", async () => {

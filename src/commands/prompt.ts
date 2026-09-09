@@ -15,6 +15,7 @@ import { getUncategorizedBasePath } from "../fs/fs-manager";
 export interface PromptArgs {
   selector?: string;
   stdout: boolean;
+  noEditor: boolean;
   output?: string;
 }
 
@@ -22,9 +23,11 @@ export function parsePromptArgs(args: string[] = []): PromptArgs {
   let selector: string | undefined;
   let output: string | undefined;
   let stdout = false;
+  let noEditor = false;
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === "--stdout") stdout = true;
+    else if (arg === "--no-editor") noEditor = true;
     else if (arg === "--output") {
       output = args[++i];
       if (!output || output.startsWith("--"))
@@ -33,7 +36,7 @@ export function parsePromptArgs(args: string[] = []): PromptArgs {
     else if (selector) throw new Error("Only one prompt selector is allowed.");
     else selector = arg;
   }
-  return { selector, stdout, output };
+  return { selector, stdout, noEditor, output };
 }
 
 export async function resolvePromptFilename(selector: string): Promise<string> {
@@ -64,7 +67,8 @@ export async function renderAndSavePrompt(
   const diagnostic = `Prompt output saved to: ${targetPath}`;
   console.log(diagnostic);
   const env = await getEnv();
-  if (env.SPEKTA_EDITOR) await openEditor(env.SPEKTA_EDITOR, targetPath);
+  if (env.SPEKTA_EDITOR && !args.noEditor)
+    await openEditor(env.SPEKTA_EDITOR, targetPath);
 }
 
 export async function runPromptRunner(rawArgs: string[] = []): Promise<void> {
@@ -81,7 +85,10 @@ export async function runPromptRunner(rawArgs: string[] = []): Promise<void> {
   let selected;
   if (args.selector) selected = await resolvePrompt(args.selector);
   else {
-    const selectedFilename = await searchableSelect<string>("Select prompt to execute:", choices);
+    const selectedFilename = await searchableSelect<string>(
+      "Select prompt to execute:",
+      choices,
+    );
     selected = prompts.find((p) => p.filename === selectedFilename);
   }
   if (!selected)

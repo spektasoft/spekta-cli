@@ -49,7 +49,7 @@ export async function processOutput(
   const env = await getEnv();
   const editor = env.SPEKTA_EDITOR;
 
-  if (editor) {
+  if (editor && env.SPEKTA_NO_EDITOR !== "1") {
     try {
       await openEditor(editor, filePath);
     } catch (error: any) {

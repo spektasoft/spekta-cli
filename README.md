@@ -76,7 +76,18 @@ spekta prompt plan.md --stdout
 # Override the default output destination.
 spekta prompt plan.md \
   --output .spekta/audits/plan.md
+
+# Persist the output without launching SPEKTA_EDITOR.
+spekta prompt plan.md --no-editor
 ```
+
+For headless workflows that use other generated-output commands, set `SPEKTA_NO_EDITOR=1` to persist output and report its path without launching the configured editor:
+
+```bash
+SPEKTA_NO_EDITOR=1 spekta summarize
+```
+
+`--no-editor` takes precedence for `spekta prompt`; `SPEKTA_NO_EDITOR=1` applies to shared generated-output flows. Neither setting changes persistence, and `--stdout` continues to bypass both persistence and editor handling.
 
 `--stdout` emits the rendered prompt content for pipelines and AI-agent skills. Diagnostics are sent to stderr, so command substitution captures only the rendered prompt:
 
