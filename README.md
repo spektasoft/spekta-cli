@@ -97,6 +97,28 @@ rendered_prompt=$(
 )
 ```
 
+### Commit Prompt CLI
+
+`spekta commit` is non-interactive by default. It writes the complete commit prompt to a temporary file and reports the path, so an agent can read it after the command exits:
+
+```bash
+spekta commit
+cat /tmp/spekta-prompt-*.md
+```
+
+Use `--stdout` to emit the prompt without creating a file, or `--no-editor` to explicitly suppress an editor. Use `--interactive` to open the provider-selection and optional commit workflow. `SPEKTA_NO_EDITOR=1` remains a global fallback for generated-output commands.
+
+`--prompt-only` explicitly stops before provider lookup and AI execution. `--stdout` is a delivery option and may be combined with prompt-only or generated-message mode. Use `--message --model <provider-name-or-model-id>` to generate a formatted message headlessly; the model selector must exactly match one configured provider name or model. Use `--commit --model <provider-name-or-model-id>` to commit the generated message directly, without an editor or confirmation; direct commit cannot be combined with `--stdout`.
+
+```bash
+spekta commit --stdout
+spekta commit --no-editor
+spekta commit --interactive
+spekta commit --prompt-only --stdout
+spekta commit --model <configured-model> --message --stdout
+spekta commit --model <configured-provider-name> --commit
+```
+
 Running `spekta prompt` without a selector preserves the interactive prompt menu. Invalid selectors, unknown options, missing option values, and multiple selectors return a nonzero exit status.
 
 ## Runtime and Assets
