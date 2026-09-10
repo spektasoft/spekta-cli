@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
 import * as ui from "../ui/ui";
 import { parsePromptArgs, runPromptRunner } from "./prompt";
+import { selectPromptPartials } from "../ui/partial-selection";
 
 vi.mock("../core/config", async (importOriginal) => ({
   ...(await importOriginal<any>()),
@@ -13,6 +14,11 @@ vi.mock("../core/config", async (importOriginal) => ({
   getGlobalPromptContext: vi.fn().mockReturnValue({ id: "test-id" }),
 }));
 vi.mock("../ui/ui", () => ({ searchableSelect: vi.fn() }));
+
+vi.mock("../ui/partial-selection", () => ({
+  selectPromptPartials: vi.fn(),
+}));
+
 vi.mock("fs-extra");
 
 describe("prompt CLI", () => {
@@ -30,18 +36,41 @@ describe("prompt CLI", () => {
       stdout: true,
       noEditor: false,
       output: "out.md",
+      partialSelection: {
+        include: [],
+        exclude: [],
+      },
     });
     expect(parsePromptArgs([])).toEqual({
       selector: undefined,
       stdout: false,
       noEditor: false,
       output: undefined,
+      partialSelection: {
+        include: [],
+        exclude: [],
+      },
     });
-    expect(parsePromptArgs(["review.md", "--no-editor"])).toEqual({
+    expect(
+      parsePromptArgs([
+        "review.md",
+        "--no-editor",
+        "--include-partial",
+        "foo.md",
+        "--include-partial",
+        "bar.md",
+        "--exclude-partial",
+        "baz.md",
+      ]),
+    ).toEqual({
       selector: "review.md",
       stdout: false,
       noEditor: true,
       output: undefined,
+      partialSelection: {
+        include: ["foo.md", "bar.md"],
+        exclude: ["baz.md"],
+      },
     });
   });
   it.each([["--unknown"], ["--output"]])("rejects invalid options", (arg) =>
@@ -55,8 +84,23 @@ describe("prompt CLI", () => {
     vi.mocked(config.listPrompts).mockResolvedValue([prompt]);
     vi.mocked(config.renderPrompt).mockResolvedValue("Rendered");
     vi.mocked(ui.searchableSelect).mockResolvedValue("test.md");
+    vi.mocked(selectPromptPartials).mockResolvedValue({
+      include: ["a.md"],
+      exclude: [],
+    });
+
     await runPromptRunner();
+
     expect(ui.searchableSelect).toHaveBeenCalledTimes(1);
+    expect(selectPromptPartials).toHaveBeenCalledTimes(1);
+    expect(config.renderPrompt).toHaveBeenCalledWith(
+      "test.md",
+      {},
+      {
+        include: ["a.md"],
+        exclude: [],
+      },
+    );
   });
 
   it.each([["test.md"], ["Test Prompt"]])(
@@ -128,7 +172,7 @@ describe("prompt CLI", () => {
     vi.mocked(config.renderPrompt).mockResolvedValue("Rendered content");
     const stdout = vi
       .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
+      .mockImplementation(() => {});
     await runPromptRunner(["Test", "--stdout"]);
     expect(stdout).toHaveBeenCalledWith("Rendered content");
     expect(fs.ensureDir).not.toHaveBeenCalled();
@@ -149,4 +193,66 @@ describe("prompt CLI", () => {
       "utf-8",
     );
   });
+
+  it("forwards partial selection to renderPrompt", async () => {
+    const prompt = {
+      filename: "test.md",
+      name: "Test",
+      description: "desc",
+    };
+    vi.mocked(config.listPrompts).mockResolvedValue([prompt]);
+    vi.mocked(config.resolvePrompt).mockResolvedValue(prompt);
+    vi.mocked(config.renderPrompt).mockResolvedValue("Rendered content");
+
+    await runPromptRunner([
+      "Test",
+      "--include-partial",
+      "foo.md",
+      "--include-partial",
+      "bar.md",
+      "--exclude-partial",
+      "baz.md",
+    ]);
+
+    expect(config.renderPrompt).toHaveBeenCalledWith(
+      "test.md",
+      {},
+      {
+        include: ["foo.md", "bar.md"],
+        exclude: ["baz.md"],
+      },
+    );
+  });
+
+  it("preserves the existing empty selection when no interactive partials are chosen", async () => {
+    const prompt = {
+      filename: "test.md",
+      name: "Test",
+      description: "desc",
+    };
+
+    vi.mocked(config.listPrompts).mockResolvedValue([prompt]);
+    vi.mocked(config.resolvePrompt).mockResolvedValue(prompt);
+    vi.mocked(config.renderPrompt).mockResolvedValue("Rendered content");
+
+    // Assuming the interactive selection is handled by another test suite
+    // or mocked to return default in this scope.
+    await runPromptRunner(["Test"]);
+
+    expect(config.renderPrompt).toHaveBeenCalledWith(
+      "test.md",
+      {},
+      {
+        include: [],
+        exclude: [],
+      },
+    );
+  });
+
+  it.each([["--include-partial"], ["--exclude-partial"]])(
+    "rejects missing partial value for %s",
+    (arg) => {
+      expect(() => parsePromptArgs([arg])).toThrow("Missing value");
+    },
+  );
 });

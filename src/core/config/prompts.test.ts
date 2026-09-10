@@ -3,11 +3,47 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 import { getPromptContent, listPrompts, renderPrompt } from "./prompts";
+import { resolveSelectedPartials } from "./partials";
 import { refreshPaths } from "./paths";
 import { resetInternalState } from "./env";
 import { generateId } from "../../fs/fs-manager";
 import { seedAssetFixtures } from "../config.test-fixtures";
 import { bootstrap } from "./bootstrap";
+
+describe("Partial selection", () => {
+  it("includes all partials when nothing is explicitly selected", () => {
+    expect(
+      resolveSelectedPartials(["a.md", "b.md"], { include: [], exclude: [] }),
+    ).toEqual(["a.md", "b.md"]);
+  });
+
+  it("includes only explicitly included partials", () => {
+    expect(
+      resolveSelectedPartials(["a.md", "b.md", "c.md"], {
+        include: ["a.md", "c.md"],
+        exclude: [],
+      }),
+    ).toEqual(["a.md", "c.md"]);
+  });
+
+  it("excludes explicitly excluded partials", () => {
+    expect(
+      resolveSelectedPartials(["a.md", "b.md", "c.md"], {
+        include: [],
+        exclude: ["b.md"],
+      }),
+    ).toEqual(["a.md", "c.md"]);
+  });
+
+  it("gives exclusion precedence over inclusion", () => {
+    expect(
+      resolveSelectedPartials(["a.md", "b.md"], {
+        include: ["a.md", "b.md"],
+        exclude: ["b.md"],
+      }),
+    ).toEqual(["a.md"]);
+  });
+});
 
 describe("Prompts, REPL Injection & Placeholders", () => {
   const setupTempPrompt = async (content: string, filename: string) => {

@@ -11,12 +11,17 @@ import {
 import { searchableSelect } from "../ui/ui";
 import { openEditor } from "../utils/editor-utils";
 import { getUncategorizedBasePath } from "../fs/fs-manager";
+import { selectPromptPartials } from "../ui/partial-selection";
 
 export interface PromptArgs {
   selector?: string;
   stdout: boolean;
   noEditor: boolean;
   output?: string;
+  partialSelection: {
+    include: string[];
+    exclude: string[];
+  };
 }
 
 export function parsePromptArgs(args: string[] = []): PromptArgs {
@@ -24,11 +29,23 @@ export function parsePromptArgs(args: string[] = []): PromptArgs {
   let output: string | undefined;
   let stdout = false;
   let noEditor = false;
+  const include: string[] = [];
+  const exclude: string[] = [];
+
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i];
     if (arg === "--stdout") stdout = true;
     else if (arg === "--no-editor") noEditor = true;
-    else if (arg === "--output") {
+    else if (arg === "--include-partial" || arg === "--exclude-partial") {
+      const value = args[++i];
+      if (!value || value.startsWith("--"))
+        throw new Error(`Missing value for ${arg}`);
+      const target = arg === "--include-partial" ? include : exclude;
+      value
+        .split(",")
+        .filter(Boolean)
+        .forEach((name) => target.push(name));
+    } else if (arg === "--output") {
       output = args[++i];
       if (!output || output.startsWith("--"))
         throw new Error("Missing value for --output");
@@ -36,7 +53,16 @@ export function parsePromptArgs(args: string[] = []): PromptArgs {
     else if (selector) throw new Error("Only one prompt selector is allowed.");
     else selector = arg;
   }
-  return { selector, stdout, noEditor, output };
+  return {
+    selector,
+    stdout,
+    noEditor,
+    output,
+    partialSelection: {
+      include,
+      exclude,
+    },
+  };
 }
 
 export async function resolvePromptFilename(selector: string): Promise<string> {
@@ -48,7 +74,7 @@ export async function renderAndSavePrompt(
   metadata: Record<string, any>,
   args: PromptArgs,
 ): Promise<void> {
-  const renderedBody = await renderPrompt(filename);
+  const renderedBody = await renderPrompt(filename, {}, args.partialSelection);
   if (args.stdout) {
     process.stdout.write(renderedBody);
     return;
@@ -93,5 +119,14 @@ export async function runPromptRunner(rawArgs: string[] = []): Promise<void> {
   }
   if (!selected)
     throw new Error(`Prompt could not be resolved: ${args.selector}`);
+
+  if (
+    !args.selector &&
+    args.partialSelection.include.length === 0 &&
+    args.partialSelection.exclude.length === 0
+  ) {
+    args.partialSelection = await selectPromptPartials();
+  }
+
   await renderAndSavePrompt(selected.filename, selected, args);
 }

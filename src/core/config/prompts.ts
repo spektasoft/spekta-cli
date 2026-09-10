@@ -7,6 +7,13 @@ import { getAssetPaths, HOME_PROMPTS } from "./paths.js";
 import { loadToolDefinitions } from "./tools.js";
 import { PromptMetadata, ToolDefinition } from "./types.js";
 import { getGlobalPromptContext } from "./context.js";
+import {
+  listPartials,
+  resolveSelectedPartials,
+  validatePartialSelection,
+  PartialSelection,
+  SelectivePartialLoader,
+} from "./partials.js";
 
 export const listPrompts = async (): Promise<PromptMetadata[]> => {
   const assetPaths = getAssetPaths();
@@ -55,34 +62,47 @@ export const listPrompts = async (): Promise<PromptMetadata[]> => {
   return Array.from(promptMap.values());
 };
 
-export const resolvePrompt = async (selector: string): Promise<PromptMetadata> => {
+export const resolvePrompt = async (
+  selector: string,
+): Promise<PromptMetadata> => {
   const prompts = await listPrompts();
-  const resolved = prompts.find((p) => p.filename === selector) ?? prompts.find((p) => p.name === selector);
-  if (!resolved) throw new Error(`Prompt '${selector}' could not be resolved as a filename or YAML metadata name. Available prompts: ${prompts.map((p) => `${p.filename} (${p.name})`).join(", ") || "none"}`);
+  const resolved =
+    prompts.find((p) => p.filename === selector) ??
+    prompts.find((p) => p.name === selector);
+  if (!resolved)
+    throw new Error(
+      `Prompt '${selector}' could not be resolved as a filename or YAML metadata name. Available prompts: ${prompts.map((p) => `${p.filename} (${p.name})`).join(", ") || "none"}`,
+    );
   return resolved;
 };
 
 export const renderPrompt = async (
   fileName: string,
   extraContext: Record<string, any> = {},
+  partialSelection: PartialSelection = { include: [], exclude: [] },
 ): Promise<string> => {
   const assetPaths = getAssetPaths();
+  const validatedSelection = await validatePartialSelection(partialSelection);
+  const availablePartials = await listPartials();
+  const selectedPartials = new Set(
+    resolveSelectedPartials(
+      availablePartials.map((partial) => partial.name),
+      validatedSelection,
+    ),
+  );
 
   // Setup Nunjucks environment with multi-path loaders (prompts dir & parent dirs for partials)
   const loaders: nunjucks.ILoader[] = [
-    new nunjucks.FileSystemLoader(HOME_PROMPTS, { noCache: true }),
-    new nunjucks.FileSystemLoader(path.dirname(HOME_PROMPTS), {
-      noCache: true,
-    }),
+    new SelectivePartialLoader(HOME_PROMPTS, selectedPartials),
+    new SelectivePartialLoader(path.dirname(HOME_PROMPTS), selectedPartials),
   ];
   if (await fs.pathExists(assetPaths.ASSET_PROMPTS)) {
     loaders.push(
-      new nunjucks.FileSystemLoader(assetPaths.ASSET_PROMPTS, {
-        noCache: true,
-      }),
-      new nunjucks.FileSystemLoader(path.dirname(assetPaths.ASSET_PROMPTS), {
-        noCache: true,
-      }),
+      new SelectivePartialLoader(assetPaths.ASSET_PROMPTS, selectedPartials),
+      new SelectivePartialLoader(
+        path.dirname(assetPaths.ASSET_PROMPTS),
+        selectedPartials,
+      ),
     );
   }
 
