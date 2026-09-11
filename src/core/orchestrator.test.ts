@@ -1,8 +1,12 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { executeAiAction } from "./orchestrator";
 import * as api from "../api/api";
 
 vi.mock("../src/api");
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("Orchestrator Role Validation", () => {
   it("should pass structured system and user messages to the API client", async () => {
@@ -27,5 +31,20 @@ describe("Orchestrator Role Validation", () => {
       ],
       {},
     );
+  });
+
+  it("does not create spinner output in quiet mode", async () => {
+    const callSpy = vi
+      .spyOn(api, "callAIWithProvider")
+      .mockResolvedValue("result");
+
+    await executeAiAction({
+      provider: { name: "test", model: "gpt-4", config: {} },
+      messages: [{ role: "user", content: "prompt" }],
+      spinnerTitle: "hidden",
+      quiet: true,
+    });
+
+    expect(callSpy).toHaveBeenCalledOnce();
   });
 });

@@ -1,6 +1,6 @@
 import fs from "fs-extra";
 import path from "path";
-import { HOME_DEFAULT_IGNORE, HOME_IGNORE } from "./paths.js";
+import { getAssetPaths, HOME_IGNORE } from "./paths.js";
 
 const parseIgnoreContent = (content: string): string[] => {
   return content
@@ -13,8 +13,9 @@ export const getIgnorePatterns = async (): Promise<string[]> => {
   const patterns: string[] = [];
 
   // 1. Managed Defaults
-  if (await fs.pathExists(HOME_DEFAULT_IGNORE)) {
-    const managedContent = await fs.readFile(HOME_DEFAULT_IGNORE, "utf-8");
+  const { ASSET_DEFAULT_IGNORE } = getAssetPaths();
+  if (await fs.pathExists(ASSET_DEFAULT_IGNORE)) {
+    const managedContent = await fs.readFile(ASSET_DEFAULT_IGNORE, "utf-8");
     patterns.push(...parseIgnoreContent(managedContent));
   }
 

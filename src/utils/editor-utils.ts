@@ -42,6 +42,7 @@ export async function processOutput(
   content: string,
   prefix: string,
   silent: boolean = false,
+  noEditor: boolean = false,
 ): Promise<string> {
   const filePath = getTempPath(prefix);
   await fs.writeFile(filePath, content, "utf-8");
@@ -49,7 +50,7 @@ export async function processOutput(
   const env = await getEnv();
   const editor = env.SPEKTA_EDITOR;
 
-  if (editor) {
+  if (editor && !noEditor && env.SPEKTA_NO_EDITOR !== "1") {
     try {
       await openEditor(editor, filePath);
     } catch (error: any) {

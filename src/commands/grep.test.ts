@@ -12,7 +12,9 @@ vi.mock("../utils/security", () => ({
 }));
 vi.mock("../core/config", () => ({
   HOME_IGNORE: "/mock/home/.spektaignore",
-  HOME_DEFAULT_IGNORE: "/mock/home/.spektadefaultignore",
+  getAssetPaths: () => ({
+    ASSET_DEFAULT_IGNORE: "/mock/assets/default.ignore",
+  }),
 }));
 
 describe("getGrepContent", () => {
@@ -172,17 +174,20 @@ describe("getGrepContent", () => {
 
     // Mock fs.pathExists to return true for configuration paths
     vi.mocked(fs.pathExists).mockImplementation(async (p: string) => {
-      return p.includes(".spektaignore") || p.includes(".spektadefaultignore");
+      return p.includes(".spektaignore") || p.includes("default.ignore");
     });
 
     await getGrepContent({ pattern: "test" });
 
-    const searchCallArgs = vi.mocked(execa).mock.calls[1][1];
+    const searchCallArgs = vi.mocked(execa).mock.calls[1]?.[1];
+    if (!Array.isArray(searchCallArgs)) {
+      throw new Error("Expected ripgrep search arguments");
+    }
 
     // Check for Global and Default ignore flags
     expect(searchCallArgs).toContain("--ignore-file");
     expect(searchCallArgs).toContain("/mock/home/.spektaignore");
-    expect(searchCallArgs).toContain("/mock/home/.spektadefaultignore");
+    expect(searchCallArgs).toContain("/mock/assets/default.ignore");
 
     // Check for Workspace ignore flag (uses process.cwd())
     const workspacePath = /.*\.spektaignore/.test(

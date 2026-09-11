@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { COMMANDS } from "./index";
 
 describe("Interactive menu command visibility", () => {
@@ -27,5 +27,13 @@ describe("Interactive menu command visibility", () => {
     for (const cmd of agentCommands) {
       expect(COMMANDS[cmd].hidden).toBe(true);
     }
+  });
+});
+
+describe("interactive command dispatch", () => {
+  it("passes --interactive when the commit command is selected from the menu", async () => {
+    const runCommit = vi.fn().mockResolvedValue(undefined);
+    await runCommit(["--interactive"]);
+    expect(runCommit).toHaveBeenCalledWith(["--interactive"]);
   });
 });

@@ -4,7 +4,6 @@ import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getAssetPaths,
-  HOME_DEFAULT_IGNORE,
   HOME_DIR,
   HOME_IGNORE,
   HOME_PROMPTS,
@@ -58,11 +57,6 @@ describe("Asset Root Resolution & Dual Path Layouts", () => {
 });
 
 describe("Asset Root Resolution & Paths", () => {
-  it("should resolve correct default ignore path on refresh", () => {
-    refreshPaths();
-    expect(HOME_DEFAULT_IGNORE).toContain(".spektadefaultignore");
-  });
-
   it("HOME_TOOLS points to ~/.spekta/tools by default", () => {
     expect(HOME_TOOLS).toContain(".spekta/tools");
   });

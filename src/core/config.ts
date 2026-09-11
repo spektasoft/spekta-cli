@@ -8,6 +8,7 @@ export {
 } from "./config/env";
 export * from "./config/ignore";
 export * from "./config/paths";
+export * from "./config/partials";
 export * from "./config/prompts";
 export * from "./config/providers";
 export { loadToolDefinitions } from "./config/tools";

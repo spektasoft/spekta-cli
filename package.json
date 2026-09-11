@@ -14,7 +14,7 @@
     },
     "dependencies": {
         "@google/generative-ai": "^0.24.1",
-        "@inquirer/prompts": "^8.5.2",
+        "@inquirer/prompts": "^8.7.2",
         "@modelcontextprotocol/sdk": "^1.30.0",
         "@prettier/plugin-php": "^0.25.0",
         "boxen": "^8.0.1",
@@ -24,7 +24,7 @@
         "fs-extra": "^11.4.0",
         "gpt-tokenizer": "^3.4.0",
         "gray-matter": "^4.0.3",
-        "ignore": "^7.0.6",
+        "ignore": "^7.0.9",
         "inquirer-autocomplete-standalone": "^0.8.1",
         "is-binary-path": "^3.0.0",
         "nunjucks": "^3.2.4",
@@ -33,14 +33,14 @@
         "prettier": "^3.9.6",
         "shlex": "^3.0.0",
         "yaml": "^2.9.0",
-        "zod": "^4.4.3"
+        "zod": "^4.6.2"
     },
     "devDependencies": {
         "@types/fs-extra": "^11.0.4",
         "@types/node": "^25.9.1",
         "@types/nunjucks": "^3.2.6",
         "typescript": "^6.0.3",
-        "vite": "^8.1.5",
+        "vite": "^8.3.0",
         "vite-plugin-static-copy": "^4.1.1",
         "vitest": "^4.1.10"
     }

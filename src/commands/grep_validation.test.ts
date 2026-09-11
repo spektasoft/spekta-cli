@@ -12,7 +12,9 @@ vi.mock("../utils/security", () => ({
 
 vi.mock("../config", () => ({
   HOME_IGNORE: "/mock/home/.spektaignore",
-  HOME_DEFAULT_IGNORE: "/mock/home/.spektadefaultignore",
+  getAssetPaths: () => ({
+    ASSET_DEFAULT_IGNORE: "/mock/assets/default.ignore",
+  }),
   getIgnorePatterns: vi.fn().mockResolvedValue([]),
 }));
 

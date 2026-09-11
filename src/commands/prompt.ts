@@ -1,65 +1,132 @@
 import fs from "fs-extra";
-import matter from "gray-matter";
 import nunjucks from "nunjucks";
 import path from "path";
 import {
-  getAssetPaths,
   getEnv,
   getGlobalPromptContext,
-  HOME_PROMPTS,
   listPrompts,
+  resolvePrompt,
   renderPrompt,
 } from "../core/config";
 import { searchableSelect } from "../ui/ui";
 import { openEditor } from "../utils/editor-utils";
 import { getUncategorizedBasePath } from "../fs/fs-manager";
+import { selectPromptPartials } from "../ui/partial-selection";
 
-export async function runPromptRunner(): Promise<void> {
+export interface PromptArgs {
+  selector?: string;
+  stdout: boolean;
+  noEditor: boolean;
+  output?: string;
+  partialSelection: {
+    include: string[];
+    exclude: string[];
+  };
+}
+
+export function parsePromptArgs(args: string[] = []): PromptArgs {
+  let selector: string | undefined;
+  let output: string | undefined;
+  let stdout = false;
+  let noEditor = false;
+  const include: string[] = [];
+  const exclude: string[] = [];
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--stdout") stdout = true;
+    else if (arg === "--no-editor") noEditor = true;
+    else if (arg === "--include-partial" || arg === "--exclude-partial") {
+      const value = args[++i];
+      if (!value || value.startsWith("--"))
+        throw new Error(`Missing value for ${arg}`);
+      const target = arg === "--include-partial" ? include : exclude;
+      value
+        .split(",")
+        .filter(Boolean)
+        .forEach((name) => target.push(name));
+    } else if (arg === "--output") {
+      output = args[++i];
+      if (!output || output.startsWith("--"))
+        throw new Error("Missing value for --output");
+    } else if (arg.startsWith("--")) throw new Error(`Unknown option: ${arg}`);
+    else if (selector) throw new Error("Only one prompt selector is allowed.");
+    else selector = arg;
+  }
+  return {
+    selector,
+    stdout,
+    noEditor,
+    output,
+    partialSelection: {
+      include,
+      exclude,
+    },
+  };
+}
+
+export async function resolvePromptFilename(selector: string): Promise<string> {
+  return (await resolvePrompt(selector)).filename;
+}
+
+export async function renderAndSavePrompt(
+  filename: string,
+  metadata: Record<string, any>,
+  args: PromptArgs,
+): Promise<void> {
+  const renderedBody = await renderPrompt(filename, {}, args.partialSelection);
+  if (args.stdout) {
+    process.stdout.write(renderedBody);
+    return;
+  }
+  const context = getGlobalPromptContext();
+  const defaultOutput = metadata.default_output
+    ? nunjucks.renderString(metadata.default_output, context)
+    : undefined;
+  const targetPath = path.resolve(
+    args.output ||
+      defaultOutput ||
+      path.join(getUncategorizedBasePath(), `${context.id}.md`),
+  );
+  await fs.ensureDir(path.dirname(targetPath));
+  await fs.writeFile(targetPath, renderedBody, "utf-8");
+  const diagnostic = `Prompt output saved to: ${targetPath}`;
+  console.log(diagnostic);
+  const env = await getEnv();
+  if (env.SPEKTA_EDITOR && !args.noEditor)
+    await openEditor(env.SPEKTA_EDITOR, targetPath);
+}
+
+export async function runPromptRunner(rawArgs: string[] = []): Promise<void> {
+  const args = parsePromptArgs(rawArgs);
   const prompts = await listPrompts();
   if (prompts.length === 0) {
     console.log("No custom or composable prompts found.");
     return;
   }
-
   const choices = prompts.map((p) => ({
     name: `${p.name} - ${p.description}`,
     value: p.filename,
   }));
+  let selected;
+  if (args.selector) selected = await resolvePrompt(args.selector);
+  else {
+    const selectedFilename = await searchableSelect<string>(
+      "Select prompt to execute:",
+      choices,
+    );
+    selected = prompts.find((p) => p.filename === selectedFilename);
+  }
+  if (!selected)
+    throw new Error(`Prompt could not be resolved: ${args.selector}`);
 
-  const selectedFilename = await searchableSelect<string>(
-    "Select prompt to execute:",
-    choices,
-  );
-
-  const assetPaths = getAssetPaths();
-  let filePath = path.join(HOME_PROMPTS, selectedFilename);
-  if (!(await fs.pathExists(filePath))) {
-    filePath = path.join(assetPaths.ASSET_PROMPTS, selectedFilename);
+  if (
+    !args.selector &&
+    args.partialSelection.include.length === 0 &&
+    args.partialSelection.exclude.length === 0
+  ) {
+    args.partialSelection = await selectPromptPartials();
   }
 
-  const rawContent = (await fs.pathExists(filePath))
-    ? await fs.readFile(filePath, "utf-8")
-    : "";
-
-  const renderedBody = await renderPrompt(selectedFilename);
-  const parsed = matter(rawContent);
-  const context = getGlobalPromptContext();
-
-  let defaultOutput = parsed.data.default_output;
-  if (defaultOutput) {
-    defaultOutput = nunjucks.renderString(defaultOutput, context);
-  }
-
-  const targetPath = defaultOutput
-    ? path.resolve(process.cwd(), defaultOutput)
-    : path.join(getUncategorizedBasePath(), `${context.id}.md`);
-
-  await fs.ensureDir(path.dirname(targetPath));
-  await fs.writeFile(targetPath, renderedBody, "utf-8");
-  console.log(`Prompt output saved to: ${targetPath}`);
-
-  const env = await getEnv();
-  if (env.SPEKTA_EDITOR) {
-    await openEditor(env.SPEKTA_EDITOR, targetPath);
-  }
+  await renderAndSavePrompt(selected.filename, selected, args);
 }

@@ -2,7 +2,7 @@ import { execa } from "execa";
 import fs from "fs-extra";
 import path from "node:path";
 import readline from "node:readline";
-import { HOME_DEFAULT_IGNORE, HOME_IGNORE } from "../core/config";
+import { getAssetPaths, HOME_IGNORE } from "../core/config";
 import { Logger } from "../utils/logger";
 import { validatePathAccess } from "../utils/security";
 
@@ -51,8 +51,9 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
   }
 
   if (globs) args.push("-g", globs);
-  if (await fs.pathExists(HOME_DEFAULT_IGNORE)) {
-    args.push("--ignore-file", HOME_DEFAULT_IGNORE);
+  const { ASSET_DEFAULT_IGNORE } = getAssetPaths();
+  if (await fs.pathExists(ASSET_DEFAULT_IGNORE)) {
+    args.push("--ignore-file", ASSET_DEFAULT_IGNORE);
   }
   if (await fs.pathExists(HOME_IGNORE)) {
     args.push("--ignore-file", HOME_IGNORE);

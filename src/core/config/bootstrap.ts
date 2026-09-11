@@ -2,7 +2,6 @@ import fs from "fs-extra";
 import { getEnv } from "./env.js";
 import {
   getAssetPaths,
-  HOME_DEFAULT_IGNORE,
   HOME_DIR,
   HOME_IGNORE,
   HOME_PROMPTS,
@@ -11,15 +10,17 @@ import {
 } from "./paths.js";
 import path from "path";
 
-export const bootstrap = async () => {
+export interface BootstrapOptions {
+  writeUserHome?: boolean;
+}
+
+export const bootstrap = async ({
+  writeUserHome = true,
+}: BootstrapOptions = {}) => {
   await getEnv();
   refreshPaths();
 
-  await fs.ensureDir(HOME_DIR);
-  await fs.ensureDir(HOME_PROMPTS);
-  await fs.ensureDir(HOME_TOOLS);
-
-  const { ASSET_TOOLS, ASSET_DEFAULT_IGNORE, ASSET_PROMPTS } = getAssetPaths();
+  const { ASSET_TOOLS } = getAssetPaths();
 
   // Asset Integrity Check
   if (!(await fs.pathExists(ASSET_TOOLS))) {
@@ -28,11 +29,13 @@ export const bootstrap = async () => {
     );
   }
 
-  // Synchronize Managed Defaults
-  if (await fs.pathExists(ASSET_DEFAULT_IGNORE)) {
-    const managedPatterns = await fs.readFile(ASSET_DEFAULT_IGNORE, "utf-8");
-    await fs.writeFile(HOME_DEFAULT_IGNORE, managedPatterns);
+  if (!writeUserHome) {
+    return;
   }
+
+  await fs.ensureDir(HOME_DIR);
+  await fs.ensureDir(HOME_PROMPTS);
+  await fs.ensureDir(HOME_TOOLS);
 
   // Initialize User Global Ignore if missing
   if (!(await fs.pathExists(HOME_IGNORE))) {
