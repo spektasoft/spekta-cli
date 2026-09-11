@@ -84,7 +84,6 @@ export async function confirmCommit(): Promise<boolean> {
       { name: "No", value: false },
     ],
   });
-
   return response === true;
 }
 

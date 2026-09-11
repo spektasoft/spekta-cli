@@ -1,5 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 
+import { select } from "@inquirer/prompts";
+
+vi.mock("@inquirer/prompts", () => ({
+  input: vi.fn(),
+  select: vi.fn(),
+  confirm: vi.fn(),
+}));
+
 describe("promptCommitHash", () => {
   it("should accept valid hash format", () => {
     const validator = (v: string) =>

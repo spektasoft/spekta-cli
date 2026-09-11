@@ -35,7 +35,9 @@ export const COMMANDS: Record<string, CommandDefinition> = {
   },
   prompt: {
     name: "Run Composable Prompt",
-    run: async (args?: string[]) => { await runPromptRunner(args || []); },
+    run: async (args?: string[]) => {
+      await runPromptRunner(args || []);
+    },
   },
   review: {
     name: "Run Git Review",
@@ -139,7 +141,11 @@ async function main() {
   ]);
 
   if (action !== "exit" && COMMANDS[action]) {
-    await COMMANDS[action].run();
+    if (action === "commit") {
+      await COMMANDS[action].run(["--interactive"]);
+    } else {
+      await COMMANDS[action].run();
+    }
   }
 }
 

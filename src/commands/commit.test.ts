@@ -165,6 +165,58 @@ describe("Command: runCommit", () => {
     );
   });
 
+  it("should process output and commit when interactive user confirms commit", async () => {
+    const mockDiff = "diff --git a/file.txt b/file.txt\n+new content";
+
+    (git.getStagedDiff as Mock).mockResolvedValue(mockDiff);
+    (ui.promptProviderSelection as Mock).mockResolvedValue({
+      isOnlyPrompt: false,
+      provider: { name: "test-provider", model: "gpt-4" },
+    });
+    (orchestrator.executeAiAction as Mock).mockResolvedValue("feat: test");
+    (git.formatCommitMessage as Mock).mockReturnValue("feat: test");
+    (ui.confirmCommit as Mock).mockResolvedValue(true);
+    (git.commitWithFile as Mock).mockResolvedValue(undefined);
+    (fs.pathExists as unknown as Mock).mockResolvedValue(true);
+
+    await runCommit(["--interactive"]);
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      "/mock-tmp/spekta-commit-12345.md",
+      "feat: test",
+      "utf-8",
+    );
+    expect(ui.confirmCommit).toHaveBeenCalled();
+    expect(git.commitWithFile).toHaveBeenCalledWith(
+      "/mock-tmp/spekta-commit-12345.md",
+    );
+    expect(consoleLogSpy).toHaveBeenCalledWith("Commit created successfully.");
+  });
+
+  it("should process output and abort without committing when interactive user declines commit", async () => {
+    const mockDiff = "diff --git a/file.txt b/file.txt\n+new content";
+
+    (git.getStagedDiff as Mock).mockResolvedValue(mockDiff);
+    (ui.promptProviderSelection as Mock).mockResolvedValue({
+      isOnlyPrompt: false,
+      provider: { name: "test-provider", model: "gpt-4" },
+    });
+    (orchestrator.executeAiAction as Mock).mockResolvedValue("feat: test");
+    (git.formatCommitMessage as Mock).mockReturnValue("feat: test");
+    (ui.confirmCommit as Mock).mockResolvedValue(false);
+
+    await runCommit(["--interactive"]);
+
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      "/mock-tmp/spekta-commit-12345.md",
+      "feat: test",
+      "utf-8",
+    );
+    expect(ui.confirmCommit).toHaveBeenCalled();
+    expect(git.commitWithFile).not.toHaveBeenCalled();
+    expect(consoleLogSpy).toHaveBeenCalledWith("Commit aborted.");
+  });
+
   it("should save full prompt + diff to temp file without calling AI when isOnlyPrompt is selected", async () => {
     // Arrange
     const mockDiff = "diff --git a/file.txt b/file.txt\n+new content";
@@ -199,7 +251,7 @@ describe("Command: runCommit", () => {
     );
   });
 
-  it("should save the full prompt by default without entering the interactive flow", async () => {
+  it("should save the full prompt by default for non-interactive CLI invocation", async () => {
     const mockDiff = "diff --git a/file.txt b/file.txt\n+new content";
     const systemPrompt = "Commit Template: {{diff}}";
     (git.getStagedDiff as Mock).mockResolvedValue(mockDiff);
@@ -208,6 +260,7 @@ describe("Command: runCommit", () => {
     await runCommit();
 
     const expectedContent = `${systemPrompt}\n### GIT STAGED DIFF\n\`\`\`markdown\n${mockDiff}\n\`\`\``;
+
     expect(fs.writeFile).toHaveBeenCalledWith(
       "/mock-tmp/spekta-prompt-12345.md",
       expectedContent,
