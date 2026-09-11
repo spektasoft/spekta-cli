@@ -111,6 +111,23 @@ describe("SemanticCompactor", () => {
     expect(result.content).toContain('describe("suite"');
   });
 
+  it("preserves test blocks inside nested describe suites", () => {
+    const content = `describe("outer", () => {
+  describe("inner", () => {
+    it("inner test", () => {
+      const x = 10;
+      expect(x).toBe(10);
+    });
+  });
+});`;
+    const result = compactFile("nested.test.ts", content, 1);
+    expect(result.isCompacted).toBe(true);
+    expect(result.content).toContain('describe("outer"');
+    expect(result.content).toContain('describe("inner"');
+    expect(result.content).toContain('it("inner test"');
+    expect(result.content).not.toContain("const x = 10;");
+  });
+
   it("collapses function bodies", () => {
     const content = `function calculateTotal(items) {
   const sum = items.reduce((a, b) => a + b, 0);
@@ -376,5 +393,13 @@ describe("Regression: TypeScript Compaction", () => {
     const result = compactFile("repl.ts", content, 1);
     expect(result.content).toContain("export class ReplSession");
     expect(result.content).toContain("// ... [lines 3-3 collapsed]");
+  });
+});
+
+describe("Hard Error Handling", () => {
+  it("throws a hard error when compacting an unsupported file extension", () => {
+    expect(() => compactFile("unsupported.bin", "binary data")).toThrow(
+      'Tree-sitter compaction failed: unsupported file extension for "unsupported.bin"',
+    );
   });
 });
