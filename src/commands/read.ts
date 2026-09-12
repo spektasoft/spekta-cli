@@ -44,12 +44,16 @@ export async function getReadContent(
     const isRangeRequest = !!req.range;
     let content = lines.join("\n");
     let isCompacted = false;
+    let fullTokens = 0;
 
     // Compaction applies ONLY to full files (no range), regardless of mode
     if (!isRangeRequest) {
+      if (!interactive) {
+        fullTokens = getTokenCount(content);
+      }
       const shouldTryCompact = interactive
         ? true // always attempt in interactive mode
-        : getTokenCount(content) > compactThreshold; // gate only in non-interactive
+        : fullTokens > compactThreshold; // gate only in non-interactive
 
       if (shouldTryCompact) {
         const result = compactFile(req.path, content, startLineOffset);
@@ -66,6 +70,7 @@ export async function getReadContent(
     let exceedLabel = "";
     if (!interactive) {
       tokens = getTokenCount(content);
+
       if (tokens > tokenLimit) {
         if (isRangeRequest) {
           const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`;
@@ -79,14 +84,33 @@ export async function getReadContent(
         }
         exceedLabel = " [EXCEEDS TOKEN LIMIT]";
       }
+
+      if (isRangeRequest) {
+        const fullFile = await getFileLines(req.path, { start: 1, end: "$" });
+        fullTokens = getTokenCount(fullFile.lines.join("\n"));
+      }
     }
 
     const ext = path.extname(req.path).slice(1) || "txt";
     const rangeLabel = isRangeRequest
       ? `${req.range!.start}-${req.range!.end === "$" ? total : req.range!.end} of ${total}`
       : `1-${total} (Full File)`;
-    const compactLabel = isCompacted ? " [COMPACTED OVERVIEW]" : "";
-    combinedOutput += `#### ${req.path} (lines ${rangeLabel})${compactLabel}${exceedLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
+
+    let tokenDetails = "";
+    if (!interactive) {
+      const fmt = (n: number) => n.toLocaleString("en-US");
+      if (isRangeRequest) {
+        tokenDetails = ` [${fmt(tokens)}/${fmt(fullTokens)} tokens]`;
+      } else if (isCompacted) {
+        tokenDetails = ` [COMPACTED OVERVIEW: ${fmt(tokens)}/${fmt(fullTokens)} tokens]`;
+      } else {
+        tokenDetails = ` [${fmt(tokens)} tokens]`;
+      }
+    } else {
+      tokenDetails = isCompacted ? " [COMPACTED OVERVIEW]" : "";
+    }
+
+    combinedOutput += `#### ${req.path} (lines ${rangeLabel})${tokenDetails}${exceedLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
   }
 
   return anyCompacted
