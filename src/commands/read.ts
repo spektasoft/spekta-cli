@@ -45,6 +45,7 @@ export async function getReadContent(
     let content = lines.join("\n");
     let isCompacted = false;
     let fullTokens = 0;
+    let compactionWarning = "";
 
     // Compaction applies ONLY to full files and ONLY in non-interactive mode.
     if (!isRangeRequest && !interactive) {
@@ -56,6 +57,9 @@ export async function getReadContent(
           content = result.content;
           isCompacted = true;
           anyCompacted = true;
+        } else if (result.warning) {
+          Logger.warn(`${req.path}: ${result.warning}`);
+          compactionWarning = result.warning;
         }
       }
     }
@@ -102,7 +106,8 @@ export async function getReadContent(
       tokenDetails = ` [${fmt(tokens)} tokens]`;
     }
 
-    combinedOutput += `#### ${req.path} (lines ${rangeLabel})${tokenDetails}${exceedLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
+    const warningLabel = compactionWarning ? ` [${compactionWarning}]` : "";
+    combinedOutput += `#### ${req.path} (lines ${rangeLabel})${tokenDetails}${exceedLabel}${warningLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
   }
 
   return anyCompacted

@@ -10,26 +10,30 @@ const getParser: TreeSitterPackModule["getParser"] =
   typeof pack.getParser === "function"
     ? pack.getParser
     : pack.default!.getParser;
+const detectLanguage: TreeSitterPackModule["detectLanguage"] =
+  typeof pack.detectLanguage === "function"
+    ? pack.detectLanguage
+    : pack.default!.detectLanguage;
+const hasLanguage: TreeSitterPackModule["hasLanguage"] =
+  typeof pack.hasLanguage === "function"
+    ? pack.hasLanguage
+    : pack.default!.hasLanguage;
 
-export const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
-  ".ts": "typescript",
-  ".mts": "typescript",
-  ".cts": "typescript",
-  ".tsx": "tsx",
-  ".js": "javascript",
-  ".mjs": "javascript",
-  ".cjs": "javascript",
-  ".jsx": "javascript",
-  ".py": "python",
-  ".php": "php",
-  ".blade.php": "php",
-  ".json": "json",
-  ".css": "css",
-  ".scss": "css",
-  ".html": "html",
-  ".yaml": "yaml",
-  ".yml": "yaml",
-};
+// Languages verified to have node-kind coverage in ast.ts (FUNCTION_NODE_KINDS /
+// CONTAINER_NODE_KINDS). The pack supports 371 languages total; anything outside
+// this tier can still be parsed for token counting but is not yet safe to
+// structurally compact. Markup/data languages (json, css, html, yaml) are
+// deliberately excluded: their grammars have no function or container node
+// kinds, so they can never produce a CollapseRegion. See
+// engine.compactable-tier.test.ts, which fails automatically if a future
+// addition to this tier lacks real node-kind coverage.
+export const KNOWN_COMPACTABLE_LANGUAGES = new Set([
+  "typescript",
+  "tsx",
+  "javascript",
+  "php",
+  "kotlin",
+]);
 
 const parserCache = new Map<string, ReturnType<typeof getParser>>();
 
@@ -50,12 +54,11 @@ export function resolveLanguage(filePath: string): string {
   if (baseName.endsWith(".blade.php")) {
     return "php";
   }
-  const ext = path.extname(filePath).toLowerCase();
-  const lang = EXTENSION_LANGUAGE_MAP[ext];
-  if (!lang) {
+  const detected = detectLanguage(filePath);
+  if (!detected || !hasLanguage(detected)) {
     throw new Error(
       `Tree-sitter compaction failed: unsupported file extension for "${filePath}"`,
     );
   }
-  return lang;
+  return detected;
 }

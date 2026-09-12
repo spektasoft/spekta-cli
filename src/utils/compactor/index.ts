@@ -1,15 +1,16 @@
-import path from "path";
 import { extractCollapseRegions } from "./engine";
 import { renderCompactedContent } from "./renderer";
-import { EXTENSION_LANGUAGE_MAP } from "./parser";
+import { resolveLanguage, KNOWN_COMPACTABLE_LANGUAGES } from "./parser";
 import { CompactionResult, CompactionStrategy } from "./types";
 
 export class TreeSitterCompactor implements CompactionStrategy {
   canHandle(extension: string): boolean {
-    return Object.prototype.hasOwnProperty.call(
-      EXTENSION_LANGUAGE_MAP,
-      extension.toLowerCase(),
-    );
+    try {
+      resolveLanguage(`file${extension.toLowerCase()}`);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   compact(
@@ -25,9 +26,19 @@ export function compactFile(
   content: string,
   startLine: number = 1,
 ): CompactionResult {
-  const extension = path.extname(filePath);
-  if (!new TreeSitterCompactor().canHandle(extension)) {
+  let language: string;
+  try {
+    language = resolveLanguage(filePath);
+  } catch {
     return { content, isCompacted: false };
+  }
+
+  if (!KNOWN_COMPACTABLE_LANGUAGES.has(language)) {
+    return {
+      content,
+      isCompacted: false,
+      warning: `Compaction skipped: "${language}" support is not yet verified for structural compaction.`,
+    };
   }
 
   const regions = extractCollapseRegions(filePath, content);

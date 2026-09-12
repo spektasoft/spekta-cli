@@ -20,6 +20,7 @@ export interface CollapseRegion {
 export interface CompactionResult {
   content: string;
   isCompacted: boolean;
+  warning?: string;
 }
 
 export interface CompactionStrategy {

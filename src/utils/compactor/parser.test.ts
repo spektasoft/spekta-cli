@@ -13,9 +13,18 @@ describe("Compactor Parser Language Resolution", () => {
   });
 
   it("throws an error for unsupported extensions", () => {
-    expect(() => resolveLanguage("unknown.rs")).toThrow(
-      'Tree-sitter compaction failed: unsupported file extension for "unknown.rs"',
+    expect(() => resolveLanguage("unknown.xyz")).toThrow(
+      'Tree-sitter compaction failed: unsupported file extension for "unknown.xyz"',
     );
+  });
+
+  it("resolves Kotlin extensions via dynamic pack detection", () => {
+    expect(resolveLanguage("Main.kt")).toBe("kotlin");
+    expect(resolveLanguage("build.gradle.kts")).toBe("kotlin");
+  });
+
+  it("resolves a language not yet loaded into the process, via hasLanguage rather than availableLanguages", () => {
+    expect(resolveLanguage("main.rs")).toBe("rust");
   });
 
   it("retrieves and caches tree-sitter parsers", () => {

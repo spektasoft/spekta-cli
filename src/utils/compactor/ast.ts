@@ -21,6 +21,10 @@ export const FUNCTION_NODE_KINDS = new Set([
   "generator_function",
 ]);
 
+// Note: Kotlin has no dedicated "interface_declaration" node kind. Kotlin
+// interfaces parse as "class_declaration" with an "interface" keyword token,
+// so they are already covered by that entry below; do not add a
+// Kotlin-specific interface kind here.
 export const CONTAINER_NODE_KINDS = new Set([
   "class_declaration",
   "interface_declaration",
@@ -41,7 +45,8 @@ export function findBodyNode(node: any): any {
     if (
       kind === "statement_block" ||
       kind === "compound_statement" ||
-      kind === "block"
+      kind === "block" ||
+      kind === "function_body"
     ) {
       return child;
     }

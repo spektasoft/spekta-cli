@@ -21,6 +21,12 @@ describe("resolveLanguage", () => {
 });
 
 describe("extractCollapseRegions", () => {
+  it("produces a CollapseRegion for a multi-line Kotlin function body", () => {
+    const code = `class Bar {\n  fun method(): Int {\n    val x = 1\n    return x\n  }\n}`;
+    const regions = extractCollapseRegions("sample.kt", code);
+    expect(regions.length).toBeGreaterThan(0);
+  });
+
   it("extracts function body bounds correctly", () => {
     const code = `function calculate() {\n  const x = 1;\n  return x;\n}`;
     const regions = extractCollapseRegions("calc.ts", code);

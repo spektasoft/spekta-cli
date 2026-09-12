@@ -8,10 +8,10 @@ describe("TreeSitterCompactor.canHandle", () => {
     expect(compactor.canHandle(".PY")).toBe(true);
   });
 
-  it("returns false for unsupported extensions like markdown", () => {
+  it("returns true for unsupported extensions like markdown", () => {
     const compactor = new TreeSitterCompactor();
-    expect(compactor.canHandle(".md")).toBe(false);
-    expect(compactor.canHandle(".markdown")).toBe(false);
+    expect(compactor.canHandle(".md")).toBe(true);
+    expect(compactor.canHandle(".markdown")).toBe(true);
   });
 });
 
