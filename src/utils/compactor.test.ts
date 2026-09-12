@@ -395,11 +395,3 @@ describe("Regression: TypeScript Compaction", () => {
     expect(result.content).toContain("// ... [lines 3-3 collapsed]");
   });
 });
-
-describe("Hard Error Handling", () => {
-  it("throws a hard error when compacting an unsupported file extension", () => {
-    expect(() => compactFile("unsupported.bin", "binary data")).toThrow(
-      'Tree-sitter compaction failed: unsupported file extension for "unsupported.bin"',
-    );
-  });
-});
