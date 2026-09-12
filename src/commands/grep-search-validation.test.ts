@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { getGrepContent } from "./grep";
+import { getGrepContent } from "./grep-search";
 import { validatePathAccess } from "../utils/security";
 import { execa } from "execa";
 import fs from "fs-extra";
@@ -21,7 +21,6 @@ vi.mock("../config", () => ({
 describe("getGrepContent pattern validation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Default execa mock to resolve for rg --version and rg execution
     (execa as any).mockReturnValue(
       Object.assign(Promise.resolve({ exitCode: 0 }), {
         stdout: null,
@@ -44,7 +43,6 @@ describe("getGrepContent pattern validation", () => {
   });
 
   it("accepts valid pattern with non-whitespace content", async () => {
-    // This should not throw the validation error and should now resolve correctly
     await expect(getGrepContent({ pattern: "valid" })).resolves.not.toThrow();
     expect(validatePathAccess).toHaveBeenCalledWith(".");
   });

@@ -66,6 +66,18 @@ export function getReadTokenLimit(): number {
   return parsed;
 }
 
+export function getGrepTokenLimit(): number {
+  const raw = getEnvValue("SPEKTA_GREP_TOKEN_LIMIT", "2000");
+  const parsed = parseInt(raw, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    console.warn(
+      `Invalid SPEKTA_GREP_TOKEN_LIMIT value "${raw}", falling back to 2000`,
+    );
+    return 2000;
+  }
+  return parsed;
+}
+
 export function getCompactThreshold(): number {
   const raw = getEnvValue("SPEKTA_COMPACT_THRESHOLD", "500");
   const parsed = parseInt(raw, 10);

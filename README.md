@@ -146,6 +146,7 @@ At startup, the runtime checks for `templates/<subfolder>` and falls back to `<A
 You can configure the following environment variables to customize `spekta`'s behavior:
 
 - `SPEKTA_COMPACT_THRESHOLD`: The token threshold above which content is compacted. Defaults to `500`.
+- `SPEKTA_GREP_TOKEN_LIMIT`: The maximum number of tokens `spekta grep` may return before results are truncated. Defaults to `2000`.
 - `SPEKTA_READ_TOKEN_LIMIT`: The maximum number of tokens to read from a file. Defaults to `1000`.
 
 ### Configuring Providers

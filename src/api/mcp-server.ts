@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { getGrepContent } from "../commands/grep";
+import { getGrepContent } from "../commands/grep-search";
 import { getReadContent } from "../commands/read";
 import { executeSafeReplace } from "../commands/replace";
 import { getWriteContent } from "../commands/write";
