@@ -46,16 +46,11 @@ export async function getReadContent(
     let isCompacted = false;
     let fullTokens = 0;
 
-    // Compaction applies ONLY to full files (no range), regardless of mode
-    if (!isRangeRequest) {
-      if (!interactive) {
-        fullTokens = getTokenCount(content);
-      }
-      const shouldTryCompact = interactive
-        ? true // always attempt in interactive mode
-        : fullTokens > compactThreshold; // gate only in non-interactive
+    // Compaction applies ONLY to full files and ONLY in non-interactive mode.
+    if (!isRangeRequest && !interactive) {
+      fullTokens = getTokenCount(content);
 
-      if (shouldTryCompact) {
+      if (fullTokens > compactThreshold) {
         const result = compactFile(req.path, content, startLineOffset);
         if (result.isCompacted) {
           content = result.content;
@@ -65,12 +60,12 @@ export async function getReadContent(
       }
     }
 
-    // Token counting ONLY for non-interactive mode enforcement
-    let tokens = 0;
+    // Token counts are always calculated for output metadata.
+    // Token-limit enforcement remains non-interactive-only.
+    let tokens = getTokenCount(content);
     let exceedLabel = "";
-    if (!interactive) {
-      tokens = getTokenCount(content);
 
+    if (!interactive) {
       if (tokens > tokenLimit) {
         if (isRangeRequest) {
           const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`;
@@ -84,11 +79,11 @@ export async function getReadContent(
         }
         exceedLabel = " [EXCEEDS TOKEN LIMIT]";
       }
+    }
 
-      if (isRangeRequest) {
-        const fullFile = await getFileLines(req.path, { start: 1, end: "$" });
-        fullTokens = getTokenCount(fullFile.lines.join("\n"));
-      }
+    if (isRangeRequest) {
+      const fullFile = await getFileLines(req.path, { start: 1, end: "$" });
+      fullTokens = getTokenCount(fullFile.lines.join("\n"));
     }
 
     const ext = path.extname(req.path).slice(1) || "txt";
@@ -96,18 +91,15 @@ export async function getReadContent(
       ? `${req.range!.start}-${req.range!.end === "$" ? total : req.range!.end} of ${total}`
       : `1-${total} (Full File)`;
 
+    const fmt = (n: number) => n.toLocaleString("en-US");
     let tokenDetails = "";
-    if (!interactive) {
-      const fmt = (n: number) => n.toLocaleString("en-US");
-      if (isRangeRequest) {
-        tokenDetails = ` [${fmt(tokens)}/${fmt(fullTokens)} tokens]`;
-      } else if (isCompacted) {
-        tokenDetails = ` [COMPACTED OVERVIEW: ${fmt(tokens)}/${fmt(fullTokens)} tokens]`;
-      } else {
-        tokenDetails = ` [${fmt(tokens)} tokens]`;
-      }
+
+    if (isRangeRequest) {
+      tokenDetails = ` [${fmt(tokens)}/${fmt(fullTokens)} tokens]`;
+    } else if (isCompacted) {
+      tokenDetails = ` [COMPACTED OVERVIEW: ${fmt(tokens)}/${fmt(fullTokens)} tokens]`;
     } else {
-      tokenDetails = isCompacted ? " [COMPACTED OVERVIEW]" : "";
+      tokenDetails = ` [${fmt(tokens)} tokens]`;
     }
 
     combinedOutput += `#### ${req.path} (lines ${rangeLabel})${tokenDetails}${exceedLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
