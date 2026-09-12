@@ -104,7 +104,9 @@ export const resolveSelectedPartials = (
   const excludes = new Set(selection.exclude);
 
   if (includes.size > 0) {
-    return available.filter((name) => includes.has(name));
+    return available.filter(
+      (name) => includes.has(name) && !excludes.has(name),
+    );
   }
 
   return available.filter((name) => !excludes.has(name));
