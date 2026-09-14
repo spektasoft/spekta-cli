@@ -57,7 +57,7 @@ export const COMMANDS: Record<string, CommandDefinition> = {
     },
   },
   grep: {
-    name: "Search Project (grep)",
+    name: "Search Project (ripgrep)",
     run: runGrep,
     hidden: true,
   },

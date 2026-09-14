@@ -61,7 +61,7 @@ describe("runInteractiveMenu", () => {
     );
     expect(choices).not.toEqual(
       expect.arrayContaining([
-        { name: "Search Project (grep)", value: "grep" },
+        { name: "Search Project (ripgrep)", value: "grep" },
         { name: "Replace Code in File", value: "replace" },
         { name: "Write New File (agent tool)", value: "write" },
         { name: "Start the MCP Server", value: "mcp" },
