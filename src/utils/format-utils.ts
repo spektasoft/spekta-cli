@@ -2,6 +2,7 @@ import prettier from "prettier";
 import path from "path";
 import fs from "fs-extra";
 import { execa } from "execa";
+import { formatKotlinFileInPlace } from "./gradle-format-utils";
 
 async function runPintInPlace(filePath: string): Promise<boolean> {
   const pintPath = "./vendor/bin/pint";
@@ -19,9 +20,18 @@ async function runPintInPlace(filePath: string): Promise<boolean> {
 }
 
 export async function formatFileInPlace(filePath: string): Promise<void> {
-  const isPhp = filePath.toLowerCase().endsWith(".php");
+  const normalizedPath = filePath.toLowerCase();
+  const isPhp = normalizedPath.endsWith(".php");
+  const isKotlin =
+    normalizedPath.endsWith(".kt") || normalizedPath.endsWith(".kts");
+
   if (isPhp) {
     if (await runPintInPlace(filePath)) return;
+  }
+
+  if (isKotlin) {
+    await formatKotlinFileInPlace(filePath);
+    return;
   }
 
   try {

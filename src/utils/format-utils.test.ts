@@ -1,9 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { formatFileInPlace } from "./format-utils";
+import { formatKotlinFileInPlace } from "./gradle-format-utils";
+
 import prettier from "prettier";
 import { execa } from "execa";
 import fs from "fs-extra";
 import path from "path";
+
+vi.mock("./gradle-format-utils", () => ({
+  formatKotlinFileInPlace: vi.fn(),
+}));
 
 vi.mock("prettier", () => ({
   default: {
@@ -69,18 +75,33 @@ describe("formatFile", () => {
     const content = "<?php echo 'hi';";
     const filePath = "test.php";
     const absolutePath = path.resolve(filePath);
-
     vi.mocked(fs.pathExists).mockResolvedValue(false); // Pint missing
     vi.mocked(fs.readFile).mockResolvedValue(content);
     vi.mocked(prettier.format).mockResolvedValue("<?php\n\necho 'hi';");
-
     await formatFileInPlace(filePath);
-
     expect(prettier.format).toHaveBeenCalled();
     expect(fs.writeFile).toHaveBeenCalledWith(
       absolutePath,
       "<?php\n\necho 'hi';",
       "utf-8",
     );
+  });
+
+  it("uses Gradle formatting for Kotlin files", async () => {
+    const filePath = "src/Main.kt";
+
+    await formatFileInPlace(filePath);
+
+    expect(formatKotlinFileInPlace).toHaveBeenCalledWith(filePath);
+    expect(prettier.format).not.toHaveBeenCalled();
+  });
+
+  it("uses Gradle formatting for Kotlin script files", async () => {
+    const filePath = "build.gradle.kts";
+
+    await formatFileInPlace(filePath);
+
+    expect(formatKotlinFileInPlace).toHaveBeenCalledWith(filePath);
+    expect(prettier.format).not.toHaveBeenCalled();
   });
 });
