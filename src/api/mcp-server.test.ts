@@ -1,5 +1,5 @@
 import { beforeEach, describe, it, expectTypeOf, vi, expect } from "vitest";
-import { TOOL_REGISTRY } from "./mcp-server";
+import { McpToolResponse, TOOL_REGISTRY } from "./mcp-server/registry";
 import { getGrepContent } from "../commands/grep-search";
 import { executeRtkCommand } from "../commands/proxy-execution";
 
@@ -10,7 +10,7 @@ vi.mock("../commands/grep-search", () => ({ getGrepContent: vi.fn() }));
 vi.mock("../commands/proxy-execution", () => ({
   executeRtkCommand: vi.fn(),
 }));
-vi.mock("../config", () => ({
+vi.mock("../core/config", () => ({
   bootstrap: vi.fn(),
   loadToolDefinitions: vi.fn().mockResolvedValue([]),
 }));
@@ -27,19 +27,9 @@ type SdkExpectedResult = {
   [x: string]: unknown;
 };
 
-interface McpToolResponse {
-  content: Array<{
-    type: "text";
-    text: string;
-  }>;
-  isError?: boolean;
-  [key: string]: unknown;
-}
-
 describe("McpToolResponse Compatibility", () => {
   it("should be assignable to the SDK expected generic shape", () => {
-    // This test passes if TypeScript allows the assignment
-    const response = {
+    const response: McpToolResponse = {
       content: [{ type: "text", text: "hello" }],
       isError: false,
       extraField: "allowed",
@@ -47,7 +37,7 @@ describe("McpToolResponse Compatibility", () => {
 
     const sdkCompatible: SdkExpectedResult = response;
 
-    // Runtime check (just to have an assertion)
+    expect(sdkCompatible).toEqual(response);
     expectTypeOf(response).toExtend<SdkExpectedResult>();
   });
 });
