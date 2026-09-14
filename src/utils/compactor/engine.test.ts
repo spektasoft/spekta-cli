@@ -45,6 +45,40 @@ describe("extractCollapseRegions", () => {
     expect(regions[0].closeLine).toBe(3);
   });
 
+  it("preserves test callback regions", () => {
+    const code = `describe("suite", () => {
+  test("works", () => {
+    const value = 1;
+    return value;
+  });
+});`;
+
+    const regions = extractCollapseRegions("sample.ts", code);
+
+    expect(regions).toEqual([
+      {
+        openLine: 1,
+        closeLine: 4,
+        type: "test",
+      },
+    ]);
+  });
+
+  it("preserves multiline matcher object regions", () => {
+    const code = `expect(value).toEqual({
+  a: 1,
+  b: 2,
+});`;
+
+    const regions = extractCollapseRegions("sample.ts", code);
+
+    expect(regions).toContainEqual({
+      openLine: 0,
+      closeLine: 3,
+      type: "object",
+    });
+  });
+
   it("throws a hard error if parser encounters fatal configuration", () => {
     expect(() => extractCollapseRegions("unsupported.bin", "")).toThrow();
   });

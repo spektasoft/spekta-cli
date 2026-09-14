@@ -1,13 +1,13 @@
 import { CollapseRegion } from "./types";
 import { getOrCreateParser, resolveLanguage } from "./parser";
+import { CONTAINER_NODE_KINDS } from "./ast";
 import {
-  CONTAINER_NODE_KINDS,
-  FUNCTION_NODE_KINDS,
-  TEST_CALL_NAMES,
-  TEST_SUITE_NAMES,
-  findBodyNode,
-  findCallbackNode,
-} from "./ast";
+  detectAssertionObjectRegions,
+  detectTestCallRegion,
+  detectTestSuite,
+  findArgumentsNode,
+} from "./test-regions";
+import { detectFunctionRegion } from "./function-regions";
 
 export { resolveLanguage };
 
@@ -67,24 +67,13 @@ export function extractCollapseRegions(
       const callee = node.child(0);
       const calleeText = callee ? getNodeText(callee) : "";
       const baseCallee = calleeText.split(".")[0];
+      const argsNode = findArgumentsNode(node);
 
-      if (TEST_SUITE_NAMES.has(baseCallee)) {
-        let argsNode: any = null;
-        for (let i = 0; i < node.childCount(); i++) {
-          const child = node.child(i);
-          if (child && child.kind() === "arguments") {
-            argsNode = child;
-            break;
-          }
-        }
-
-        if (argsNode) {
-          const targetCallback = findCallbackNode(argsNode);
-          const bodyNode = targetCallback ? findBodyNode(targetCallback) : null;
-          if (bodyNode) {
-            visit(bodyNode);
-            return;
-          }
+      const suite = detectTestSuite(baseCallee, argsNode);
+      if (suite.handled) {
+        if (suite.callbackBody) {
+          visit(suite.callbackBody);
+          return;
         }
 
         for (let i = 0; i < node.childCount(); i++) {
@@ -93,59 +82,22 @@ export function extractCollapseRegions(
         return;
       }
 
-      let argsNode: any = null;
-      for (let i = 0; i < node.childCount(); i++) {
-        const child = node.child(i);
-        if (child && child.kind() === "arguments") {
-          argsNode = child;
-          break;
-        }
+      const testRegion = detectTestCallRegion(baseCallee, argsNode, {
+        getNodeText,
+        lineOffset,
+      });
+
+      if (testRegion) {
+        regions.push(testRegion);
+        return;
       }
 
-      if (TEST_CALL_NAMES.has(baseCallee) && argsNode) {
-        const targetCallback = findCallbackNode(argsNode);
-        const bodyNode = targetCallback ? findBodyNode(targetCallback) : null;
-
-        if (
-          bodyNode &&
-          bodyNode.endPosition().row > bodyNode.startPosition().row
-        ) {
-          const openLine = bodyNode.startPosition().row + lineOffset;
-          const closeLine = bodyNode.endPosition().row + lineOffset;
-          if (openLine >= 0 && closeLine > openLine) {
-            regions.push({
-              openLine,
-              closeLine,
-              type: "test",
-            });
-            return;
-          }
-        }
-      }
-
-      if (
-        argsNode &&
-        (calleeText.includes("toEqual") || calleeText.includes("toMatchObject"))
-      ) {
-        for (let j = 0; j < argsNode.childCount(); j++) {
-          const arg = argsNode.child(j);
-          if (
-            arg &&
-            arg.kind() === "object" &&
-            arg.endPosition().row > arg.startPosition().row
-          ) {
-            const openLine = arg.startPosition().row + lineOffset;
-            const closeLine = arg.endPosition().row + lineOffset;
-            if (openLine >= 0 && closeLine > openLine) {
-              regions.push({
-                openLine,
-                closeLine,
-                type: "object",
-              });
-            }
-          }
-        }
-      }
+      regions.push(
+        ...detectAssertionObjectRegions(calleeText, argsNode, {
+          getNodeText,
+          lineOffset,
+        }),
+      );
     }
 
     if (CONTAINER_NODE_KINDS.has(nodeType)) {
@@ -155,43 +107,14 @@ export function extractCollapseRegions(
       return;
     }
 
-    if (FUNCTION_NODE_KINDS.has(nodeType)) {
-      const bodyNode = findBodyNode(node);
+    const functionRegion = detectFunctionRegion(node, {
+      language,
+      lineOffset,
+      effectiveLines,
+    });
 
-      if (
-        bodyNode &&
-        bodyNode.endPosition().row > bodyNode.startPosition().row
-      ) {
-        // Python's body node (kind "block") starts at the first indented
-        // statement, not at the "def"/"class" line, since Python has no
-        // opening brace. Anchoring on the node's own start row (the
-        // def/class line) keeps the signature paired with its collapsed
-        // region, matching the pairing brace languages get for free. There
-        // is no equivalent fix for the closing row: Python has no closing
-        // delimiter, so the last body statement remains visible verbatim.
-        const startRow =
-          language === "python"
-            ? node.startPosition().row
-            : bodyNode.startPosition().row;
-        const endRow = bodyNode.endPosition().row;
-        const snippet = effectiveLines.slice(startRow, endRow + 1).join(" ");
-
-        if (snippet.length >= 80 || endRow - startRow > 1) {
-          const openLine = startRow + lineOffset;
-          const closeLine = endRow + lineOffset;
-          if (openLine >= 0 && closeLine > openLine) {
-            regions.push({
-              openLine,
-              closeLine,
-              type: nodeType.includes("method")
-                ? "method"
-                : nodeType.includes("arrow")
-                  ? "arrow"
-                  : "function",
-            });
-          }
-        }
-      }
+    if (functionRegion) {
+      regions.push(functionRegion);
     }
 
     for (let i = 0; i < node.childCount(); i++) {
