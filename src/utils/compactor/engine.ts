@@ -162,7 +162,17 @@ export function extractCollapseRegions(
         bodyNode &&
         bodyNode.endPosition().row > bodyNode.startPosition().row
       ) {
-        const startRow = bodyNode.startPosition().row;
+        // Python's body node (kind "block") starts at the first indented
+        // statement, not at the "def"/"class" line, since Python has no
+        // opening brace. Anchoring on the node's own start row (the
+        // def/class line) keeps the signature paired with its collapsed
+        // region, matching the pairing brace languages get for free. There
+        // is no equivalent fix for the closing row: Python has no closing
+        // delimiter, so the last body statement remains visible verbatim.
+        const startRow =
+          language === "python"
+            ? node.startPosition().row
+            : bodyNode.startPosition().row;
         const endRow = bodyNode.endPosition().row;
         const snippet = effectiveLines.slice(startRow, endRow + 1).join(" ");
 

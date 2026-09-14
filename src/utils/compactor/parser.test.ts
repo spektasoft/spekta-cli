@@ -21,6 +21,7 @@ describe("Compactor Parser Language Resolution", () => {
   it("resolves Kotlin extensions via dynamic pack detection", () => {
     expect(resolveLanguage("Main.kt")).toBe("kotlin");
     expect(resolveLanguage("build.gradle.kts")).toBe("kotlin");
+    expect(resolveLanguage("file.py")).toBe("python");
   });
 
   it("resolves a language not yet loaded into the process, via hasLanguage rather than availableLanguages", () => {

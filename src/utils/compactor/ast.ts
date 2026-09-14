@@ -31,6 +31,9 @@ export const CONTAINER_NODE_KINDS = new Set([
   "trait_declaration",
   "enum_declaration",
   "class",
+  // Python's class node kind. Python has no dedicated interface/trait kind,
+  // so only this entry is needed for Python container recursion.
+  "class_definition",
 ]);
 
 export function findBodyNode(node: any): any {

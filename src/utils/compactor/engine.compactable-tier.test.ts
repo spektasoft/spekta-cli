@@ -32,6 +32,13 @@ const COMPACTABLE_LANGUAGE_SAMPLES: Record<
     file: "sample.kt",
     code: `class Bar {\n  fun method(): Int {\n    return 1\n  }\n}`,
   },
+  // Decorated method inside a class: exercises both the class_definition
+  // container recursion and confirms decorated_definition wrappers don't
+  // hide the nested function_definition from the visitor.
+  python: {
+    file: "sample.py",
+    code: `class Bar:\n    @staticmethod\n    def method():\n        x = 1\n        return x\n`,
+  },
 };
 
 describe("KNOWN_COMPACTABLE_LANGUAGES node-kind coverage", () => {

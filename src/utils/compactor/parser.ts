@@ -33,6 +33,7 @@ export const KNOWN_COMPACTABLE_LANGUAGES = new Set([
   "javascript",
   "php",
   "kotlin",
+  "python",
 ]);
 
 const parserCache = new Map<string, ReturnType<typeof getParser>>();
