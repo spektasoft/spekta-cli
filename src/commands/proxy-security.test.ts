@@ -1,3 +1,7 @@
+import fs from "fs-extra";
+import os from "os";
+import path from "path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -41,6 +45,28 @@ describe("isCommandSafe", () => {
     expect(isCommandSafe("git", ["clean", "-fd"])).toBe(false);
   });
 
+  it("rejects option values being mistaken for safe subcommands", () => {
+    expect(isCommandSafe("git", ["-C", "status", "log"])).toBe(false);
+  });
+
+  it("rejects git repository and configuration redirection options", () => {
+    expect(isCommandSafe("git", ["--git-dir", ".", "status"])).toBe(false);
+    expect(isCommandSafe("git", ["--git-dir=.", "status"])).toBe(false);
+    expect(isCommandSafe("git", ["--work-tree", ".", "status"])).toBe(false);
+    expect(isCommandSafe("git", ["--work-tree=.", "status"])).toBe(false);
+    expect(isCommandSafe("git", ["-c", "core.pager=cat", "status"])).toBe(
+      false,
+    );
+  });
+
+  it("fails closed on unknown leading options", () => {
+    expect(isCommandSafe("git", ["--unknown-option", "status"])).toBe(false);
+    expect(isCommandSafe("cargo", ["--unknown-option", "test"])).toBe(false);
+    expect(isCommandSafe("npm", ["--unknown-option", "run", "build"])).toBe(
+      false,
+    );
+  });
+
   it("rejects arbitrary destructive commands", () => {
     expect(isCommandSafe("rm", ["-rf", "src"])).toBe(false);
     expect(isCommandSafe("chmod", ["777", "file"])).toBe(false);
@@ -78,42 +104,68 @@ describe("validateCommandArguments", () => {
     ).not.toThrow();
   });
 
-  it("redacts OpenAI keys", () => {
-    expect(redactSecrets("key=sk-abcdefghijklmnopqrstuvwxyz")).toBe(
-      "key=[REDACTED]",
+  it("rejects an existing project-local symlink that resolves outside the project", () => {
+    const outsideDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "proxy-security-outside-"),
     );
+    const linkPath = path.join(process.cwd(), ".proxy-security-symlink-test");
+
+    try {
+      fs.removeSync(linkPath);
+      fs.symlinkSync(
+        outsideDir,
+        linkPath,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+
+      expect(() =>
+        validateCommandArguments([
+          path.relative(process.cwd(), path.join(linkPath, "secret.txt")),
+        ]),
+      ).toThrow(/outside the project directory/i);
+    } finally {
+      fs.removeSync(linkPath);
+      fs.removeSync(outsideDir);
+    }
   });
 
-  it("redacts GitHub personal and OAuth tokens", () => {
-    expect(redactSecrets("ghp_abcdefghijklmnopqrstuvwxyz")).toBe("[REDACTED]");
-    expect(redactSecrets("gho_abcdefghijklmnopqrstuvwxyz")).toBe("[REDACTED]");
-  });
-
-  it("redacts GitLab tokens", () => {
-    expect(redactSecrets("glpat-abcdefghijklmnopqrstuvwxyz")).toBe(
-      "[REDACTED]",
+  it("rejects a non-existent descendant below a symlink escaping the project", () => {
+    const outsideDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "proxy-security-outside-"),
     );
+    const linkPath = path.join(process.cwd(), ".proxy-security-symlink-test");
+
+    try {
+      fs.removeSync(linkPath);
+      fs.symlinkSync(
+        outsideDir,
+        linkPath,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+
+      expect(() =>
+        validateCommandArguments([
+          path.relative(process.cwd(), path.join(linkPath, "new", "file.ts")),
+        ]),
+      ).toThrow(/outside the project directory/i);
+    } finally {
+      fs.removeSync(linkPath);
+      fs.removeSync(outsideDir);
+    }
   });
 
-  it("redacts bearer tokens", () => {
-    expect(redactSecrets("Authorization: Bearer abc.def-123")).toBe(
-      "Authorization: [REDACTED]",
-    );
+  it("rejects POSIX and Windows absolute path syntax", () => {
+    for (const argument of [
+      "/tmp/outside",
+      "C:/outside",
+      String.raw`C:\outside`,
+      String.raw`\\server\share\outside`,
+    ]) {
+      expect(() => validateCommandArguments([argument])).toThrow(
+        /outside the project directory/i,
+      );
+    }
   });
 
-  it("redacts private keys", () => {
-    const key = [
-      "-----BEGIN RSA PRIVATE KEY-----",
-      "secret-key-material",
-      "-----END RSA PRIVATE KEY-----",
-    ].join("\n");
-
-    expect(redactSecrets(key)).toBe("[REDACTED]");
-  });
-
-  it("redacts generic api_key assignments", () => {
-    expect(redactSecrets("api_key=super-secret-value")).toBe(
-      "api_key=[REDACTED]",
-    );
-  });
+  // Secret-redaction coverage is implemented in ./proxy-secret-redaction.test.
 });
