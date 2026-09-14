@@ -8,6 +8,13 @@ import { getWriteContent } from "../commands/write";
 import { bootstrap, loadToolDefinitions, ToolDefinition } from "../core/config";
 import { Logger } from "../utils/logger";
 import { parseFilePathWithRange } from "../utils/read-utils";
+import {
+  isCommandSafe,
+  redactSecrets,
+  truncateOutput,
+  validateCommandArguments,
+} from "../commands/proxy";
+import { executeRtkCommand } from "../commands/proxy-execution";
 
 /**
  * Validates that all tools defined in YAML have corresponding logic
@@ -118,6 +125,58 @@ export const TOOL_REGISTRY: Record<
     handler: async (args) => {
       const result = await getGrepContent(args);
       return { content: [{ type: "text", text: result }] };
+    },
+  },
+  spekta_shell: {
+    schema: (params) =>
+      z.object({
+        command: z.string().describe(params?.command?.description || ""),
+        args: z
+          .array(z.string())
+          .optional()
+          .describe(params?.args?.description || ""),
+      }),
+    handler: async ({ command, args }) => {
+      const cleanArgs = args ?? [];
+
+      if (!isCommandSafe(command, cleanArgs)) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: `Execution refused: '${command}' is not on the read-only allow-list.`,
+            },
+          ],
+        };
+      }
+
+      validateCommandArguments(cleanArgs);
+
+      const result = await executeRtkCommand(command, cleanArgs);
+
+      if (!result.available) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: "The `rtk` executable was not found. Install RTK with the `rtk-ai` package, then retry.",
+            },
+          ],
+        };
+      }
+
+      const rawOutput = [result.stdout, result.stderr]
+        .filter(Boolean)
+        .join("\n");
+      const truncated = truncateOutput(rawOutput);
+      const safeOutput = redactSecrets(truncated.content);
+
+      return {
+        isError: result.exitCode !== 0,
+        content: [{ type: "text", text: safeOutput }],
+      };
     },
   },
 };
