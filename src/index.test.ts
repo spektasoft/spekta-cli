@@ -1,19 +1,31 @@
 import { describe, expect, it, vi } from "vitest";
 import { COMMANDS } from "./index";
-import { runRtkProxy } from "./commands/proxy";
 
-vi.mock("./commands/proxy", () => ({
-  runRtkProxy: vi.fn(),
-}));
+describe("public command registry", () => {
+  it("keeps native commands available from the public index", () => {
+    expect(COMMANDS.commit).toBeDefined();
+    expect(COMMANDS.read).toBeDefined();
+    expect(COMMANDS.write).toBeDefined();
+  });
 
-describe("dynamic RTK routing", () => {
-  it("delegates unknown commands to the RTK proxy", async () => {
-    const proxy = vi.mocked(runRtkProxy);
-    proxy.mockResolvedValueOnce(undefined);
+  it("keeps hidden command metadata intact", () => {
+    expect(COMMANDS.grep.hidden).toBe(true);
+    expect(COMMANDS.replace.hidden).toBe(true);
+    expect(COMMANDS.write.hidden).toBe(true);
+    expect(COMMANDS.mcp.hidden).toBe(true);
+  });
 
-    // Simulating how main would be called with an unknown argument
-    await runRtkProxy("unknown-cmd", ["--arg"]);
-    expect(proxy).toHaveBeenCalledWith("unknown-cmd", ["--arg"]);
+  it("keeps user-facing commands visible", () => {
+    for (const command of [
+      "commit",
+      "read",
+      "repl",
+      "prompt",
+      "review",
+      "pr",
+    ]) {
+      expect(COMMANDS[command].hidden).not.toBe(true);
+    }
   });
 
   it("keeps native commands ahead of the RTK catch-all", () => {
