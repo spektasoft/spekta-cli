@@ -2,13 +2,13 @@ import { inspect } from "util";
 
 export const Logger = {
   info: (msg: string, ...args: any[]) =>
-    process.stderr.write(`[INFO] ${msg}${formatArgs(args)}\n`),
+    process.stdout.write(`[INFO] ${msg}${formatArgs(args)}\n`),
   warn: (msg: string, ...args: any[]) =>
-    process.stderr.write(`[WARN] ${msg}${formatArgs(args)}\n`),
+    process.stdout.write(`[WARN] ${msg}${formatArgs(args)}\n`),
   error: (msg: string, ...args: any[]) =>
-    process.stderr.write(`[ERROR] ${msg}${formatArgs(args)}\n`),
+    process.stdout.write(`[ERROR] ${msg}${formatArgs(args)}\n`),
   log: (msg: string, ...args: any[]) =>
-    process.stderr.write(`${msg}${formatArgs(args)}\n`),
+    process.stdout.write(`${msg}${formatArgs(args)}\n`),
 };
 
 function formatArgs(args: any[]): string {

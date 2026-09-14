@@ -117,30 +117,57 @@ describe("runRead", () => {
     );
   });
 
-  it("should include total line count in metadata for range requests", async () => {
-    mockGetFileLines.mockResolvedValue({
-      lines: ["line 10", "line 11"],
-      total: 500,
-    });
-    mockGetTokenCount.mockReturnValue(10);
+  it("should include total line count and token count in metadata for range requests", async () => {
+    mockGetFileLines
+      .mockResolvedValueOnce({
+        lines: ["line 10", "line 11"],
+        total: 500,
+      })
+      .mockResolvedValueOnce({
+        lines: Array(500).fill("line"),
+        total: 500,
+      });
+    mockGetTokenCount.mockReturnValueOnce(10).mockReturnValueOnce(2000);
 
     await runRead([{ path: "test.ts", range: { start: 10, end: 11 } }]);
 
     expect(stdoutSpy).toHaveBeenCalledWith(
-      expect.stringContaining("#### test.ts (lines 10-11 of 500)"),
+      expect.stringContaining(
+        "#### test.ts (lines 10-11 of 500) [10/2,000 tokens]",
+      ),
     );
   });
 
-  it("should include total line count in metadata for full-file reads", async () => {
+  it("should include token metadata in interactive range reads without enforcement", async () => {
+    mockGetFileLines
+      .mockResolvedValueOnce({
+        lines: ["line 10", "line 11"],
+        total: 500,
+      })
+      .mockResolvedValueOnce({
+        lines: Array(500).fill("line"),
+        total: 500,
+      });
+    mockGetTokenCount.mockReturnValueOnce(10).mockReturnValueOnce(2000);
+
+    await runRead([{ path: "test.ts", range: { start: 10, end: 11 } }], {
+      interactive: true,
+    });
+
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "#### test.ts (lines 10-11 of 500) [10/2,000 tokens]",
+      ),
+    );
+    expect(mockLogger.error).not.toHaveBeenCalled();
+  });
+
+  it("should include total line count and token count in metadata for full-file reads", async () => {
     mockGetFileLines.mockResolvedValue({
       lines: ["line 1", "line 2"],
       total: 2,
     });
-    // Small file: compaction gate returns a value below the 2000 threshold,
-    // so compactFile is not called. Token-limit enforcement follows.
-    mockGetTokenCount
-      .mockReturnValueOnce(5) // compaction gate: below threshold → no compaction
-      .mockReturnValue(5); // token-limit enforcement: well within limit
+    mockGetTokenCount.mockReturnValue(150);
     mockCompactFile.mockReturnValue({
       content: "line 1\nline 2",
       isCompacted: false,
@@ -149,28 +176,30 @@ describe("runRead", () => {
     await runRead([{ path: "small.ts" }]);
 
     expect(stdoutSpy).toHaveBeenCalledWith(
-      expect.stringContaining("#### small.ts (lines 1-2 (Full File))"),
+      expect.stringContaining(
+        "#### small.ts (lines 1-2 (Full File)) [150 tokens]",
+      ),
     );
   });
 
   describe("interactive mode behavior", () => {
-    it("should skip token counting entirely in interactive mode", async () => {
-      const longContent = "line\n".repeat(1000);
+    it("should calculate tokens for interactive output without enforcing the limit", async () => {
+      const content = "line 1\nline 2";
       mockGetFileLines.mockResolvedValue({
-        lines: longContent.trim().split("\n"),
-        total: 1000,
+        lines: content.split("\n"),
+        total: 2,
       });
-      mockCompactFile.mockReturnValue({
-        content: "compacted content",
-        isCompacted: true,
-      });
-      // getTokenCount drives the compaction gate; interactive mode must NOT
-      // call it for either the gate or the enforcement path.
-      // We do NOT set up mockGetTokenCount — any call would be a test failure.
+      mockGetTokenCount.mockReturnValue(150);
 
-      await runRead([{ path: "large.ts" }], { interactive: true });
+      await runRead([{ path: "small.ts" }], { interactive: true });
 
-      expect(mockGetTokenCount).not.toHaveBeenCalled();
+      expect(mockGetTokenCount).toHaveBeenCalledWith(content);
+      expect(stdoutSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "#### small.ts (lines 1-2 (Full File)) [150 tokens]",
+        ),
+      );
+      expect(mockLogger.warn).not.toHaveBeenCalled();
     });
 
     it("should retain token counting and enforcement in non-interactive mode", async () => {
@@ -194,44 +223,44 @@ describe("runRead", () => {
       );
     });
 
-    it("should still apply compaction in interactive mode", async () => {
-      const longContent = "line\n".repeat(1000);
+    it("should never compact in interactive mode", async () => {
+      const content = "line\n".repeat(1000).trim();
       mockGetFileLines.mockResolvedValue({
-        lines: longContent.trim().split("\n"),
+        lines: content.split("\n"),
         total: 1000,
       });
+      mockGetTokenCount.mockReturnValue(2500);
       mockCompactFile.mockReturnValue({
         content: "compacted content",
         isCompacted: true,
       });
-      // Interactive mode still evaluates the compaction gate via getTokenCount.
-      // It must NOT call getTokenCount for the token-limit enforcement path.
-      mockGetTokenCount.mockReturnValueOnce(2500);
 
       await runRead([{ path: "large.ts" }], { interactive: true });
 
-      expect(mockCompactFile).toHaveBeenCalled();
-      expect(mockGetTokenCount).not.toHaveBeenCalledTimes(2);
+      expect(mockGetTokenCount).toHaveBeenCalledWith(content);
+      expect(mockCompactFile).not.toHaveBeenCalled();
+      expect(stdoutSpy).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "#### large.ts (lines 1-1000 (Full File)) [2,500 tokens]",
+        ),
+      );
     });
   });
 
   describe("compaction advisory preservation", () => {
-    it("should show compaction advisory in interactive mode when compaction occurs", async () => {
+    it("should not show compaction advisory in interactive mode", async () => {
+      const content = Array(1000).fill("line").join("\n");
       mockGetFileLines.mockResolvedValue({
-        lines: Array(1000).fill("line"),
+        lines: content.split("\n"),
         total: 1000,
       });
-      mockCompactFile.mockReturnValue({
-        content: "compacted content",
-        isCompacted: true,
-      });
-      // Compaction gate must fire.
-      mockGetTokenCount.mockReturnValueOnce(2500);
+      mockGetTokenCount.mockReturnValue(2500);
 
       await runRead([{ path: "large.ts" }], { interactive: true });
 
+      expect(mockCompactFile).not.toHaveBeenCalled();
       expect(stdoutSpy).toHaveBeenCalledWith(
-        expect.stringContaining("COMPACTION NOTICE"),
+        expect.not.stringContaining("COMPACTION NOTICE"),
       );
     });
 
@@ -297,14 +326,20 @@ describe("runRead", () => {
           total: 1,
         })
         .mockResolvedValueOnce({
+          lines: ["console.log('hello');"],
+          total: 1,
+        })
+        .mockResolvedValueOnce({
           lines: Array(1000).fill("console.log('line');"),
           total: 1000,
         });
 
-      // Range requests skip the compaction gate, so getTokenCount is called
-      // exactly once per file — purely for token-limit enforcement.
+      // Range requests skip the compaction gate.
+      // small.ts: range tokens (50) within limit, full file tokens (50) fetched.
+      // large.ts: range tokens (1500) exceeds 1000 limit, blocked before full file read.
       mockGetTokenCount
-        .mockReturnValueOnce(50) // small.ts: within limit
+        .mockReturnValueOnce(50) // small.ts: range within limit
+        .mockReturnValueOnce(50) // small.ts: full file tokens
         .mockReturnValueOnce(1500); // large.ts: exceeds 1000 limit
 
       const mockRequests = [
@@ -363,18 +398,23 @@ describe("runRead", () => {
           total: 100,
         })
         .mockResolvedValueOnce({
+          lines: Array(100).fill("console.log('medium');"),
+          total: 100,
+        })
+        .mockResolvedValueOnce({
           lines: Array(1000).fill("console.log('large');"),
           total: 1000,
         });
 
       // Call sequence for three files:
       //   small.ts  (full file): gate=10 (no compact), enforce=10 (ok)
-      //   medium.ts (range):     enforce=500 (ok)          [no gate call — range request]
+      //   medium.ts (range):     enforce=500 (ok), full file=1000 [no gate call — range request]
       //   large.ts  (full file): gate=2500 (compact fires, isCompacted:false), enforce=2000 (warn)
       mockGetTokenCount
         .mockReturnValueOnce(10) // small.ts — gate
         .mockReturnValueOnce(10) // small.ts — enforce
         .mockReturnValueOnce(500) // medium.ts — enforce (range, no gate)
+        .mockReturnValueOnce(1000) // medium.ts — full file tokens
         .mockReturnValueOnce(2500) // large.ts — gate
         .mockReturnValueOnce(2000); // large.ts — enforce
 

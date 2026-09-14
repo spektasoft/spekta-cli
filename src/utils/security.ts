@@ -2,7 +2,7 @@ import { execa } from "execa";
 import fs from "fs-extra";
 import ignore from "ignore";
 import path from "path";
-import { getIgnorePatterns } from "../core/config";
+import { assertPathNotIgnored } from "./path-ignore";
 
 export const RESTRICTED_FILES = [".env", ".gitignore", ".spektaignore"];
 const MAX_FILE_SIZE_MB = 10;
@@ -65,36 +65,7 @@ export const validatePathAccess = async (targetPath: string): Promise<void> => {
 
   // 3. Ignore Checks (Skip for project root '.')
   if (relativePath !== "") {
-    const displayPath = relativePath;
-
-    // Spektaignore Check
-    const spektaIgnores = await getIgnorePatterns();
-    const ig = ignore().add(spektaIgnores);
-
-    // 1. Hard Spekta Block
-    if (ig.ignores(displayPath)) {
-      throw new Error(
-        `Access Denied: ${targetPath} is ignored by .spektaignore.`,
-      );
-    }
-
-    // 2. Git Check with Spekta Whitelist Bypass
-    let isGitIgnored = false;
-    try {
-      // git check-ignore returns exitCode 0 if the file IS ignored.
-      await execa("git", ["check-ignore", "-q", displayPath]);
-      isGitIgnored = true;
-    } catch (error: any) {
-      // execa throws on non-zero exitCode (1 means NOT ignored).
-      // We swallow the error here as it implies the file is safe to access (relative to git).
-    }
-
-    if (isGitIgnored) {
-      // Bypass if whitelisted
-      if (!isWhitelisted(displayPath, spektaIgnores)) {
-        throw new Error(`Access Denied: ${targetPath} is ignored by git.`);
-      }
-    }
+    await assertPathNotIgnored(relativePath, targetPath);
   }
 
   // 4. Existence and Type-Specific Checks
@@ -125,7 +96,6 @@ export const validatePathAccessForWrite = async (
   const relativePath = path.relative(process.cwd(), absolutePath);
 
   const displayPath = relativePath || ".";
-  const ignoreCheckPath = relativePath || ".";
 
   // 1. System File Block
   if (RESTRICTED_FILES.includes(fileName)) {
@@ -139,31 +109,8 @@ export const validatePathAccessForWrite = async (
     );
   }
 
-  // 3. Spektaignore Check
-  const spektaIgnores = await getIgnorePatterns();
-  const ig = ignore().add(spektaIgnores);
-  if (ig.ignores(ignoreCheckPath)) {
-    throw new Error(
-      `Access Denied: ${targetPath} is ignored by .spektaignore.`,
-    );
-  }
-
-  // 4. Gitignore Check with Spekta Whitelist Bypass
-  let isGitIgnored = false;
-  try {
-    // git check-ignore returns exitCode 0 if the file WOULD BE ignored.
-    await execa("git", ["check-ignore", "-q", displayPath]);
-    isGitIgnored = true;
-  } catch (error: any) {
-    // execa throws on non-zero exitCode (1 means NOT ignored).
-  }
-
-  if (isGitIgnored) {
-    // Bypass if whitelisted
-    if (!isWhitelisted(displayPath, spektaIgnores)) {
-      throw new Error(`Access Denied: ${targetPath} would be ignored by git.`);
-    }
-  }
+  // 3. Ignore Check (spekta + git, with whitelist bypass)
+  await assertPathNotIgnored(displayPath, targetPath, { git: "would be" });
 
   // Note: File size check is intentionally omitted since file doesn't exist
 };

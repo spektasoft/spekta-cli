@@ -6,9 +6,9 @@ describe("Logger", () => {
     vi.restoreAllMocks();
   });
 
-  it("writes info to stderr", () => {
+  it("writes info to stdout", () => {
     const spy = vi
-      .spyOn(process.stderr, "write")
+      .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     Logger.info("test info");
     expect(spy).toHaveBeenCalledWith(
@@ -16,9 +16,9 @@ describe("Logger", () => {
     );
   });
 
-  it("writes warn to stderr", () => {
+  it("writes warn to stdout", () => {
     const spy = vi
-      .spyOn(process.stderr, "write")
+      .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     Logger.warn("test warn");
     expect(spy).toHaveBeenCalledWith(
@@ -26,9 +26,9 @@ describe("Logger", () => {
     );
   });
 
-  it("writes error to stderr", () => {
+  it("writes error to stdout", () => {
     const spy = vi
-      .spyOn(process.stderr, "write")
+      .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     Logger.error("test error");
     expect(spy).toHaveBeenCalledWith(
@@ -36,9 +36,9 @@ describe("Logger", () => {
     );
   });
 
-  it("writes log to stderr", () => {
+  it("writes log to stdout", () => {
     const spy = vi
-      .spyOn(process.stderr, "write")
+      .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     Logger.log("test log");
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("test log\n"));
@@ -47,7 +47,7 @@ describe("Logger", () => {
   it("should log error with stack trace", () => {
     const error = new Error("Stack Trace Test");
     const spy = vi
-      .spyOn(process.stderr, "write")
+      .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     Logger.error("Test Error", error);
     expect(spy).toHaveBeenCalledWith(
@@ -61,7 +61,7 @@ describe("Logger", () => {
 
   it("should log object with inspection", () => {
     const spy = vi
-      .spyOn(process.stderr, "write")
+      .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     Logger.info("Object Test", { foo: "bar" });
     expect(spy).toHaveBeenCalledWith(
@@ -72,7 +72,7 @@ describe("Logger", () => {
 
   it("should handle multiple arguments", () => {
     const spy = vi
-      .spyOn(process.stderr, "write")
+      .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     Logger.warn("Multiple Args", "string", 123, { nested: { value: true } });
     expect(spy).toHaveBeenCalledWith(
@@ -86,7 +86,7 @@ describe("Logger", () => {
   it("should not include ANSI color codes in output", () => {
     const error = new Error("Test Error");
     const spy = vi
-      .spyOn(process.stderr, "write")
+      .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
     Logger.error("Test Message", error, { foo: "bar" });
     const output = spy.mock.calls[0][0];

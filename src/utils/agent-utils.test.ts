@@ -12,7 +12,7 @@ vi.mock("../commands/read", () => ({
   getReadContent: vi.fn(),
 }));
 
-vi.mock("../commands/grep", () => ({
+vi.mock("../commands/grep-search", () => ({
   getGrepContent: vi.fn(),
 }));
 
@@ -127,7 +127,7 @@ describe("agent-utils", () => {
     });
 
     it("executes grep tool correctly", async () => {
-      const { getGrepContent } = await import("../commands/grep");
+      const { getGrepContent } = await import("../commands/grep-search");
       vi.mocked(getGrepContent).mockResolvedValue("grep results");
 
       const call: ToolCall = {

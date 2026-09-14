@@ -5,7 +5,7 @@ import { getWriteContent } from "../commands/write";
 import { Logger } from "./logger";
 import { parseFilePathWithRange, tokenizeQuotedPaths } from "./read-utils";
 import { ReplaceRequest } from "./replace-utils";
-import { getGrepContent } from "../commands/grep";
+import { getGrepContent } from "../commands/grep-search";
 
 export interface ToolCall {
   type: "read" | "write" | "replace" | "grep";

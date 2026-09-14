@@ -17,6 +17,7 @@
         "@inquirer/prompts": "^8.7.2",
         "@modelcontextprotocol/sdk": "^1.30.0",
         "@prettier/plugin-php": "^0.25.0",
+        "@xberg-io/tree-sitter-language-pack": "^1.19.1",
         "boxen": "^8.0.1",
         "chalk": "^5.6.2",
         "dotenv": "^17.4.2",
@@ -32,8 +33,8 @@
         "ora": "^9.4.1",
         "prettier": "^3.9.6",
         "shlex": "^3.0.0",
-        "yaml": "^2.9.0",
-        "zod": "^4.6.2"
+        "yaml": "^2.9.1",
+        "zod": "^4.6.5"
     },
     "devDependencies": {
         "@types/fs-extra": "^11.0.4",

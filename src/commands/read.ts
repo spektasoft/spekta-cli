@@ -44,28 +44,32 @@ export async function getReadContent(
     const isRangeRequest = !!req.range;
     let content = lines.join("\n");
     let isCompacted = false;
+    let fullTokens = 0;
+    let compactionWarning = "";
 
-    // Compaction applies ONLY to full files (no range), regardless of mode
-    if (!isRangeRequest) {
-      const shouldTryCompact = interactive
-        ? true // always attempt in interactive mode
-        : getTokenCount(content) > compactThreshold; // gate only in non-interactive
+    // Compaction applies ONLY to full files and ONLY in non-interactive mode.
+    if (!isRangeRequest && !interactive) {
+      fullTokens = getTokenCount(content);
 
-      if (shouldTryCompact) {
+      if (fullTokens > compactThreshold) {
         const result = compactFile(req.path, content, startLineOffset);
         if (result.isCompacted) {
           content = result.content;
           isCompacted = true;
           anyCompacted = true;
+        } else if (result.warning) {
+          Logger.warn(`${req.path}: ${result.warning}`);
+          compactionWarning = result.warning;
         }
       }
     }
 
-    // Token counting ONLY for non-interactive mode enforcement
-    let tokens = 0;
+    // Token counts are always calculated for output metadata.
+    // Token-limit enforcement remains non-interactive-only.
+    let tokens = getTokenCount(content);
     let exceedLabel = "";
+
     if (!interactive) {
-      tokens = getTokenCount(content);
       if (tokens > tokenLimit) {
         if (isRangeRequest) {
           const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`;
@@ -81,12 +85,29 @@ export async function getReadContent(
       }
     }
 
+    if (isRangeRequest) {
+      const fullFile = await getFileLines(req.path, { start: 1, end: "$" });
+      fullTokens = getTokenCount(fullFile.lines.join("\n"));
+    }
+
     const ext = path.extname(req.path).slice(1) || "txt";
     const rangeLabel = isRangeRequest
       ? `${req.range!.start}-${req.range!.end === "$" ? total : req.range!.end} of ${total}`
       : `1-${total} (Full File)`;
-    const compactLabel = isCompacted ? " [COMPACTED OVERVIEW]" : "";
-    combinedOutput += `#### ${req.path} (lines ${rangeLabel})${compactLabel}${exceedLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
+
+    const fmt = (n: number) => n.toLocaleString("en-US");
+    let tokenDetails = "";
+
+    if (isRangeRequest) {
+      tokenDetails = ` [${fmt(tokens)}/${fmt(fullTokens)} tokens]`;
+    } else if (isCompacted) {
+      tokenDetails = ` [COMPACTED OVERVIEW: ${fmt(tokens)}/${fmt(fullTokens)} tokens]`;
+    } else {
+      tokenDetails = ` [${fmt(tokens)} tokens]`;
+    }
+
+    const warningLabel = compactionWarning ? ` [${compactionWarning}]` : "";
+    combinedOutput += `#### ${req.path} (lines ${rangeLabel})${tokenDetails}${exceedLabel}${warningLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
   }
 
   return anyCompacted

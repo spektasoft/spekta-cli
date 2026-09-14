@@ -31,13 +31,13 @@ describe("resolveSelectedPartials", () => {
     ).toEqual(available);
   });
 
-  it("gives include precedence over exclude", () => {
+  it("gives exclusion precedence over inclusion", () => {
     expect(
       resolveSelectedPartials(available, {
         include: ["b.md"],
         exclude: ["b.md"],
       }),
-    ).toEqual(["b.md"]);
+    ).toEqual([]);
   });
 });
 

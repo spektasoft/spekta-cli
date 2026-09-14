@@ -57,7 +57,6 @@ export const COMMANDS: Record<string, CommandDefinition> = {
         await runRead(requests, { save: isSave });
       }
     },
-    hidden: true,
   },
   grep: {
     name: "Search Project (grep)",

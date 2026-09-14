@@ -4,6 +4,7 @@ export {
   getCompactThreshold,
   getEnv,
   getEnvValue,
+  getGrepTokenLimit,
   getReadTokenLimit,
 } from "./config/env";
 export * from "./config/ignore";

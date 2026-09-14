@@ -111,6 +111,23 @@ describe("SemanticCompactor", () => {
     expect(result.content).toContain('describe("suite"');
   });
 
+  it("preserves test blocks inside nested describe suites", () => {
+    const content = `describe("outer", () => {
+  describe("inner", () => {
+    it("inner test", () => {
+      const x = 10;
+      expect(x).toBe(10);
+    });
+  });
+});`;
+    const result = compactFile("nested.test.ts", content, 1);
+    expect(result.isCompacted).toBe(true);
+    expect(result.content).toContain('describe("outer"');
+    expect(result.content).toContain('describe("inner"');
+    expect(result.content).toContain('it("inner test"');
+    expect(result.content).not.toContain("const x = 10;");
+  });
+
   it("collapses function bodies", () => {
     const content = `function calculateTotal(items) {
   const sum = items.reduce((a, b) => a + b, 0);

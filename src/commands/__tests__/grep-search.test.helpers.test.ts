@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { createRgMatch } from "./grep.test.helpers";
+import { createRgMatch } from "./grep-search.test.helpers";
 
-describe("grep.test.helpers", () => {
+describe("grep-search.test.helpers", () => {
   it("generates a valid ripgrep match JSON string", () => {
     const json = createRgMatch("test.ts", 1, 5, "content");
     const parsed = JSON.parse(json);
