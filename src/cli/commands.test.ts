@@ -36,6 +36,7 @@ describe("dispatchCommand", () => {
 
     await dispatchCommand("unknown-cmd", ["--arg"]);
 
+    expect(runRtkProxy).toHaveBeenCalledTimes(1);
     expect(runRtkProxy).toHaveBeenCalledWith("unknown-cmd", ["--arg"]);
   });
 });
