@@ -14,6 +14,7 @@ import { runReview } from "./commands/review";
 import { runSummarize } from "./commands/summarize";
 import { runSync } from "./commands/sync";
 import { runWrite } from "./commands/write";
+import { runRtkProxy } from "./commands/proxy";
 import { bootstrap, getEnv, HOME_PROVIDERS_FREE } from "./core/config";
 import { searchableSelect } from "./ui/ui";
 import { parseFilePathWithRange } from "./utils/read-utils";
@@ -121,12 +122,22 @@ async function main() {
   }
 
   // 1. Check CLI Arguments
-  if (commandArg && COMMANDS[commandArg]) {
-    await COMMANDS[commandArg].run(args.slice(1));
+  if (commandArg) {
+    if (COMMANDS[commandArg]) {
+      await COMMANDS[commandArg].run(args.slice(1));
+      return;
+    }
+
+    // Dynamic Catch-All Router: Proxy unknown commands to RTK.
+    await runRtkProxy(commandArg, args.slice(1));
     return;
   }
 
   // 2. Fallback to Interactive Menu
+  if (args.length !== 0) {
+    return;
+  }
+
   const choices = Object.entries(COMMANDS)
     .filter(([key, def]) => !def.hidden) // Hide commands marked as hidden
     .map(([key, def]) => ({
