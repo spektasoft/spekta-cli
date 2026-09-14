@@ -11,6 +11,9 @@ import {
 
 vi.mock("execa");
 vi.mock("fs-extra");
+vi.mock("../utils/path-ignore", () => ({
+  isPathIgnored: vi.fn().mockResolvedValue(false),
+}));
 vi.mock("../utils/security", () => ({
   validatePathAccess: vi.fn().mockResolvedValue(undefined),
 }));
@@ -154,6 +157,25 @@ describe("getGrepContent", () => {
 
     expect(result).toContain("#### src/main.ts");
     expect(result).toContain("```ts\n1:5:const x = 1;\n```");
+  });
+
+  it("omits matches from files that are determined to be ignored", async () => {
+    const { isPathIgnored } = await import("../utils/path-ignore");
+    vi.mocked(isPathIgnored).mockImplementation(async (targetPath) => {
+      return targetPath.includes("ignored.ts");
+    });
+
+    const matches = [
+      createRgMatch("ignored.ts", 10, 0, "ignored match"),
+      createRgMatch("valid.ts", 20, 0, "valid match"),
+    ].join("\n");
+
+    vi.mocked(execa).mockImplementation(() => mockExecaStream(matches));
+
+    const result = await getGrepContent({ pattern: "match" });
+
+    expect(result).not.toContain("ignored.ts");
+    expect(result).toContain("valid.ts");
   });
 
   it("uses the file extension as the markdown language identifier", async () => {
