@@ -12,6 +12,7 @@ import { runReview } from "../commands/review";
 import { runSummarize } from "../commands/summarize";
 import { runSync } from "../commands/sync";
 import { runWrite } from "../commands/write";
+import { runDiagnostic } from "../commands/diagnostic";
 import { runRtkProxy } from "../commands/proxy";
 import { searchableSelect } from "../ui/ui";
 import { parseFilePathWithRange } from "../utils/read-utils";
@@ -60,6 +61,12 @@ export const COMMANDS: Record<string, CommandDefinition> = {
     name: "Search Project (ripgrep)",
     run: runGrep,
     hidden: true,
+  },
+  diagnostic: {
+    name: "Run Diagnostics",
+    run: async (args?: string[]) => {
+      await runDiagnostic(args || []);
+    },
   },
   pr: {
     name: "Generate PR Message",
