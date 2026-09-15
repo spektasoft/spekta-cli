@@ -1,17 +1,14 @@
-import path from "path";
-import { getReadTokenLimit, getCompactThreshold } from "../core/config";
+import { getReadTokenLimit } from "../core/config";
 import { processOutput } from "../utils/editor-utils";
-import { compactFile } from "../utils/compactor";
 import { Logger } from "../utils/logger";
 import { FileRequest, getFileLines, getTokenCount } from "../utils/read-utils";
 import { validatePathAccess } from "../utils/security";
-
-const COMPACTION_ADVISORY = `
-#### COMPACTION NOTICE
-Parts of these files are collapsed. Line numbers in comments are **absolute**; do not use visual line counts for offsets.
- 
-**To expand:** Request specific line ranges (e.g., file.ts[20,60]). Targeted requests are never compacted.
-`.trim();
+import { analyzeFile } from "../utils/file-analyzer";
+import {
+  formatReadOutput,
+  formatReadError,
+  prependCompactionAdvisory,
+} from "./read-formatter";
 
 /**
  * Core logic for reading files, applying compaction, and calculating tokens.
@@ -25,93 +22,93 @@ export async function getReadContent(
     throw new Error("At least one file path is required.");
 
   const tokenLimit = getReadTokenLimit();
-  const compactThreshold = getCompactThreshold();
   let combinedOutput = "";
   let anyCompacted = false;
 
   for (const req of requests) {
-    await validatePathAccess(req.path);
-    const { lines, total } = await getFileLines(
-      req.path,
-      req.range || { start: 1, end: "$" },
-    );
-
-    const startLineOffset = req.range
-      ? typeof req.range.start === "number"
-        ? req.range.start
-        : 1
-      : 1;
     const isRangeRequest = !!req.range;
-    let content = lines.join("\n");
-    let isCompacted = false;
-    let fullTokens = 0;
-    let compactionWarning = "";
 
-    // Compaction applies ONLY to full files and ONLY in non-interactive mode.
     if (!isRangeRequest && !interactive) {
-      fullTokens = getTokenCount(content);
+      const analysis = await analyzeFile(req.path);
+      const content = analysis.content;
+      const total = analysis.totalLines;
+      const isCompacted = analysis.isCompacted;
+      const fullTokens = analysis.rawTokens;
+      const compactionWarning = analysis.compactionWarning ?? "";
 
-      if (fullTokens > compactThreshold) {
-        const result = compactFile(req.path, content, startLineOffset);
-        if (result.isCompacted) {
-          content = result.content;
-          isCompacted = true;
-          anyCompacted = true;
-        } else if (result.warning) {
-          Logger.warn(`${req.path}: ${result.warning}`);
-          compactionWarning = result.warning;
-        }
+      if (compactionWarning) {
+        Logger.warn(compactionWarning);
       }
-    }
 
-    // Token counts are always calculated for output metadata.
-    // Token-limit enforcement remains non-interactive-only.
-    let tokens = getTokenCount(content);
-    let exceedLabel = "";
-
-    if (!interactive) {
-      if (tokens > tokenLimit) {
-        if (isRangeRequest) {
-          const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`;
-          Logger.error(errorMessage);
-          combinedOutput += `#### ${req.path} ERROR\nError: ${errorMessage}\n\n`;
-          continue;
-        } else if (!isCompacted) {
-          Logger.warn(
-            `${req.path} exceeds token limit (${tokens} > ${tokenLimit}) and could not be compacted.`,
-          );
-        }
-        exceedLabel = " [EXCEEDS TOKEN LIMIT]";
+      if (isCompacted) {
+        anyCompacted = true;
       }
+
+      const tokens = analysis.finalTokens;
+      const exceedsLimit = analysis.exceedsLimit;
+
+      if (exceedsLimit && !isCompacted) {
+        Logger.warn(
+          `${req.path} exceeds token limit (${tokens} > ${tokenLimit}) and could not be compacted.`,
+        );
+      }
+
+      combinedOutput += formatReadOutput({
+        path: req.path,
+        content,
+        total,
+        isRangeRequest: false,
+        tokens,
+        fullTokens,
+        isCompacted,
+        exceedsLimit,
+        warning: compactionWarning,
+      });
+      continue;
     }
 
-    if (isRangeRequest) {
-      const fullFile = await getFileLines(req.path, { start: 1, end: "$" });
-      fullTokens = getTokenCount(fullFile.lines.join("\n"));
+    try {
+      await validatePathAccess(req.path);
+      const { lines, total: rangeTotal } = await getFileLines(
+        req.path,
+        req.range || { start: 1, end: "$" },
+      );
+      const total = rangeTotal;
+
+      const content = lines.join("\n");
+      const tokens = getTokenCount(content);
+
+      if (!interactive && tokens > tokenLimit) {
+        const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`;
+        Logger.error(errorMessage);
+        combinedOutput += formatReadError(req.path, errorMessage);
+        continue;
+      }
+
+      let fullTokens = tokens;
+      if (isRangeRequest) {
+        const fullFile = await getFileLines(req.path, { start: 1, end: "$" });
+        fullTokens = getTokenCount(fullFile.lines.join("\n"));
+      }
+
+      combinedOutput += formatReadOutput({
+        path: req.path,
+        content,
+        total,
+        isRangeRequest,
+        rangeStart: req.range?.start,
+        rangeEnd: req.range?.end,
+        tokens,
+        fullTokens,
+        exceedsLimit: !interactive && tokens > tokenLimit,
+      });
+    } catch (error: any) {
+      combinedOutput += formatReadError(req.path, error.message);
     }
-
-    const ext = path.extname(req.path).slice(1) || "txt";
-    const rangeLabel = isRangeRequest
-      ? `${req.range!.start}-${req.range!.end === "$" ? total : req.range!.end} of ${total}`
-      : `1-${total} (Full File)`;
-
-    const fmt = (n: number) => n.toLocaleString("en-US");
-    let tokenDetails = "";
-
-    if (isRangeRequest) {
-      tokenDetails = ` [${fmt(tokens)}/${fmt(fullTokens)} tokens]`;
-    } else if (isCompacted) {
-      tokenDetails = ` [COMPACTED OVERVIEW: ${fmt(tokens)}/${fmt(fullTokens)} tokens]`;
-    } else {
-      tokenDetails = ` [${fmt(tokens)} tokens]`;
-    }
-
-    const warningLabel = compactionWarning ? ` [${compactionWarning}]` : "";
-    combinedOutput += `#### ${req.path} (lines ${rangeLabel})${tokenDetails}${exceedLabel}${warningLabel}\n\`\`\`${ext}\n${content}\n\`\`\`\n\n`;
   }
 
   return anyCompacted
-    ? `${COMPACTION_ADVISORY}\n\n${combinedOutput}`
+    ? prependCompactionAdvisory(combinedOutput)
     : combinedOutput;
 }
 

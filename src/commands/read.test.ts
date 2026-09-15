@@ -183,6 +183,21 @@ describe("runRead", () => {
   });
 
   describe("interactive mode behavior", () => {
+    it("should safely format full-file requests in interactive mode without range errors", async () => {
+      mockGetFileLines.mockResolvedValue({
+        lines: ["line 1", "line 2"],
+        total: 2,
+      });
+      mockGetTokenCount.mockReturnValue(150);
+
+      const output = await getReadContent([{ path: "small.ts" }], true);
+
+      expect(output).toContain(
+        "#### small.ts (lines 1-2 (Full File)) [150 tokens]",
+      );
+      expect(output).not.toContain("ERROR");
+    });
+
     it("should calculate tokens for interactive output without enforcing the limit", async () => {
       const content = "line 1\nline 2";
       mockGetFileLines.mockResolvedValue({
@@ -274,7 +289,6 @@ describe("runRead", () => {
         content: smallContent,
         isCompacted: false,
       });
-      // Compaction gate must NOT fire.
       mockGetTokenCount.mockReturnValue(5);
 
       await runRead([{ path: "small.ts" }], { interactive: true });
@@ -294,8 +308,6 @@ describe("runRead", () => {
         content: "compacted content",
         isCompacted: true,
       });
-      // First call: compaction gate — fires.
-      // Second call: token-limit enforcement on compacted output — within limit.
       mockGetTokenCount.mockReturnValueOnce(2500).mockReturnValue(50);
 
       await runRead([{ path: "large.ts" }], { interactive: false });
@@ -303,6 +315,43 @@ describe("runRead", () => {
       expect(stdoutSpy).toHaveBeenCalledWith(
         expect.stringContaining("COMPACTION NOTICE"),
       );
+    });
+  });
+
+  describe("compaction warning logging", () => {
+    it("should log compaction warning when present in non-interactive mode", async () => {
+      const longContent = "line\n".repeat(1000);
+      mockGetFileLines.mockResolvedValue({
+        lines: longContent.trim().split("\n"),
+        total: 1000,
+      });
+      mockGetTokenCount.mockReturnValue(2500);
+      mockCompactFile.mockReturnValue({
+        content: "uncompacted content",
+        isCompacted: false,
+        warning: "Example warning",
+      });
+
+      await getReadContent([{ path: "main.rs" }], false);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith("Example warning");
+    });
+
+    it("does not log a compaction warning when no compaction warning is present", async () => {
+      const longContent = "line\n".repeat(1000);
+      mockGetFileLines.mockResolvedValue({
+        lines: longContent.trim().split("\n"),
+        total: 1000,
+      });
+      mockGetTokenCount.mockReturnValue(2500);
+      mockCompactFile.mockReturnValue({
+        content: "compacted content",
+        isCompacted: true,
+      });
+
+      await getReadContent([{ path: "main.rs" }], false);
+
+      expect(mockLogger.warn).not.toHaveBeenCalled();
     });
   });
 
