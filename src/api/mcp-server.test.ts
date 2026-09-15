@@ -1,15 +1,23 @@
-import { describe, it, expectTypeOf, vi, expect } from "vitest";
-import { TOOL_REGISTRY } from "./mcp-server";
+import { beforeEach, describe, it, expectTypeOf, vi, expect } from "vitest";
+import { McpToolResponse, TOOL_REGISTRY } from "./mcp-server/registry";
 import { getGrepContent } from "../commands/grep-search";
+import { executeRtkCommand } from "../commands/proxy-execution";
 
 vi.mock("../commands/read", () => ({ getReadContent: vi.fn() }));
 vi.mock("../commands/replace", () => ({ executeSafeReplace: vi.fn() }));
 vi.mock("../commands/write", () => ({ getWriteContent: vi.fn() }));
 vi.mock("../commands/grep-search", () => ({ getGrepContent: vi.fn() }));
-vi.mock("../config", () => ({
+vi.mock("../commands/proxy-execution", () => ({
+  executeRtkCommand: vi.fn(),
+}));
+vi.mock("../core/config", () => ({
   bootstrap: vi.fn(),
   loadToolDefinitions: vi.fn().mockResolvedValue([]),
 }));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 // Re-defining the structure expected by the SDK based on the error message
 // (The SDK expects a result that allows string indexing)
@@ -19,19 +27,9 @@ type SdkExpectedResult = {
   [x: string]: unknown;
 };
 
-interface McpToolResponse {
-  content: Array<{
-    type: "text";
-    text: string;
-  }>;
-  isError?: boolean;
-  [key: string]: unknown;
-}
-
 describe("McpToolResponse Compatibility", () => {
   it("should be assignable to the SDK expected generic shape", () => {
-    // This test passes if TypeScript allows the assignment
-    const response = {
+    const response: McpToolResponse = {
       content: [{ type: "text", text: "hello" }],
       isError: false,
       extraField: "allowed",
@@ -39,7 +37,7 @@ describe("McpToolResponse Compatibility", () => {
 
     const sdkCompatible: SdkExpectedResult = response;
 
-    // Runtime check (just to have an assertion)
+    expect(sdkCompatible).toEqual(response);
     expectTypeOf(response).toExtend<SdkExpectedResult>();
   });
 });
@@ -68,5 +66,41 @@ describe("TOOL_REGISTRY", () => {
       pattern: "test",
       path: "src",
     });
+  });
+
+  it("defines spekta_shell correctly and executes safe commands", async () => {
+    const tool = TOOL_REGISTRY.spekta_shell;
+    expect(tool).toBeDefined();
+
+    const schema = tool.schema({
+      command: { description: "command to run" },
+      args: { description: "command arguments" },
+    });
+    const parsed = schema.parse({ command: "git", args: ["status"] });
+    expect(parsed).toEqual({ command: "git", args: ["status"] });
+
+    vi.mocked(executeRtkCommand).mockResolvedValueOnce({
+      available: true,
+      stdout: "nothing to commit",
+      stderr: "",
+      exitCode: 0,
+    });
+
+    const result = await tool.handler({ command: "git", args: ["status"] });
+
+    expect(executeRtkCommand).toHaveBeenCalledWith("git", ["status"]);
+    expect(result).toEqual({
+      isError: false,
+      content: [{ type: "text", text: "nothing to commit" }],
+    });
+  });
+
+  it("refuses spekta_shell commands not on the allow-list", async () => {
+    const tool = TOOL_REGISTRY.spekta_shell;
+
+    const result = await tool.handler({ command: "rm", args: ["-rf", "."] });
+
+    expect(executeRtkCommand).not.toHaveBeenCalled();
+    expect(result.isError).toBe(true);
   });
 });
