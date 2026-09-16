@@ -7,7 +7,14 @@ import { scanTarget } from "./diagnostic/scanner";
 import { saveDiagnosticReport } from "./diagnostic/storage";
 import { formatTerminalSummary } from "./diagnostic/terminal";
 
-export async function runDiagnostic(args?: string[]): Promise<void> {
+export interface DiagnosticOptions {
+  outputDir?: string;
+}
+
+export async function runDiagnostic(
+  args?: string[],
+  options?: DiagnosticOptions,
+): Promise<void> {
   const safeArgs = args || [];
 
   if (safeArgs.length > 1) {
@@ -34,7 +41,10 @@ export async function runDiagnostic(args?: string[]): Promise<void> {
     };
 
     const reportContent = generateDiagnosticReport(scanResult, policy);
-    const savedPath = await saveDiagnosticReport(reportContent);
+    const savedPath = await saveDiagnosticReport(
+      reportContent,
+      options?.outputDir,
+    );
 
     const relativeReportPath = path
       .relative(process.cwd(), savedPath)

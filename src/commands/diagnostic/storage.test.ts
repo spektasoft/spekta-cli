@@ -1,8 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
-import { saveDiagnosticReport, formatReportFileName } from "./storage";
+import {
+  DEFAULT_DIAGNOSTICS_DIR,
+  saveDiagnosticReport,
+  formatReportFileName,
+} from "./storage";
 
 describe("saveDiagnosticReport", () => {
   let tempDir: string;
@@ -15,9 +27,50 @@ describe("saveDiagnosticReport", () => {
     await fs.remove(tempDir);
   });
 
+  // Defensive cleanup: earlier revisions of the "default directory" test
+  // wrote directly to DEFAULT_DIAGNOSTICS_DIR, polluting the real project
+  // tree. Remove only the exact known artifact from that fixed timestamp,
+  // never a glob/wildcard scan of the directory.
+  afterAll(async () => {
+    const strayPath = path.join(DEFAULT_DIAGNOSTICS_DIR, "202609152026.md");
+    if (await fs.pathExists(strayPath)) {
+      await fs.remove(strayPath);
+    }
+  });
+
   it("formats base filename using minute-based timestamp format", () => {
     const fixedDate = new Date(2026, 8, 15, 20, 26);
     expect(formatReportFileName(fixedDate)).toBe("202609152026.md");
+  });
+
+  it("uses the initialized default diagnostics directory when no base directory is supplied", async () => {
+    const fixedDate = new Date(2026, 8, 15, 20, 26);
+    const expectedPath = path.join(DEFAULT_DIAGNOSTICS_DIR, "202609152026.md");
+
+    const ensureDirSpy = vi
+      .spyOn(fs, "ensureDir")
+      .mockResolvedValue(undefined as unknown as void);
+    const pathExistsSpy = vi.spyOn(fs, "pathExists").mockResolvedValue(false);
+    const writeFileSpy = vi
+      .spyOn(fs, "writeFile")
+      .mockResolvedValue(undefined as unknown as void);
+
+    const savedPath = await saveDiagnosticReport(
+      "# Spekta Diagnostics",
+      undefined,
+      fixedDate,
+    );
+
+    expect(savedPath).toBe(expectedPath);
+    expect(writeFileSpy).toHaveBeenCalledWith(
+      expectedPath,
+      "# Spekta Diagnostics",
+      "utf-8",
+    );
+
+    ensureDirSpy.mockRestore();
+    pathExistsSpy.mockRestore();
+    writeFileSpy.mockRestore();
   });
 
   it("creates directory and writes file if it does not exist", async () => {

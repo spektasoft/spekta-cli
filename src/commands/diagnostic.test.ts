@@ -46,7 +46,9 @@ describe("runDiagnostic", () => {
     await fs.writeFile("file.ts", "export const ok = 1;");
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-    await runDiagnostic([]);
+    await runDiagnostic([], {
+      outputDir: path.join(tempDir, "diagnostic-reports"),
+    });
 
     expect(process.exitCode).toBe(0);
     expect(stdoutSpy).toHaveBeenCalled();
@@ -56,11 +58,34 @@ describe("runDiagnostic", () => {
     stdoutSpy.mockRestore();
   });
 
+  it("writes reports to an explicitly supplied output directory", async () => {
+    await fs.writeFile("file.ts", "export const ok = 1;");
+    const reportDir = path.join(tempDir, "diagnostic-reports");
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    await runDiagnostic([], { outputDir: reportDir });
+
+    expect(process.exitCode).toBe(0);
+    expect(await fs.pathExists(reportDir)).toBe(true);
+
+    const reportFiles = await fs.readdir(reportDir);
+    expect(reportFiles).toHaveLength(1);
+    expect(reportFiles[0]).toMatch(/^\d{12}(?:-\d+)?\.md$/);
+
+    expect(
+      await fs.pathExists(path.join(tempDir, "spekta", "docs", "diagnostics")),
+    ).toBe(false);
+
+    stdoutSpy.mockRestore();
+  });
+
   it("completes scan with violations and sets exit code 1", async () => {
     await fs.writeFile("large.ts", "token ".repeat(2500));
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
-    await runDiagnostic(["large.ts"]);
+    await runDiagnostic(["large.ts"], {
+      outputDir: path.join(tempDir, "diagnostic-reports"),
+    });
 
     expect(process.exitCode).toBe(1);
     const output = stdoutSpy.mock.calls.map((c) => c[0]).join("");
