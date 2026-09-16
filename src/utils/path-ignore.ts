@@ -23,8 +23,9 @@ interface IgnoreCheckResult {
  */
 async function checkIgnoreRule(
   relativePath: string,
+  patternsOverride?: string[],
 ): Promise<IgnoreCheckResult> {
-  const spektaIgnores = await getIgnorePatterns();
+  const spektaIgnores = patternsOverride ?? (await getIgnorePatterns());
 
   if (spektaIgnores.length > 0) {
     const ig = ignore().add(spektaIgnores);
@@ -48,7 +49,10 @@ async function checkIgnoreRule(
   return { match: null, spektaIgnores };
 }
 
-export async function isPathIgnored(targetPath: string): Promise<boolean> {
+export async function isPathIgnored(
+  targetPath: string,
+  patternsOverride?: string[],
+): Promise<boolean> {
   const absolutePath = path.resolve(targetPath);
   const relativePath = path.relative(process.cwd(), absolutePath);
 
@@ -56,7 +60,7 @@ export async function isPathIgnored(targetPath: string): Promise<boolean> {
     return false;
   }
 
-  const { match } = await checkIgnoreRule(relativePath);
+  const { match } = await checkIgnoreRule(relativePath, patternsOverride);
   return match !== null;
 }
 

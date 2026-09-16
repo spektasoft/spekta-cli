@@ -119,4 +119,38 @@ describe("scanTarget", () => {
     expect(onProgress).toHaveBeenNthCalledWith(1, 1, 2, "a.ts");
     expect(onProgress).toHaveBeenNthCalledWith(2, 2, 2, "b.ts");
   });
+
+  it("excludes files under a node_modules directory from the scan result", async () => {
+    await fs.mkdirp(path.join(tempDir, "node_modules", "some-pkg"));
+    await fs.writeFile(
+      path.join(tempDir, "node_modules", "some-pkg", "index.js"),
+      "module.exports = {};",
+    );
+    await fs.writeFile(path.join(tempDir, "app.ts"), "export const ok = 1;");
+
+    const result = await scanTarget(".");
+
+    expect(result.scannedCount).toBe(1);
+    expect(result.violations.some((v) => v.path.includes("node_modules"))).toBe(
+      false,
+    );
+    expect(result.errors.some((e) => e.path.includes("node_modules"))).toBe(
+      false,
+    );
+  });
+
+  it("excludes files under a .git directory from the scan result", async () => {
+    await fs.mkdirp(path.join(tempDir, ".git", "objects"));
+    await fs.writeFile(
+      path.join(tempDir, ".git", "objects", "abc123"),
+      "binary-ish content",
+    );
+    await fs.writeFile(path.join(tempDir, "app.ts"), "export const ok = 1;");
+
+    const result = await scanTarget(".");
+
+    expect(result.scannedCount).toBe(1);
+    expect(result.violations.some((v) => v.path.includes(".git"))).toBe(false);
+    expect(result.errors.some((e) => e.path.includes(".git"))).toBe(false);
+  });
 });

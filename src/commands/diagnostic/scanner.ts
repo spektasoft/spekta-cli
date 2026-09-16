@@ -1,11 +1,13 @@
 import fs from "fs-extra";
 import isBinaryPath from "is-binary-path";
 import path from "path";
-import { getReadTokenLimit } from "../../core/config";
+import { getIgnorePatterns, getReadTokenLimit } from "../../core/config";
 import { analyzeFile } from "../../utils/file-analyzer";
 import { isPathIgnored } from "../../utils/path-ignore";
 import { RESTRICTED_FILES } from "../../utils/security";
 import { ErrorFinding, ScanResult, ViolationFinding } from "./types";
+
+const EXCLUDED_DIR_NAMES = new Set(["node_modules", ".git"]);
 
 function normalizeRelative(filePath: string): string {
   const rel = path.relative(process.cwd(), path.resolve(filePath));
@@ -26,7 +28,12 @@ function isEligibleFile(filePath: string): boolean {
 async function collectFiles(
   entryPath: string,
   projectRoot: string,
+  ignorePatterns: string[],
 ): Promise<string[]> {
+  if (EXCLUDED_DIR_NAMES.has(path.basename(entryPath))) {
+    return [];
+  }
+
   const stats = await fs.lstat(entryPath);
 
   if (stats.isSymbolicLink()) {
@@ -47,7 +54,7 @@ async function collectFiles(
     const rel = normalizeRelative(entryPath);
     if (
       !isEligibleFile(entryPath) ||
-      (rel !== "" && (await isPathIgnored(entryPath)))
+      (rel !== "" && (await isPathIgnored(entryPath, ignorePatterns)))
     ) {
       return [];
     }
@@ -56,7 +63,7 @@ async function collectFiles(
 
   if (currentStats.isDirectory()) {
     const rel = normalizeRelative(entryPath);
-    if (rel !== "" && (await isPathIgnored(entryPath))) {
+    if (rel !== "" && (await isPathIgnored(entryPath, ignorePatterns))) {
       return [];
     }
 
@@ -65,7 +72,7 @@ async function collectFiles(
 
     for (const entry of entries) {
       const subPath = path.join(entryPath, entry);
-      const subFiles = await collectFiles(subPath, projectRoot);
+      const subFiles = await collectFiles(subPath, projectRoot, ignorePatterns);
       collected.push(...subFiles);
     }
     return collected;
@@ -80,8 +87,9 @@ export async function scanTarget(
 ): Promise<ScanResult> {
   const projectRoot = await fs.realpath(process.cwd());
   const resolvedTarget = path.resolve(process.cwd(), target);
+  const ignorePatterns = await getIgnorePatterns();
 
-  const files = await collectFiles(resolvedTarget, projectRoot);
+  const files = await collectFiles(resolvedTarget, projectRoot, ignorePatterns);
   const readTokenLimit = getReadTokenLimit();
 
   const violations: ViolationFinding[] = [];
