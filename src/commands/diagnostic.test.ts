@@ -58,6 +58,25 @@ describe("runDiagnostic", () => {
     stdoutSpy.mockRestore();
   });
 
+  it("writes a scan-start acknowledgment before the completion summary", async () => {
+    await fs.writeFile("file.ts", "export const ok = 1;");
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    await runDiagnostic([], {
+      outputDir: path.join(tempDir, "diagnostic-reports"),
+    });
+
+    const calls = stdoutSpy.mock.calls.map((c) => String(c[0]));
+    const startIndex = calls.findIndex((line) => line.includes("Scanning ."));
+    const completedIndex = calls.findIndex((line) =>
+      line.includes("Diagnostic completed"),
+    );
+
+    expect(startIndex).toBeGreaterThanOrEqual(0);
+    expect(completedIndex).toBeGreaterThan(startIndex);
+    stdoutSpy.mockRestore();
+  });
+
   it("writes reports to an explicitly supplied output directory", async () => {
     await fs.writeFile("file.ts", "export const ok = 1;");
     const reportDir = path.join(tempDir, "diagnostic-reports");
@@ -90,6 +109,28 @@ describe("runDiagnostic", () => {
     expect(process.exitCode).toBe(1);
     const output = stdoutSpy.mock.calls.map((c) => c[0]).join("");
     expect(output).toContain("Violations: 1");
+    stdoutSpy.mockRestore();
+  });
+
+  it("writes a per-file progress line for each scanned file before the summary", async () => {
+    await fs.writeFile("one.ts", "export const a = 1;");
+    await fs.writeFile("two.ts", "export const b = 2;");
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+
+    await runDiagnostic([], {
+      outputDir: path.join(tempDir, "diagnostic-reports"),
+    });
+
+    const calls = stdoutSpy.mock.calls.map((c) => String(c[0]));
+    const progressLines = calls.filter(
+      (line) => line.includes("Scanning 1/2") || line.includes("Scanning 2/2"),
+    );
+    const completedIndex = calls.findIndex((line) =>
+      line.includes("Diagnostic completed"),
+    );
+
+    expect(progressLines.length).toBe(2);
+    expect(completedIndex).toBeGreaterThan(-1);
     stdoutSpy.mockRestore();
   });
 });

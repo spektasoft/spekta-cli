@@ -74,7 +74,10 @@ async function collectFiles(
   return [];
 }
 
-export async function scanTarget(target: string): Promise<ScanResult> {
+export async function scanTarget(
+  target: string,
+  onProgress?: (current: number, total: number, displayPath: string) => void,
+): Promise<ScanResult> {
   const projectRoot = await fs.realpath(process.cwd());
   const resolvedTarget = path.resolve(process.cwd(), target);
 
@@ -84,8 +87,10 @@ export async function scanTarget(target: string): Promise<ScanResult> {
   const violations: ViolationFinding[] = [];
   const errors: ErrorFinding[] = [];
 
-  for (const file of files) {
+  for (let index = 0; index < files.length; index++) {
+    const file = files[index];
     const displayPath = normalizeRelative(file);
+    onProgress?.(index + 1, files.length, displayPath);
     try {
       const analysis = await analyzeFile(file);
       if (analysis.exceedsLimit) {

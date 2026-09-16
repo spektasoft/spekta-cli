@@ -33,8 +33,15 @@ export async function runDiagnostic(
     return;
   }
 
+  process.stdout.write(`Scanning ${rawTarget}...\n`);
+
   try {
-    const scanResult = await scanTarget(rawTarget);
+    const scanResult = await scanTarget(
+      rawTarget,
+      (current, total, displayPath) => {
+        process.stdout.write(`Scanning ${current}/${total}: ${displayPath}\n`);
+      },
+    );
     const policy = {
       readTokenLimit: getReadTokenLimit(),
       compactThreshold: getCompactThreshold(),

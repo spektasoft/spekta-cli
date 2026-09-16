@@ -105,4 +105,18 @@ describe("scanTarget", () => {
     expect(result.errors[0].path).toBe("unreadable.ts");
     expect(result.errors[0].action).toBe("investigate file access");
   });
+
+  it("invokes onProgress once per scanned file with index, total, and path", async () => {
+    await fs.writeFile("a.ts", "export const a = 1;");
+    await fs.writeFile("b.ts", "export const b = 2;");
+
+    const onProgress = vi.fn();
+
+    const result = await scanTarget(".", onProgress);
+
+    expect(result.scannedCount).toBe(2);
+    expect(onProgress).toHaveBeenCalledTimes(2);
+    expect(onProgress).toHaveBeenNthCalledWith(1, 1, 2, "a.ts");
+    expect(onProgress).toHaveBeenNthCalledWith(2, 2, 2, "b.ts");
+  });
 });
