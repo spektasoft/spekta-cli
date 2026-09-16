@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { COMMANDS, dispatchCommand, runInteractiveMenu } from "./commands";
 import { runRtkProxy } from "../commands/proxy";
+import * as diagnosticModule from "../commands/diagnostic";
+import * as diagnosticInteractiveModule from "../commands/diagnostic-interactive";
 import { searchableSelect } from "../ui/ui";
 
 vi.mock("../commands/proxy", () => ({
@@ -10,6 +12,14 @@ vi.mock("../commands/proxy", () => ({
 
 vi.mock("../ui/ui", () => ({
   searchableSelect: vi.fn(),
+}));
+
+vi.mock("../commands/diagnostic", () => ({
+  runDiagnostic: vi.fn(),
+}));
+
+vi.mock("../commands/diagnostic-interactive", () => ({
+  runDiagnosticInteractive: vi.fn(),
 }));
 
 describe("dispatchCommand", () => {
@@ -82,6 +92,38 @@ describe("runInteractiveMenu", () => {
     expect(run).toHaveBeenCalledWith(["--interactive"]);
 
     COMMANDS.commit.run = original;
+  });
+
+  it("passes --interactive when diagnostic is selected", async () => {
+    vi.mocked(searchableSelect).mockResolvedValueOnce("diagnostic");
+
+    const run = vi.fn().mockResolvedValue(undefined);
+    const original = COMMANDS.diagnostic.run;
+    COMMANDS.diagnostic.run = run;
+
+    await runInteractiveMenu();
+
+    expect(run).toHaveBeenCalledWith(["--interactive"]);
+
+    COMMANDS.diagnostic.run = original;
+  });
+
+  it("routes diagnostic --interactive argument to runDiagnosticInteractive", async () => {
+    await COMMANDS.diagnostic.run(["--interactive"]);
+
+    expect(
+      diagnosticInteractiveModule.runDiagnosticInteractive,
+    ).toHaveBeenCalledTimes(1);
+    expect(diagnosticModule.runDiagnostic).not.toHaveBeenCalled();
+  });
+
+  it("routes non-interactive diagnostic arguments to runDiagnostic", async () => {
+    await COMMANDS.diagnostic.run(["src/core"]);
+
+    expect(diagnosticModule.runDiagnostic).toHaveBeenCalledWith(["src/core"]);
+    expect(
+      diagnosticInteractiveModule.runDiagnosticInteractive,
+    ).not.toHaveBeenCalled();
   });
 
   it("runs a non-commit selection without arguments", async () => {
