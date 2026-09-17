@@ -46,7 +46,10 @@ describe("analyzeFile", () => {
   });
 
   it("compacts files above the compact threshold and measures final tokens from the compacted content", async () => {
-    mockGetFileLines.mockResolvedValue({ lines: ["A".repeat(2500)], total: 1 });
+    mockGetFileLines.mockResolvedValue({
+      lines: ["A".repeat(2500)],
+      total: 250,
+    });
     mockCompactFile.mockReturnValue({
       content: "compacted content",
       isCompacted: true,

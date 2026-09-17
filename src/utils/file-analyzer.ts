@@ -29,7 +29,7 @@ export async function analyzeFile(filePath: string): Promise<FileAnalysis> {
   let compactionWarning: string | undefined;
 
   if (rawTokens > getCompactThreshold()) {
-    const result = compactFile(filePath, content, total);
+    const result = compactFile(filePath, content, 1);
     if (result.isCompacted) {
       finalContent = result.content;
       isCompacted = true;
