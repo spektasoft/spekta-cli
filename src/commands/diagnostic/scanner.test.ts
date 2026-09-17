@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { execa } from "execa";
 
 import fs from "fs-extra";
 import path from "path";
@@ -121,6 +122,10 @@ describe("scanTarget", () => {
   });
 
   it("excludes files under a node_modules directory from the scan result", async () => {
+    await fs.writeFile(
+      path.join(tempDir, ".gitignore"),
+      "dist\nnode_modules\n",
+    );
     await fs.mkdirp(path.join(tempDir, "node_modules", "some-pkg"));
     await fs.writeFile(
       path.join(tempDir, "node_modules", "some-pkg", "index.js"),
@@ -152,5 +157,71 @@ describe("scanTarget", () => {
     expect(result.scannedCount).toBe(1);
     expect(result.violations.some((v) => v.path.includes(".git"))).toBe(false);
     expect(result.errors.some((e) => e.path.includes(".git"))).toBe(false);
+  });
+
+  it("excludes gitignored directories like vendor in a git repo even if spekta patterns contain negation rules", async () => {
+    await execa("git", ["init"], { cwd: tempDir });
+    await execa("git", ["config", "user.email", "test@example.com"], {
+      cwd: tempDir,
+    });
+    await execa("git", ["config", "user.name", "Test User"], { cwd: tempDir });
+
+    await fs.writeFile(
+      path.join(tempDir, ".gitignore"),
+      "vendor/\nnode_modules/\n",
+    );
+
+    const vendorDir = path.join(tempDir, "vendor", "composer-pkg");
+    await fs.mkdirp(vendorDir);
+    await fs.writeFile(
+      path.join(vendorDir, "autoload.php"),
+      "<?php echo 'vendor';",
+    );
+
+    const srcDir = path.join(tempDir, "src");
+    await fs.mkdirp(srcDir);
+    await fs.writeFile(
+      path.join(srcDir, "index.ts"),
+      "export const ok = true;",
+    );
+
+    await execa("git", ["add", ".gitignore", "src/index.ts"], { cwd: tempDir });
+
+    const result = await scanTarget(".");
+
+    expect(result.scannedCount).toBe(1);
+    expect(result.violations).toHaveLength(0);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it("prunes ignored directories in non-git directory using root gitignore and spekta rules without hardcoded set", async () => {
+    await fs.writeFile(
+      path.join(tempDir, ".gitignore"),
+      "custom_cache/\nthird_party/\n",
+    );
+
+    const cacheDir = path.join(tempDir, "custom_cache");
+    await fs.mkdirp(cacheDir);
+    await fs.writeFile(
+      path.join(cacheDir, "cached.ts"),
+      "export const cached = true;",
+    );
+
+    const thirdPartyDir = path.join(tempDir, "third_party");
+    await fs.mkdirp(thirdPartyDir);
+    await fs.writeFile(
+      path.join(thirdPartyDir, "dep.ts"),
+      "export const dep = true;",
+    );
+
+    const srcDir = path.join(tempDir, "src");
+    await fs.mkdirp(srcDir);
+    await fs.writeFile(path.join(srcDir, "app.ts"), "export const app = true;");
+
+    const result = await scanTarget(".");
+
+    expect(result.scannedCount).toBe(1);
+    expect(result.violations).toHaveLength(0);
+    expect(result.errors).toHaveLength(0);
   });
 });

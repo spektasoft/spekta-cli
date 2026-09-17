@@ -1,13 +1,12 @@
+import { execa } from "execa";
 import fs from "fs-extra";
+import ignore from "ignore";
 import isBinaryPath from "is-binary-path";
 import path from "path";
 import { getIgnorePatterns, getReadTokenLimit } from "../../core/config";
 import { analyzeFile } from "../../utils/file-analyzer";
-import { isPathIgnored } from "../../utils/path-ignore";
 import { RESTRICTED_FILES } from "../../utils/security";
 import { ErrorFinding, ScanResult, ViolationFinding } from "./types";
-
-const EXCLUDED_DIR_NAMES = new Set(["node_modules", ".git"]);
 
 function normalizeRelative(filePath: string): string {
   const rel = path.relative(process.cwd(), path.resolve(filePath));
@@ -25,12 +24,61 @@ function isEligibleFile(filePath: string): boolean {
   return true;
 }
 
-async function collectFiles(
-  entryPath: string,
+async function collectFilesFromGit(
+  resolvedTarget: string,
   projectRoot: string,
   ignorePatterns: string[],
+): Promise<string[] | null> {
+  try {
+    const targetRel = path.relative(projectRoot, resolvedTarget);
+    const args = [
+      "ls-files",
+      "--cached",
+      "--others",
+      "--exclude-standard",
+      "-z",
+    ];
+    if (targetRel !== "" && !targetRel.startsWith("..")) {
+      args.push("--", targetRel);
+    }
+
+    const { stdout } = await execa("git", args, { cwd: projectRoot });
+    if (!stdout) {
+      return [];
+    }
+
+    const auditPatterns = ignorePatterns.filter(
+      (pattern) => !pattern.startsWith("!"),
+    );
+    const ig = auditPatterns.length > 0 ? ignore().add(auditPatterns) : null;
+
+    const rawPaths = stdout.split("\0").filter(Boolean);
+    const eligibleFiles: string[] = [];
+
+    for (const rawRelPath of rawPaths) {
+      const normalized = rawRelPath.split(path.sep).join("/");
+      if (ig && ig.ignores(normalized)) {
+        continue;
+      }
+      const fullPath = path.resolve(projectRoot, rawRelPath);
+      if (isEligibleFile(fullPath)) {
+        eligibleFiles.push(fullPath);
+      }
+    }
+
+    return eligibleFiles;
+  } catch {
+    return null;
+  }
+}
+
+async function collectFilesFallback(
+  entryPath: string,
+  projectRoot: string,
+  ig: ReturnType<typeof ignore> | null,
 ): Promise<string[]> {
-  if (EXCLUDED_DIR_NAMES.has(path.basename(entryPath))) {
+  const baseName = path.basename(entryPath);
+  if (baseName === ".git") {
     return [];
   }
 
@@ -52,10 +100,7 @@ async function collectFiles(
 
   if (currentStats.isFile()) {
     const rel = normalizeRelative(entryPath);
-    if (
-      !isEligibleFile(entryPath) ||
-      (rel !== "" && (await isPathIgnored(entryPath, ignorePatterns)))
-    ) {
+    if (!isEligibleFile(entryPath) || (rel !== "" && ig && ig.ignores(rel))) {
       return [];
     }
     return [entryPath];
@@ -63,7 +108,7 @@ async function collectFiles(
 
   if (currentStats.isDirectory()) {
     const rel = normalizeRelative(entryPath);
-    if (rel !== "" && (await isPathIgnored(entryPath, ignorePatterns))) {
+    if (rel !== "" && ig && ig.ignores(rel)) {
       return [];
     }
 
@@ -72,7 +117,7 @@ async function collectFiles(
 
     for (const entry of entries) {
       const subPath = path.join(entryPath, entry);
-      const subFiles = await collectFiles(subPath, projectRoot, ignorePatterns);
+      const subFiles = await collectFilesFallback(subPath, projectRoot, ig);
       collected.push(...subFiles);
     }
     return collected;
@@ -89,7 +134,39 @@ export async function scanTarget(
   const resolvedTarget = path.resolve(process.cwd(), target);
   const ignorePatterns = await getIgnorePatterns();
 
-  const files = await collectFiles(resolvedTarget, projectRoot, ignorePatterns);
+  let files: string[];
+  const gitFiles = await collectFilesFromGit(
+    resolvedTarget,
+    projectRoot,
+    ignorePatterns,
+  );
+
+  if (gitFiles !== null) {
+    files = gitFiles;
+  } else {
+    const auditPatterns = ignorePatterns.filter(
+      (pattern) => !pattern.startsWith("!"),
+    );
+    const rootGitignorePath = path.join(projectRoot, ".gitignore");
+    if (await fs.pathExists(rootGitignorePath)) {
+      try {
+        const gitignoreContent = await fs.readFile(rootGitignorePath, "utf-8");
+        const lines = gitignoreContent
+          .split("\n")
+          .map((line) => line.trim())
+          .filter(
+            (line) =>
+              line !== "" && !line.startsWith("#") && !line.startsWith("!"),
+          );
+        auditPatterns.push(...lines);
+      } catch {
+        // Fall back to configured patterns if reading .gitignore fails
+      }
+    }
+
+    const ig = auditPatterns.length > 0 ? ignore().add(auditPatterns) : null;
+    files = await collectFilesFallback(resolvedTarget, projectRoot, ig);
+  }
   const readTokenLimit = getReadTokenLimit();
 
   const violations: ViolationFinding[] = [];
