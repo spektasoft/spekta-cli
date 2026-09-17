@@ -23,6 +23,7 @@ describe("public command registry", () => {
       "prompt",
       "review",
       "pr",
+      "diagnostic",
     ]) {
       expect(COMMANDS[command].hidden).not.toBe(true);
     }
@@ -49,6 +50,7 @@ describe("Interactive menu command visibility", () => {
       "prompt",
       "review",
       "pr",
+      "diagnostic",
     ];
     for (const cmd of visibleCommands) {
       expect(COMMANDS[cmd]).toBeDefined();

@@ -12,6 +12,8 @@ import { runReview } from "../commands/review";
 import { runSummarize } from "../commands/summarize";
 import { runSync } from "../commands/sync";
 import { runWrite } from "../commands/write";
+import { runDiagnostic } from "../commands/diagnostic";
+import { runDiagnosticInteractive } from "../commands/diagnostic-interactive";
 import { runRtkProxy } from "../commands/proxy";
 import { searchableSelect } from "../ui/ui";
 import { parseFilePathWithRange } from "../utils/read-utils";
@@ -60,6 +62,17 @@ export const COMMANDS: Record<string, CommandDefinition> = {
     name: "Search Project (ripgrep)",
     run: runGrep,
     hidden: true,
+  },
+  diagnostic: {
+    name: "Run Diagnostics",
+    run: async (args?: string[]) => {
+      const safeArgs = args || [];
+      if (safeArgs.includes("--interactive")) {
+        await runDiagnosticInteractive();
+        return;
+      }
+      await runDiagnostic(safeArgs);
+    },
   },
   pr: {
     name: "Generate PR Message",
@@ -125,7 +138,7 @@ export async function runInteractiveMenu(): Promise<void> {
     return;
   }
 
-  if (action === "commit") {
+  if (action === "commit" || action === "diagnostic") {
     await COMMANDS[action].run(["--interactive"]);
     return;
   }
