@@ -24,8 +24,9 @@ export async function executeAiAction(
     );
     spinner?.succeed("Generation complete.");
     return result;
-  } catch (error: any) {
-    spinner?.fail(`Generation failed: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    spinner?.fail(`Generation failed: ${message}`);
     throw error;
   }
 }

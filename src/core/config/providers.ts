@@ -11,8 +11,9 @@ export const getProviders = async (): Promise<ProvidersConfig> => {
     try {
       const data = await readYaml<ProvidersConfig>(filePath);
       return data || { providers: [] };
-    } catch (err: any) {
-      console.warn(`Warning: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`Warning: ${message}`);
       return { providers: [] };
     }
   };

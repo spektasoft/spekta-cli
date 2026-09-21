@@ -52,6 +52,7 @@ describe("SelectivePartialLoader", () => {
     expect(loader.getSource("partials/b.md")).toEqual({
       src: "",
       path: "partials/b.md",
+      noCache: true,
     });
   });
 });

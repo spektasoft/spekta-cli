@@ -46,17 +46,6 @@ describe("Partial selection", () => {
 });
 
 describe("Prompts, REPL Injection & Placeholders", () => {
-  const setupTempPrompt = async (content: string, filename: string) => {
-    const tempDir = path.join(os.tmpdir(), `spekta-test-${generateId()}`);
-    await fs.ensureDir(path.join(tempDir, "prompts"));
-    process.env.SPEKTA_HOME_OVERRIDE = tempDir;
-    process.env.SPEKTA_ASSET_ROOT_OVERRIDE = tempDir;
-    await seedAssetFixtures(tempDir);
-    refreshPaths();
-    await fs.writeFile(path.join(tempDir, "prompts", filename), content);
-    return tempDir;
-  };
-
   afterEach(() => {
     delete process.env.SPEKTA_HOME_OVERRIDE;
     delete process.env.SPEKTA_ASSET_ROOT_OVERRIDE;
@@ -126,7 +115,9 @@ describe("Prompts, REPL Injection & Placeholders", () => {
     ];
 
     try {
-      const content = await getPromptContent("repl.md", async () => mockTools);
+      const content = await getPromptContent("repl.md", () =>
+        Promise.resolve(mockTools),
+      );
       expect(content).toContain("Tool with [10,$] range");
       expect(content).toContain("$` $& $'");
       const occurrences = content.split("### Tools").length - 1;

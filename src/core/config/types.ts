@@ -4,7 +4,7 @@ export interface Provider {
   name: string;
   model: string;
   type?: ProviderType; // Absent = treated as "openrouter" for backward compatibility
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
 }
 
 export interface ToolParamDefinition {
@@ -22,7 +22,7 @@ export interface PromptMetadata {
   filename: string;
   name: string;
   description: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface ProvidersConfig {

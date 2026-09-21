@@ -7,7 +7,7 @@ export interface GlobalPromptContext {
   cwd: string;
   git_diff: string;
   timestamp: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export const getSafeGitDiff = (): string => {
@@ -18,8 +18,9 @@ export const getSafeGitDiff = (): string => {
       stdio: ["pipe", "pipe", "ignore"],
     });
     return diff.trim();
-  } catch (err) {
-    Logger.warn(`Could not retrieve git diff for prompt context: ${err}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    Logger.warn(`Could not retrieve git diff for prompt context: ${message}`);
     return "";
   }
 };
@@ -29,7 +30,7 @@ export const getSafeGitDiff = (): string => {
  * Exposes safe environment variables like cwd, git_diff, and timestamp.
  */
 export const getGlobalPromptContext = (
-  extraContext: Record<string, any> = {},
+  extraContext: Record<string, unknown> = {},
 ): GlobalPromptContext => {
   return {
     id: generateId(),

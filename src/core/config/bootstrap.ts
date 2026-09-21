@@ -8,7 +8,6 @@ import {
   HOME_TOOLS,
   refreshPaths,
 } from "./paths.js";
-import path from "path";
 
 export interface BootstrapOptions {
   writeUserHome?: boolean;
