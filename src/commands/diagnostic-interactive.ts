@@ -8,8 +8,8 @@ export async function runDiagnosticInteractive(): Promise<void> {
     target = await input({
       message: "Target file or directory (leave empty for current directory):",
     });
-  } catch (error: any) {
-    if (error?.name === "ExitPromptError") {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === "ExitPromptError") {
       return;
     }
     throw error;

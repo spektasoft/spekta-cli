@@ -1,6 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
 import { execa } from "execa";
-
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
@@ -82,19 +89,28 @@ describe("scanTarget", () => {
     await fs.writeFile("good.ts", "export const a = 1;");
     await fs.writeFile("unreadable.ts", "export const b = 2;");
 
-    const mockedFs = await import("fs");
+    interface MockedFsModule {
+      createReadStream: MockInstance<(...args: unknown[]) => unknown>;
+    }
+
+    const mockedFs = (await import("fs")) as unknown as MockedFsModule;
     const originalCreateReadStream =
       mockedFs.createReadStream.getMockImplementation();
 
     mockedFs.createReadStream.mockImplementation(
-      (filePath: any, ...args: any[]) => {
-        if (filePath.toString().includes("unreadable.ts")) {
-          const error: any = new Error("EACCES: permission denied");
-          error.code = "EACCES";
+      (filePath: unknown, ...args: unknown[]) => {
+        if (String(filePath).includes("unreadable.ts")) {
+          const error = Object.assign(new Error("EACCES: permission denied"), {
+            code: "EACCES",
+          });
           throw error;
         }
 
-        return (originalCreateReadStream as any)(filePath, ...args);
+        if (!originalCreateReadStream) {
+          throw new Error("Original createReadStream implementation not found");
+        }
+
+        return originalCreateReadStream(filePath, ...args);
       },
     );
 

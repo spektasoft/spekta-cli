@@ -3,7 +3,7 @@ import fs from "fs-extra";
 import ignore from "ignore";
 import isBinaryPath from "is-binary-path";
 import path from "path";
-import { getIgnorePatterns, getReadTokenLimit } from "../../core/config";
+import { getIgnorePatterns } from "../../core/config";
 import { analyzeFile } from "../../utils/file-analyzer";
 import { RESTRICTED_FILES } from "../../utils/security";
 import { ErrorFinding, ScanResult, ViolationFinding } from "./types";
@@ -167,7 +167,6 @@ export async function scanTarget(
     const ig = auditPatterns.length > 0 ? ignore().add(auditPatterns) : null;
     files = await collectFilesFallback(resolvedTarget, projectRoot, ig);
   }
-  const readTokenLimit = getReadTokenLimit();
 
   const violations: ViolationFinding[] = [];
   const errors: ErrorFinding[] = [];
@@ -189,16 +188,25 @@ export async function scanTarget(
           action: "refactoring required",
         });
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      const errorCode =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof error.code === "string"
+          ? (error as { code: string }).code
+          : undefined;
+
       const isAccess =
-        error.code === "EACCES" ||
-        error.code === "EPERM" ||
-        error.code === "ENOENT" ||
-        /access|permission/i.test(error.message || "");
+        errorCode === "EACCES" ||
+        errorCode === "EPERM" ||
+        errorCode === "ENOENT" ||
+        /access|permission/i.test(message);
 
       errors.push({
         path: displayPath,
-        error: error.message || String(error),
+        error: message,
         action: isAccess ? "investigate file access" : undefined,
       });
     }
