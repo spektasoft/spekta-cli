@@ -17,7 +17,7 @@ async function main() {
     if (env.OPENROUTER_API_KEY) {
       try {
         await syncFreeModels(env.OPENROUTER_API_KEY);
-      } catch (e: any) {
+      } catch {
         console.error(
           "Notice: Initial model sync skipped (OpenRouter unreachable).",
         );
@@ -41,7 +41,7 @@ async function main() {
   await runInteractiveMenu();
 }
 
-main().catch((err) => {
-  console.error(`Error: ${err.message}`);
+main().catch((err: unknown) => {
+  console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 });
