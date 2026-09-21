@@ -143,16 +143,15 @@ describe("Command: runCommit", () => {
     await runCommit(["--interactive"]);
 
     // Assert
-    expect(orchestrator.executeAiAction).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider: expect.objectContaining({ model: "gpt-4" }),
-        messages: [
-          { role: "system", content: expect.stringContaining("{{diff}}") }, // real prompt from disk
-          { role: "user", content: expect.stringContaining(mockDiff) },
-        ],
-        spinnerTitle: "Generating commit message...",
-      }),
-    );
+    expect(orchestrator.executeAiAction).toHaveBeenCalledTimes(1);
+    const [actionOptions] = vi.mocked(orchestrator.executeAiAction).mock
+      .calls[0];
+    expect(actionOptions.provider.model).toBe("gpt-4");
+    expect(actionOptions.messages[0]?.role).toBe("system");
+    expect(actionOptions.messages[0]?.content).toContain("{{diff}}");
+    expect(actionOptions.messages[1]?.role).toBe("user");
+    expect(actionOptions.messages[1]?.content).toContain(mockDiff);
+    expect(actionOptions.spinnerTitle).toBe("Generating commit message...");
 
     expect(git.stripCodeFences).toHaveBeenCalledWith(mockRawAi);
 

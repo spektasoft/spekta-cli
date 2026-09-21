@@ -111,10 +111,7 @@ export async function runCommitRange() {
       if (!shouldProceed) {
         console.log("Operation cancelled by user due to payload size.");
         // Optionally offer to save prompt only
-        const saveOnly = await processOutput(
-          finalPromptPayload,
-          "spekta-commit-range-large",
-        );
+        await processOutput(finalPromptPayload, "spekta-commit-range-large");
         return;
       }
     }
@@ -156,11 +153,12 @@ export async function runCommitRange() {
     const formatted = await formatCommitMessage(cleaned);
 
     // Save to file and optionally open in editor
-    const outputPath = await processOutput(formatted, "spekta-commit-range");
+    await processOutput(formatted, "spekta-commit-range");
 
     console.log("\nConsolidated commit message generated successfully.");
-  } catch (error: any) {
-    console.error(`Error: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Error: ${message}`);
     process.exitCode = 1;
   }
 }
