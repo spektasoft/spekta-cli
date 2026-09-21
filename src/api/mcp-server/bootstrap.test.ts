@@ -73,6 +73,7 @@ describe("runMcpServer", () => {
         name: "spekta_grep",
         description: "Search",
         params: {},
+        xml_example: "<spekta_grep></spekta_grep>",
       },
     ]);
 
@@ -84,16 +85,35 @@ describe("runMcpServer", () => {
         name: "spekta_grep",
         description: "Search",
         params: {},
+        xml_example: "<spekta_grep></spekta_grep>",
       },
     ]);
     expect(registerTool).toHaveBeenCalledOnce();
+    expect(registerTool).toHaveBeenCalledWith(
+      "spekta_grep",
+      {
+        description: "Search",
+        inputSchema: {},
+      },
+      expect.any(Function),
+    );
     expect(connect).toHaveBeenCalledOnce();
   });
 
   it("skips duplicate tool names", async () => {
     vi.mocked(loadToolDefinitions).mockResolvedValue([
-      { name: "spekta_grep", description: "Search", params: {} },
-      { name: "spekta_grep", description: "Search again", params: {} },
+      {
+        name: "spekta_grep",
+        description: "Search",
+        params: {},
+        xml_example: "<spekta_grep></spekta_grep>",
+      },
+      {
+        name: "spekta_grep",
+        description: "Search again",
+        params: {},
+        xml_example: "<spekta_grep></spekta_grep>",
+      },
     ]);
 
     await runMcpServer();
@@ -103,7 +123,12 @@ describe("runMcpServer", () => {
 
   it("skips tools without implementations", async () => {
     vi.mocked(loadToolDefinitions).mockResolvedValue([
-      { name: "unknown_tool", description: "Unknown", params: {} },
+      {
+        name: "unknown_tool",
+        description: "Unknown",
+        params: {},
+        xml_example: "<unknown_tool></unknown_tool>",
+      },
     ]);
 
     await runMcpServer();
@@ -119,12 +144,19 @@ describe("runMcpServer", () => {
     vi.mocked(implementation.handler).mockRejectedValueOnce(new Error("boom"));
 
     vi.mocked(loadToolDefinitions).mockResolvedValue([
-      { name: "spekta_grep", description: "Search", params: {} },
+      {
+        name: "spekta_grep",
+        description: "Search",
+        params: {},
+        xml_example: "<spekta_grep></spekta_grep>",
+      },
     ]);
 
     await runMcpServer();
 
-    const handler = registerTool.mock.calls[0][3];
+    const handler = registerTool.mock.calls[0][2] as (
+      args: Record<string, unknown>,
+    ) => Promise<unknown>;
     await expect(handler({})).resolves.toEqual({
       isError: true,
       content: [{ type: "text", text: "Execution failed: Error: boom" }],
