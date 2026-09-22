@@ -1,6 +1,8 @@
 import { expect, it, vi, beforeEach } from "vitest";
 import { runRepl, ReplSession } from "./repl";
-import { callAIStreamWithProvider } from "../api/api";
+import { callAIStreamWithProvider, Message } from "../api/api";
+import { ChatCompletionChunk } from "openai/resources/chat/completions";
+import { Provider } from "../core/config/types";
 import { getUserMessage } from "../utils/multiline-input";
 import { parseToolCalls, executeTool } from "../utils/agent-utils";
 import ora from "ora";
@@ -19,12 +21,50 @@ vi.mock("../ui/repl", () => ({
     .mockResolvedValue({ model: "test", name: "test", config: {} }),
 }));
 vi.mock("../utils/multiline-input");
-vi.mock("../utils/session-utils", async () => {
+vi.mock("../utils/session-utils", () => {
   return {
     saveSession: vi.fn().mockResolvedValue(undefined),
     generateSessionId: vi.fn().mockReturnValue("test-session-id"),
   };
 });
+
+interface ReplSessionInternals {
+  provider: Provider | null;
+  messages: Message[];
+  pendingToolResults: string;
+  exitRequested: boolean;
+  isUserInterrupted: boolean;
+  currentAbortController: AbortController | null;
+  lastAssistantContent: string;
+  handleUserTurn: () => Promise<boolean>;
+  handleAssistantTurn: () => Promise<void>;
+  handleInterrupt: () => Promise<void>;
+}
+
+function asInternals(session: ReplSession): ReplSessionInternals {
+  return session as unknown as ReplSessionInternals;
+}
+
+async function* createMockStream(
+  contents: string[],
+): AsyncIterable<ChatCompletionChunk> {
+  await Promise.resolve();
+  for (const content of contents) {
+    yield {
+      id: "mock-chunk",
+      object: "chat.completion.chunk",
+      created: Date.now(),
+      model: "mock-model",
+      choices: [
+        {
+          index: 0,
+          delta: { content },
+          finish_reason: null,
+        },
+      ],
+    };
+  }
+}
 vi.mock("../utils/agent-utils", () => ({
   parseToolCalls: vi.fn().mockReturnValue([]), // Return empty array by default
   executeTool: vi.fn(),
@@ -54,19 +94,28 @@ it("handles immediate interruption before tokens", async () => {
     .mockResolvedValueOnce("hello")
     .mockResolvedValueOnce("exit");
 
-  // @ts-ignore
-  vi.mocked(callAIStreamWithProvider).mockImplementation(async function* () {
-    const error = new Error("Aborted");
-    error.name = "AbortError";
-    throw error;
-  });
+  const abortError = new Error("Aborted");
+  abortError.name = "AbortError";
+  const throwingStream: AsyncIterable<ChatCompletionChunk> = {
+    [Symbol.asyncIterator]() {
+      return {
+        next() {
+          return Promise.reject(abortError);
+        },
+      };
+    },
+  };
+
+  vi.mocked(callAIStreamWithProvider).mockResolvedValue(throwingStream);
 
   const oraMock = vi.mocked(ora);
   const session = new ReplSession();
   await session.start();
 
-  const spinner = oraMock.mock.results[0].value;
-  expect(spinner.stop).toHaveBeenCalled();
+  const firstResult = oraMock.mock.results[0];
+  const spinner = firstResult?.value as { stop: () => void } | undefined;
+  expect(spinner?.stop).toBeDefined();
+  expect(spinner?.stop).toHaveBeenCalled();
 });
 
 it("automatically triggers AI response after successful tool execution", async () => {
@@ -74,20 +123,9 @@ it("automatically triggers AI response after successful tool execution", async (
     .mockResolvedValueOnce("hello")
     .mockResolvedValueOnce("exit");
 
-  const stream1 = {
-    [Symbol.asyncIterator]: async function* () {
-      yield { choices: [{ delta: { content: "TOOL" } }] };
-    },
-  };
-  const stream2 = {
-    [Symbol.asyncIterator]: async function* () {
-      yield { choices: [{ delta: { content: "Done" } }] };
-    },
-  };
-
   vi.mocked(callAIStreamWithProvider)
-    .mockResolvedValueOnce(stream1 as any)
-    .mockResolvedValueOnce(stream2 as any);
+    .mockResolvedValueOnce(createMockStream(["TOOL"]))
+    .mockResolvedValueOnce(createMockStream(["Done"]));
 
   vi.mocked(parseToolCalls)
     .mockReturnValueOnce([
@@ -109,12 +147,9 @@ it("processes assistant turn correctly", async () => {
     .mockResolvedValueOnce("hello")
     .mockResolvedValueOnce("exit");
 
-  const mockStream = {
-    [Symbol.asyncIterator]: async function* () {
-      yield { choices: [{ delta: { content: "AI Response" } }] };
-    },
-  };
-  vi.mocked(callAIStreamWithProvider).mockResolvedValue(mockStream as any);
+  vi.mocked(callAIStreamWithProvider).mockResolvedValue(
+    createMockStream(["AI Response"]),
+  );
 
   const session = new ReplSession();
   await session.start();
@@ -129,12 +164,9 @@ it("exits loop when user types exit", async () => {
     .mockResolvedValueOnce("hello")
     .mockResolvedValueOnce("exit");
 
-  const mockStream = {
-    [Symbol.asyncIterator]: async function* () {
-      yield { choices: [{ delta: { content: "AI Response" } }] };
-    },
-  };
-  vi.mocked(callAIStreamWithProvider).mockResolvedValue(mockStream as any);
+  vi.mocked(callAIStreamWithProvider).mockResolvedValue(
+    createMockStream(["AI Response"]),
+  );
 
   await runRepl();
 
@@ -148,13 +180,13 @@ it("handles pending tool results on exit", async () => {
   await session.initialize();
 
   // Manually inject pending results to test the logic
-  (session as any).pendingToolResults = "Previous Tool Result";
+  asInternals(session).pendingToolResults = "Previous Tool Result";
 
   // We cannot use session.start() because it loops.
   // We can test handleUserTurn directly or modify mocking for loop control.
   // Testing handleUserTurn directly is safer for this unit test.
 
-  const result = await (session as any).handleUserTurn();
+  const result = await asInternals(session).handleUserTurn();
 
   expect(result).toBe(false); // Should return false on exit
   expect(saveSession).toHaveBeenCalled();
@@ -175,8 +207,8 @@ it("runRepl initializes session successfully", async () => {
 it("breaks the main loop and saves session when exitRequested is true", async () => {
   const session = new ReplSession();
   await session.initialize();
-  (session as any).exitRequested = true;
-  (session as any).pendingToolResults = "Leftover result";
+  asInternals(session).exitRequested = true;
+  asInternals(session).pendingToolResults = "Leftover result";
 
   await session.start();
 
@@ -190,24 +222,25 @@ it("breaks the main loop and saves session when exitRequested is true", async ()
 
 it("aborts the active controller on SIGINT without exiting the process", async () => {
   const session = new ReplSession();
-  const mockController = { abort: vi.fn() };
-  (session as any).currentAbortController = mockController;
+  const mockController = new AbortController();
+  const abortSpy = vi.spyOn(mockController, "abort");
+  asInternals(session).currentAbortController = mockController;
 
-  (session as any).handleInterrupt();
+  await asInternals(session).handleInterrupt();
 
-  expect(mockController.abort).toHaveBeenCalled();
-  expect((session as any).isUserInterrupted).toBe(true);
+  expect(abortSpy).toHaveBeenCalled();
+  expect(asInternals(session).isUserInterrupted).toBe(true);
 });
 
 it("removes interruption marker only from the end of the string", () => {
   const session = new ReplSession();
-  (session as any).isUserInterrupted = true;
-  (session as any).lastAssistantContent =
+  asInternals(session).isUserInterrupted = true;
+  asInternals(session).lastAssistantContent =
     "Some text\n\n[Response interrupted by user]";
 
   // Internal access for testing sanitization logic
   const toolCalls = parseToolCalls(
-    (session as any).lastAssistantContent.replace(
+    asInternals(session).lastAssistantContent.replace(
       "\n\n[Response interrupted by user]",
       "",
     ),
@@ -217,30 +250,34 @@ it("removes interruption marker only from the end of the string", () => {
 
 it("resets buffers when a non-abort error occurs during streaming", async () => {
   const session = new ReplSession();
-  (session as any).provider = { model: "test" };
+  asInternals(session).provider = {
+    name: "test",
+    model: "test",
+  };
 
   // Mock a failing stream
   vi.mocked(callAIStreamWithProvider).mockRejectedValueOnce(
     new Error("Network Error"),
   );
+
   // Mock the retry choice to exit
   const { select } = await import("@inquirer/prompts");
   vi.mocked(select).mockResolvedValueOnce("exit");
 
   try {
-    await (session as any).handleAssistantTurn();
-  } catch (e) {
+    await asInternals(session).handleAssistantTurn();
+  } catch {
     // Expected exit
   }
 
-  expect((session as any).lastAssistantContent).toBe("");
+  expect(asInternals(session).lastAssistantContent).toBe("");
 });
 
 it("ensures session is saved even if the loop breaks via exitRequested", async () => {
   const session = new ReplSession();
   await session.initialize();
-  (session as any).exitRequested = true;
-  (session as any).pendingToolResults = "Final Check";
+  asInternals(session).exitRequested = true;
+  asInternals(session).pendingToolResults = "Final Check";
 
   await session.start();
 
@@ -255,19 +292,16 @@ it("ensures session is saved even if the loop breaks via exitRequested", async (
 it("prints a newline after the stream finishes successfully", async () => {
   vi.mocked(getUserMessage).mockResolvedValueOnce("hello");
 
-  const mockStream = {
-    [Symbol.asyncIterator]: async function* () {
-      yield { choices: [{ delta: { content: "AI Response" } }] };
-    },
-  };
-  vi.mocked(callAIStreamWithProvider).mockResolvedValue(mockStream as any);
+  vi.mocked(callAIStreamWithProvider).mockResolvedValue(
+    createMockStream(["AI Response"]),
+  );
 
   // Spy on stdout.write to capture what gets written
   const writeSpy = vi.spyOn(process.stdout, "write");
 
   const session = new ReplSession();
   await session.initialize();
-  await (session as any).handleAssistantTurn();
+  await asInternals(session).handleAssistantTurn();
 
   // Verify that a newline was written after the stream completed
   expect(writeSpy).toHaveBeenCalledWith("\n\n");
@@ -275,13 +309,13 @@ it("prints a newline after the stream finishes successfully", async () => {
 
 it("saves session data immediately when SIGINT is received while idle", async () => {
   const session = new ReplSession();
-  (session as any).pendingToolResults = "Immediate Exit Data";
+  asInternals(session).pendingToolResults = "Immediate Exit Data";
 
   const exitSpy = vi
     .spyOn(process, "exit")
     .mockImplementation(() => undefined as never);
 
-  await (session as any).handleInterrupt();
+  await asInternals(session).handleInterrupt();
 
   expect(saveSession).toHaveBeenCalledWith(
     expect.any(String),

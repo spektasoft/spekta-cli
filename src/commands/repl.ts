@@ -8,6 +8,7 @@ import {
   Message,
 } from "../api/api";
 import { getPromptContent, getProviders } from "../core/config";
+import { Provider } from "../core/config/types";
 import { promptReplProviderSelection } from "../ui/repl";
 import { executeTool, parseToolCalls } from "../utils/agent-utils";
 import { Logger } from "../utils/logger";
@@ -17,7 +18,7 @@ import { generateSessionId, saveSession } from "../utils/session-utils";
 export class ReplSession {
   private sessionId: string;
   private messages: Message[] = [];
-  private provider: any;
+  private provider: Provider | null = null;
   private systemPrompt: string = "";
   private pendingToolResults: string = "";
   private shouldAutoTriggerAI: boolean = false;
@@ -76,13 +77,13 @@ export class ReplSession {
   public async start() {
     try {
       await this.initialize();
-      this.boundHandleInterrupt = this.handleInterrupt.bind(this);
-      process.on("SIGINT", () => {
-        this.handleInterrupt().catch((err) => {
+      this.boundHandleInterrupt = () => {
+        void this.handleInterrupt().catch((err: unknown) => {
           console.error("Failed to shutdown gracefully:", err);
           process.exit(1);
         });
-      });
+      };
+      process.on("SIGINT", this.boundHandleInterrupt);
 
       while (!this.exitRequested) {
         if (!this.shouldAutoTriggerAI) {
@@ -152,6 +153,9 @@ export class ReplSession {
       this.currentAbortController = controller;
 
       try {
+        if (!this.provider) {
+          throw new Error("REPL session provider is not initialized");
+        }
         const stream = await callAIStreamWithProvider(
           this.provider,
           this.messages,
@@ -200,8 +204,11 @@ export class ReplSession {
           // Added: Ensure the message is "closed" in the terminal
           process.stdout.write("\n\n");
           success = true;
-        } catch (streamError: any) {
-          if (streamError.name === "AbortError") {
+        } catch (streamError: unknown) {
+          if (
+            streamError instanceof Error &&
+            streamError.name === "AbortError"
+          ) {
             this.isUserInterrupted = true; // FIX: Break the loop on interrupt
             if (!firstTokenReceived) spinner.stop();
             process.stdout.write(
@@ -211,8 +218,9 @@ export class ReplSession {
             throw streamError;
           }
         }
-      } catch (error: any) {
-        spinner.fail(`AI call failed: ${error.message}`);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        spinner.fail(`AI call failed: ${message}`);
         if (!this.isUserInterrupted) {
           // Reset the buffers on non-interruption failures
           assistantContent = "";
@@ -329,13 +337,14 @@ export class ReplSession {
           process.stdout.write(
             chalk.green(`✓ Executed ${call.type} on ${call.path}\n`),
           );
-        } catch (err: any) {
+        } catch (err: unknown) {
+          const errorMessage = err instanceof Error ? err.message : String(err);
           toolResults.push(
-            `### Tool: ${call.type} on ${call.path}\nStatus: Error\n${err.message}`,
+            `### Tool: ${call.type} on ${call.path}\nStatus: Error\n${errorMessage}`,
           );
           process.stdout.write(
             chalk.red(
-              `✗ Failed ${call.type} on ${call.path}: ${err.message}\n`,
+              `✗ Failed ${call.type} on ${call.path}: ${errorMessage}\n`,
             ),
           );
         }
