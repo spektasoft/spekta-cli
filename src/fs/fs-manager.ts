@@ -40,8 +40,10 @@ export const ensureIgnoredDir = async (
   try {
     // Attempt exclusive creation
     await fs.writeFile(spektaIgnorePath, "*\n", { flag: "wx" });
-  } catch (err: any) {
-    if (err.code !== "EEXIST") throw err;
+  } catch (err: unknown) {
+    const code =
+      err instanceof Error ? (err as NodeJS.ErrnoException).code : undefined;
+    if (code !== "EEXIST") throw err;
     // File already exists; do nothing
   }
 };
