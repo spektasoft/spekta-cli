@@ -161,8 +161,8 @@ describe("getGrepContent", () => {
 
   it("omits matches from files that are determined to be ignored", async () => {
     const { isPathIgnored } = await import("../utils/path-ignore");
-    vi.mocked(isPathIgnored).mockImplementation(async (targetPath) => {
-      return targetPath.includes("ignored.ts");
+    vi.mocked(isPathIgnored).mockImplementation((targetPath) => {
+      return Promise.resolve(targetPath.includes("ignored.ts"));
     });
 
     const matches = [
@@ -220,8 +220,10 @@ describe("getGrepContent", () => {
   it("includes ignore-file flags when ignore files exist", async () => {
     vi.mocked(execa).mockImplementation(() => mockExecaStream(""));
 
-    vi.mocked(fs.pathExists).mockImplementation(async (p: string) => {
-      return p.includes(".spektaignore") || p.includes("default.ignore");
+    vi.mocked(fs.pathExists).mockImplementation((p: string) => {
+      return Promise.resolve(
+        p.includes(".spektaignore") || p.includes("default.ignore"),
+      );
     });
 
     await getGrepContent({ pattern: "test" });
@@ -231,13 +233,14 @@ describe("getGrepContent", () => {
       throw new Error("Expected ripgrep search arguments");
     }
 
-    expect(searchCallArgs).toContain("--ignore-file");
-    expect(searchCallArgs).toContain("/mock/home/.spektaignore");
-    expect(searchCallArgs).toContain("/mock/assets/default.ignore");
+    const argsList = searchCallArgs as string[];
+    expect(argsList).toContain("--ignore-file");
+    expect(argsList).toContain("/mock/home/.spektaignore");
+    expect(argsList).toContain("/mock/assets/default.ignore");
 
-    const workspacePath = /.*\.spektaignore/.test(
-      searchCallArgs[searchCallArgs.indexOf("--ignore-file") + 1],
-    );
+    const ignoreFileTarget =
+      argsList[argsList.indexOf("--ignore-file") + 1] ?? "";
+    const workspacePath = /.*\.spektaignore/.test(ignoreFileTarget);
     expect(workspacePath).toBeDefined();
   });
 });
