@@ -4,11 +4,7 @@ import path from "path";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  isCommandSafe,
-  redactSecrets,
-  validateCommandArguments,
-} from "./proxy-security";
+import { isCommandSafe, validateCommandArguments } from "./proxy-security";
 
 describe("isCommandSafe", () => {
   it("allows standalone safe commands", () => {

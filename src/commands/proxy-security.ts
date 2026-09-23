@@ -1,13 +1,5 @@
-import fs from "fs-extra";
-import path from "path";
-
-import { validateCommandArguments } from "./proxy-path-security";
-import { redactSecrets } from "./proxy-secret-redaction";
-
 export { validateCommandArguments } from "./proxy-path-security";
 export { redactSecrets } from "./proxy-secret-redaction";
-
-import { RESTRICTED_FILES } from "../utils/security";
 
 const SAFE_COMMANDS = new Set([
   "vitest",

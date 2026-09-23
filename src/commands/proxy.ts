@@ -1,4 +1,4 @@
-import { executeRtkCommand, isRtkAvailable } from "./proxy-execution";
+import { executeRtkCommand } from "./proxy-execution";
 import { authorizeProxyCommand } from "./proxy-authorization";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
 import { validateCommandArguments } from "./proxy-security";
