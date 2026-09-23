@@ -1,5 +1,6 @@
 import { select } from "@inquirer/prompts";
 import fs from "fs-extra";
+import nodeFs from "node:fs";
 import * as readline from "readline";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getEnv } from "../core/config";
@@ -15,18 +16,21 @@ vi.mock("../core/config");
 vi.mock("./fs-utils");
 
 describe("getUserMessage", () => {
-  let mockRl: any;
-  let consoleLogSpy: any;
+  let mockRl: {
+    question: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+  };
+  let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.mocked(getEnv).mockResolvedValue({ SPEKTA_EDITOR: "vim" } as any);
+    vi.mocked(getEnv).mockResolvedValue({ SPEKTA_EDITOR: "vim" });
     vi.mocked(getTempPath).mockReturnValue("/tmp/test-path");
 
     // Fix: Ensure fs methods return Promises to avoid "undefined.catch" errors
-    vi.mocked(fs.ensureFile).mockResolvedValue(undefined as never);
-    vi.mocked(fs.writeFile).mockResolvedValue(undefined as never);
-    vi.mocked(fs.remove).mockResolvedValue(undefined as never);
+    vi.mocked(fs.ensureFile).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
+    vi.mocked(fs.remove).mockResolvedValue(undefined);
     vi.mocked(fs.readFile).mockResolvedValue("" as never); // Default return
 
     mockRl = {
@@ -34,8 +38,9 @@ describe("getUserMessage", () => {
       close: vi.fn(),
     };
     // Mock readline.createInterface to return our mockRl object
-    // casting to any to avoid strict type checks on the full Readline interface
-    (readline.createInterface as any) = vi.fn().mockReturnValue(mockRl);
+    vi.mocked(readline.createInterface).mockReturnValue(
+      mockRl as unknown as readline.Interface,
+    );
   });
 
   afterEach(() => {
@@ -48,14 +53,14 @@ describe("getUserMessage", () => {
 
     vi.mocked(readline.createInterface).mockImplementation(() => {
       return {
-        question: vi.fn((_prompt, cb) => {
+        question: vi.fn((_prompt: string, cb: (answer: string) => void) => {
           cb(sequence[callIndex++] || "q");
         }),
         close: vi.fn(),
-      } as any;
+      } as unknown as readline.Interface;
     });
 
-    vi.mocked(select).mockResolvedValue("send" as never);
+    vi.mocked(select).mockResolvedValue("send");
 
     const result = await getUserMessage();
     expect(result).toBe("fallback message");
@@ -69,16 +74,16 @@ describe("getUserMessage", () => {
     vi.mocked(readline.createInterface).mockImplementation(
       () =>
         ({
-          question: vi.fn((_prompt, cb) => {
+          question: vi.fn((_prompt: string, cb: (answer: string) => void) => {
             cb(sequence[callIndex++] || "q");
           }),
           close: vi.fn(() => {
             closeCount++;
           }),
-        }) as any,
+        }) as unknown as readline.Interface,
     );
 
-    vi.mocked(select).mockResolvedValue("send" as never);
+    vi.mocked(select).mockResolvedValue("send");
     vi.mocked(fs.readFile).mockResolvedValue(
       "edited content\nsecond line" as never,
     );
@@ -249,7 +254,7 @@ describe("getUserMessage", () => {
   it("should handle 100 consecutive cancellations without stack overflow", async () => {
     // Vitest has lower stack limits than production environments, so 100 is a safe threshold
     // to test iterative behavior without hitting Vitest's own overhead limits.
-    const mockSequence = Array(100).fill("c");
+    const mockSequence: string[] = Array<string>(100).fill("c");
     mockSequence.push("final message");
     mockSequence.push("s");
 
@@ -267,19 +272,18 @@ describe("getUserMessage", () => {
   });
 
   it("should have non-nullable return type", () => {
-    // Compile-time check: TypeScript should reject null/undefined assignment
-    const result: string = "" as any; // Simulated return value
+    type Return = Awaited<ReturnType<typeof getUserMessage>>;
     // @ts-expect-error - null should not be assignable to return type
-    const invalid: null = result;
+    const invalidNull: Return = null;
     // @ts-expect-error - undefined should not be assignable to return type
-    const invalid2: undefined = result;
+    const invalidUndefined: Return = undefined;
 
-    expect(typeof result).toBe("string");
+    expect(invalidNull).toBeNull();
+    expect(invalidUndefined).toBeUndefined();
   });
 
   it("should document forced-input semantics in JSDoc", () => {
-    const fs = require("fs");
-    const source = fs.readFileSync("src/utils/multiline-input.ts", "utf-8");
+    const source = nodeFs.readFileSync("src/utils/multiline-input.ts", "utf-8");
     expect(source).toMatch(/GUARANTEES:/);
     expect(source).toMatch(
       /Always returns a non-empty string OR the literal "exit"/,
