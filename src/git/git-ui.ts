@@ -7,7 +7,7 @@ async function validatedHashInput(message: string): Promise<string> {
     if (isValidHash(rawInput)) {
       try {
         return await resolveHash(rawInput);
-      } catch (error) {
+      } catch {
         console.error("The hash provided does not exist in the repository.");
       }
     } else {
