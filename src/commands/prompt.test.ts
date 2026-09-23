@@ -6,7 +6,7 @@ import { parsePromptArgs, runPromptRunner } from "./prompt";
 import { selectPromptPartials } from "../ui/partial-selection";
 
 vi.mock("../core/config", async (importOriginal) => ({
-  ...(await importOriginal<any>()),
+  ...(await importOriginal<typeof import("../core/config")>()),
   listPrompts: vi.fn(),
   renderPrompt: vi.fn(),
   resolvePrompt: vi.fn(),
@@ -25,7 +25,7 @@ describe("prompt CLI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(config.getEnv).mockResolvedValue({});
-    vi.mocked(fs.pathExists).mockResolvedValue(false);
+    vi.mocked(fs.pathExists).mockResolvedValue(false as never);
   });
 
   it("parses supported arguments", () => {
@@ -172,7 +172,7 @@ describe("prompt CLI", () => {
     vi.mocked(config.renderPrompt).mockResolvedValue("Rendered content");
     const stdout = vi
       .spyOn(process.stdout, "write")
-      .mockImplementation(() => {});
+      .mockImplementation(() => true);
     await runPromptRunner(["Test", "--stdout"]);
     expect(stdout).toHaveBeenCalledWith("Rendered content");
     expect(fs.ensureDir).not.toHaveBeenCalled();

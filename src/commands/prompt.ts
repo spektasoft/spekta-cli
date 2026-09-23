@@ -7,6 +7,7 @@ import {
   listPrompts,
   resolvePrompt,
   renderPrompt,
+  PromptMetadata,
 } from "../core/config";
 import { searchableSelect } from "../ui/ui";
 import { openEditor } from "../utils/editor-utils";
@@ -71,7 +72,7 @@ export async function resolvePromptFilename(selector: string): Promise<string> {
 
 export async function renderAndSavePrompt(
   filename: string,
-  metadata: Record<string, any>,
+  metadata: PromptMetadata,
   args: PromptArgs,
 ): Promise<void> {
   const renderedBody = await renderPrompt(filename, {}, args.partialSelection);
@@ -80,9 +81,10 @@ export async function renderAndSavePrompt(
     return;
   }
   const context = getGlobalPromptContext();
-  const defaultOutput = metadata.default_output
-    ? nunjucks.renderString(metadata.default_output, context)
-    : undefined;
+  const defaultOutput =
+    typeof metadata.default_output === "string"
+      ? nunjucks.renderString(metadata.default_output, context)
+      : undefined;
   const targetPath = path.resolve(
     args.output ||
       defaultOutput ||
