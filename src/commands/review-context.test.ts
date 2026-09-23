@@ -3,7 +3,6 @@ import { collectSupplementalContext } from "./review-context";
 import fs from "fs-extra";
 import * as prompts from "@inquirer/prompts";
 import * as fsManager from "../fs/fs-manager";
-import * as ui from "../ui/ui";
 
 vi.mock("fs-extra");
 vi.mock("@inquirer/prompts");
@@ -45,10 +44,13 @@ describe("collectSupplementalContext", () => {
       .mockResolvedValueOnce("finalize"); // Then finalize
 
     vi.mocked(prompts.input).mockResolvedValue("src/test.ts");
-    // @ts-ignore
+    // @ts-expect-error fs.pathExists overload resolves to void in MockedFunction
     vi.mocked(fs.pathExists).mockResolvedValue(true);
-    vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => false } as any);
-    // @ts-ignore
+    // @ts-expect-error fs.stat overload resolves to void in MockedFunction
+    vi.mocked(fs.stat).mockResolvedValue({
+      isDirectory: () => false,
+    } as unknown as fs.Stats);
+    // @ts-expect-error fs.readFile overload resolves to void in MockedFunction
     vi.mocked(fs.readFile).mockResolvedValue("console.log('test');");
 
     const result = await collectSupplementalContext();
@@ -73,10 +75,13 @@ describe("collectSupplementalContext", () => {
       .mockResolvedValueOnce("finalize"); // Then finalize
 
     vi.mocked(prompts.input).mockResolvedValue("src/test.ts");
-    // @ts-ignore
+    // @ts-expect-error fs.pathExists overload resolves to void in MockedFunction
     vi.mocked(fs.pathExists).mockResolvedValue(true);
-    vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => false } as any);
-    // @ts-ignore
+    // @ts-expect-error fs.stat overload resolves to void in MockedFunction
+    vi.mocked(fs.stat).mockResolvedValue({
+      isDirectory: () => false,
+    } as unknown as fs.Stats);
+    // @ts-expect-error fs.readFile overload resolves to void in MockedFunction
     vi.mocked(fs.readFile).mockResolvedValue("console.log('test');");
 
     // Verify that the helper uses quadruple backticks for the container

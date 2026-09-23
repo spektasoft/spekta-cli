@@ -23,8 +23,8 @@ describe("runReview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
-    vi.mocked(git.resolveHash).mockImplementation(async (ref) =>
-      ref === "HEAD" ? "head-sha" : ref,
+    vi.mocked(git.resolveHash).mockImplementation((ref) =>
+      Promise.resolve(ref === "HEAD" ? "head-sha" : ref),
     );
     vi.mocked(git.getNearestMerge).mockResolvedValue("base-sha");
     vi.mocked(git.getInitialCommit).mockResolvedValue("initial-sha");
@@ -55,10 +55,12 @@ describe("runReview", () => {
       "SUPPLEMENTAL_CONTENT",
     );
 
-    vi.mocked(gitUi.promptHashRange).mockImplementation(async (s, e) => ({
-      start: s,
-      end: e,
-    }));
+    vi.mocked(gitUi.promptHashRange).mockImplementation((s, e) =>
+      Promise.resolve({
+        start: s,
+        end: e,
+      }),
+    );
   });
 
   it("writes the prompt file and opens the editor", async () => {

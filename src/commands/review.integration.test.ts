@@ -25,12 +25,12 @@ import { searchableSelect } from "../ui/ui";
 // Helper to mock all prompts consistently
 function mockAllPrompts(
   overrides?: Partial<{
-    select: any[];
-    input: any[];
-    confirm: any[];
-    checkbox: any[];
-    searchable: any[];
-    autocomplete: any[];
+    select: unknown[];
+    input: unknown[];
+    confirm: unknown[];
+    checkbox: unknown[];
+    searchable: unknown[];
+    autocomplete: unknown[];
   }>,
 ) {
   // Mock standard prompts

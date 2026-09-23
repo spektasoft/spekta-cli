@@ -42,7 +42,7 @@ export async function runReview() {
 
     let folderId: string | undefined;
     let suggestedStart = "";
-    let suggestedEnd = await resolveHash("HEAD");
+    const suggestedEnd = await resolveHash("HEAD");
 
     let dirInfo: { dir: string; id: string };
 
@@ -116,8 +116,12 @@ export async function runReview() {
     if (editor) {
       try {
         await openEditor(editor, filePath);
-      } catch (editorError: any) {
-        console.warn(`\nWarning: ${editorError.message}`);
+      } catch (editorError: unknown) {
+        const message =
+          editorError instanceof Error
+            ? editorError.message
+            : String(editorError);
+        console.warn(`\nWarning: ${message}`);
         console.log(`You can manually open the review at: ${filePath}`);
         process.exitCode = 1;
       }
@@ -128,8 +132,9 @@ export async function runReview() {
         "Tip: Set SPEKTA_EDITOR in your .env to open this automatically.",
       );
     }
-  } catch (error: any) {
-    console.error(`Error: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Error: ${message}`);
     process.exitCode = 1;
   }
 }
