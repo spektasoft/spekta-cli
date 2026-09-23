@@ -284,7 +284,7 @@ describe("Performance and Integration", () => {
   it("handles small files efficiently", () => {
     const content = `function small() {\n  return 1;\n}`;
     const start = Date.now();
-    const result = compactFile("test.ts", content, 1);
+    compactFile("test.ts", content, 1);
     const duration = Date.now() - start;
 
     expect(duration).toBeLessThan(10); // Should be nearly instant

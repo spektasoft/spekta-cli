@@ -1,3 +1,4 @@
+import type { Node, Parser, Tree } from "@xberg-io/tree-sitter-language-pack";
 import { CollapseRegion } from "./types";
 import { getOrCreateParser, resolveLanguage } from "./parser";
 import { CONTAINER_NODE_KINDS } from "./ast";
@@ -16,13 +17,14 @@ export function extractCollapseRegions(
   content: string,
 ): CollapseRegion[] {
   const language = resolveLanguage(filePath);
-  let parser: ReturnType<typeof getParser>;
+  let parser: Parser;
   try {
     parser = getOrCreateParser(language);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
       `Tree-sitter compaction failed to load parser for "${language}": ${message}`,
+      { cause: error },
     );
   }
 
@@ -38,27 +40,32 @@ export function extractCollapseRegions(
     lineOffset = -1;
   }
 
-  let tree: ReturnType<typeof parser.parse>;
+  let tree: Tree | null;
   try {
     tree = parser.parse(parseContent);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new Error(
       `Tree-sitter compaction failed parsing "${filePath}": ${message}`,
+      { cause: error },
     );
+  }
+
+  if (!tree) {
+    return [];
   }
 
   const contentBuffer = Buffer.from(parseContent, "utf8");
   const effectiveLines = parseContent.split("\n");
   const regions: CollapseRegion[] = [];
 
-  function getNodeText(targetNode: any): string {
+  function getNodeText(targetNode: Node): string {
     return contentBuffer
       .subarray(targetNode.startByte(), targetNode.endByte())
       .toString("utf8");
   }
 
-  function visit(node: any): void {
+  function visit(node: Node | null): void {
     if (!node) return;
 
     const nodeType: string = node.kind();

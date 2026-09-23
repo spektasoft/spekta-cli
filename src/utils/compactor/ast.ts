@@ -25,6 +25,15 @@ export const FUNCTION_NODE_KINDS = new Set([
 // interfaces parse as "class_declaration" with an "interface" keyword token,
 // so they are already covered by that entry below; do not add a
 // Kotlin-specific interface kind here.
+import type { Node } from "@xberg-io/tree-sitter-language-pack";
+
+export interface AstNodeLike {
+  kind(): string;
+  childCount?(): number;
+  child?(index: number): AstNodeLike | null;
+  childByFieldName?(field: string): AstNodeLike | null;
+}
+
 export const CONTAINER_NODE_KINDS = new Set([
   "class_declaration",
   "interface_declaration",
@@ -36,13 +45,21 @@ export const CONTAINER_NODE_KINDS = new Set([
   "class_definition",
 ]);
 
-export function findBodyNode(node: any): any {
-  const byField = node.childByFieldName("body");
+export function findBodyNode(node: Node | null): Node | null;
+export function findBodyNode(node: AstNodeLike | null): AstNodeLike | null;
+export function findBodyNode(
+  node: AstNodeLike | Node | null,
+): AstNodeLike | Node | null {
+  if (!node) {
+    return null;
+  }
+  const byField = node.childByFieldName?.("body");
   if (byField) {
     return byField;
   }
-  for (let i = 0; i < node.childCount(); i++) {
-    const child = node.child(i);
+  const count = node.childCount ? node.childCount() : 0;
+  for (let i = 0; i < count; i++) {
+    const child = node.child ? node.child(i) : null;
     if (!child) continue;
     const kind = child.kind();
     if (
@@ -57,9 +74,19 @@ export function findBodyNode(node: any): any {
   return null;
 }
 
-export function findCallbackNode(argsNode: any): any {
-  for (let i = 0; i < argsNode.childCount(); i++) {
-    const child = argsNode.child(i);
+export function findCallbackNode(argsNode: Node | null): Node | null;
+export function findCallbackNode(
+  argsNode: AstNodeLike | null,
+): AstNodeLike | null;
+export function findCallbackNode(
+  argsNode: AstNodeLike | Node | null,
+): AstNodeLike | Node | null {
+  if (!argsNode) {
+    return null;
+  }
+  const count = argsNode.childCount ? argsNode.childCount() : 0;
+  for (let i = 0; i < count; i++) {
+    const child = argsNode.child ? argsNode.child(i) : null;
     if (!child) continue;
     const kind = child.kind();
     if (

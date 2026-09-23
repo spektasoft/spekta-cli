@@ -1,3 +1,4 @@
+import type { Node } from "@xberg-io/tree-sitter-language-pack";
 import { CollapseRegion } from "./types";
 import { FUNCTION_NODE_KINDS, findBodyNode } from "./ast";
 
@@ -8,7 +9,7 @@ export interface FunctionRegionContext {
 }
 
 export function detectFunctionRegion(
-  node: any,
+  node: Node,
   context: FunctionRegionContext,
 ): CollapseRegion | null {
   if (!FUNCTION_NODE_KINDS.has(node.kind())) {

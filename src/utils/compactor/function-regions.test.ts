@@ -1,10 +1,16 @@
+import type { Node } from "@xberg-io/tree-sitter-language-pack";
 import { describe, expect, it } from "vitest";
 
 import { detectFunctionRegion } from "./function-regions";
 import { getOrCreateParser } from "./parser";
 
-function parse(language: string, code: string): any {
-  return getOrCreateParser(language).parse(code).rootNode();
+function parse(language: string, code: string): Node {
+  const tree = getOrCreateParser(language).parse(code);
+  const root = tree?.rootNode();
+  if (!root) {
+    throw new Error(`Failed to parse ${language} code`);
+  }
+  return root;
 }
 
 describe("detectFunctionRegion", () => {
@@ -15,6 +21,7 @@ describe("detectFunctionRegion", () => {
 }`;
     const root = parse("typescript", code);
     const node = root.child(0);
+    if (!node) throw new Error("Expected child node");
 
     expect(
       detectFunctionRegion(node, {
@@ -36,6 +43,7 @@ describe("detectFunctionRegion", () => {
 `;
     const root = parse("python", code);
     const node = root.child(0);
+    if (!node) throw new Error("Expected child node");
 
     const result = detectFunctionRegion(node, {
       language: "python",
@@ -56,7 +64,8 @@ describe("detectFunctionRegion", () => {
 }`;
     const methodRoot = parse("typescript", methodCode);
     const classNode = methodRoot.child(0);
-    const methodNode = classNode.childByFieldName("body").namedChild(0);
+    const methodNode = classNode?.childByFieldName("body")?.namedChild(0);
+    if (!methodNode) throw new Error("Expected method node");
 
     const methodResult = detectFunctionRegion(methodNode, {
       language: "typescript",
