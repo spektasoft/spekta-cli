@@ -83,15 +83,18 @@ export async function runReadInteractive() {
     if (action === "done") break;
 
     if (action === "add") {
-      const filePath = await autocomplete({
+      const filePath = await autocomplete<string>({
         message: "Select a file:",
-        source: async (input) => {
+        source: (input) => {
           const term = input?.toLowerCase() || "";
           const filtered = files
             .filter((f) => f.toLowerCase().includes(term))
             .map((f) => ({ value: f, name: f }));
 
-          return [{ name: "[Back]", value: NAV_BACK }, ...filtered];
+          return Promise.resolve([
+            { name: "[Back]", value: NAV_BACK },
+            ...filtered,
+          ]);
         },
       });
       if (filePath === NAV_BACK) continue;
@@ -108,8 +111,9 @@ export async function runReadInteractive() {
       if (startInput.toLowerCase() === "o") {
         if (editor) {
           console.log(`Opening ${filePath} in editor...`);
-          openEditor(editor, filePath).catch((err) => {
-            console.warn(`Could not open editor: ${err.message}`);
+          openEditor(editor, filePath).catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn(`Could not open editor: ${message}`);
           });
         } else {
           console.warn("SPEKTA_EDITOR not configured.");

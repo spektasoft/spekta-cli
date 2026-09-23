@@ -102,8 +102,9 @@ export async function getReadContent(
         fullTokens,
         exceedsLimit: !interactive && tokens > tokenLimit,
       });
-    } catch (error: any) {
-      combinedOutput += formatReadError(req.path, error.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      combinedOutput += formatReadError(req.path, message);
     }
   }
 
@@ -127,8 +128,9 @@ export async function runRead(
     } else {
       process.stdout.write(finalContent);
     }
-  } catch (error: any) {
-    Logger.error(error.message);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    Logger.error(message);
     process.exitCode = 1;
   }
 }

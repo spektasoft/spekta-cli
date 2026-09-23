@@ -98,7 +98,7 @@ describe("getReadContent non-interactive mode behavior preservation", () => {
         total: 1,
       })
       .mockResolvedValueOnce({
-        lines: Array(1000).fill("console.log('line');"),
+        lines: Array<string>(1000).fill("console.log('line');"),
         total: 1000,
       });
 
@@ -126,7 +126,7 @@ describe("getReadContent non-interactive mode behavior preservation", () => {
 
   it("non-interactive mode warns for full files exceeding limit without compaction", async () => {
     mockGetFileLines.mockResolvedValue({
-      lines: Array(200).fill(
+      lines: Array<string>(200).fill(
         "console.log('line with long text that exceeds typical compaction threshold');",
       ),
       total: 200,
@@ -157,15 +157,15 @@ describe("getReadContent non-interactive mode behavior preservation", () => {
         total: 1,
       })
       .mockResolvedValueOnce({
-        lines: Array(100).fill("console.log('medium');"),
+        lines: Array<string>(100).fill("console.log('medium');"),
         total: 100,
       })
       .mockResolvedValueOnce({
-        lines: Array(100).fill("console.log('medium');"),
+        lines: Array<string>(100).fill("console.log('medium');"),
         total: 100,
       })
       .mockResolvedValueOnce({
-        lines: Array(1000).fill("console.log('large');"),
+        lines: Array<string>(1000).fill("console.log('large');"),
         total: 1000,
       });
 
