@@ -71,8 +71,9 @@ export async function getReplaceContent(
       message,
       totalLines: result.totalLines,
     };
-  } catch (error: any) {
-    let cleanMessage = error.message;
+  } catch (error: unknown) {
+    const rawMessage = error instanceof Error ? error.message : String(error);
+    let cleanMessage = rawMessage;
 
     // Truncate or simplify common matching errors
     if (cleanMessage.includes("search block was not found")) {
@@ -83,10 +84,10 @@ export async function getReplaceContent(
       cleanMessage =
         "No valid SEARCH/REPLACE blocks were found. Make sure to use the correct format with `<<<<<<< SEARCH\n{old_string}\n=======\n{new_string}\n>>>>>>> REPLACE` markers.";
     } else if (cleanMessage.includes("Invalid format")) {
-      cleanMessage = `Invalid format detected: ${error.message}`;
+      cleanMessage = `Invalid format detected: ${rawMessage}`;
     }
 
-    throw new Error(cleanMessage);
+    throw new Error(cleanMessage, { cause: error });
   }
 }
 
@@ -146,10 +147,11 @@ export async function executeSafeReplace(
     await formatFileInPlace(request.path);
 
     return { message, appliedCount };
-  } catch (error: any) {
-    const errMsg = `Replacement failed: ${error.message}`;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const errMsg = `Replacement failed: ${message}`;
     Logger.error(errMsg);
-    throw new Error(errMsg);
+    throw new Error(errMsg, { cause: error });
   }
 }
 
@@ -184,9 +186,10 @@ export async function runReplace(args?: string[]): Promise<void> {
         `Successfully applied ${appliedCount} replacement(s) to ${filePath}`,
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Graceful error reporting without block dumps
-    Logger.error(`Action Failed: ${error.message}`);
+    const message = error instanceof Error ? error.message : String(error);
+    Logger.error(`Action Failed: ${message}`);
     process.exitCode = 1;
   }
 }
