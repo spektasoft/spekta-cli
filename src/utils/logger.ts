@@ -1,17 +1,17 @@
 import { inspect } from "util";
 
 export const Logger = {
-  info: (msg: string, ...args: any[]) =>
+  info: (msg: string, ...args: unknown[]) =>
     process.stdout.write(`[INFO] ${msg}${formatArgs(args)}\n`),
-  warn: (msg: string, ...args: any[]) =>
+  warn: (msg: string, ...args: unknown[]) =>
     process.stdout.write(`[WARN] ${msg}${formatArgs(args)}\n`),
-  error: (msg: string, ...args: any[]) =>
+  error: (msg: string, ...args: unknown[]) =>
     process.stdout.write(`[ERROR] ${msg}${formatArgs(args)}\n`),
-  log: (msg: string, ...args: any[]) =>
+  log: (msg: string, ...args: unknown[]) =>
     process.stdout.write(`${msg}${formatArgs(args)}\n`),
 };
 
-function formatArgs(args: any[]): string {
+function formatArgs(args: unknown[]): string {
   if (args.length === 0) return "";
   return (
     " " +
@@ -20,7 +20,7 @@ function formatArgs(args: any[]): string {
         if (arg instanceof Error) {
           return arg.stack || arg.message;
         }
-        if (typeof arg === "object") {
+        if (typeof arg === "object" && arg !== null) {
           // colors: false ensures logs remain clean for all MCP clients
           return inspect(arg, { depth: 3, colors: false });
         }

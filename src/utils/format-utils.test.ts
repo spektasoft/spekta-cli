@@ -41,7 +41,7 @@ describe("formatFile", () => {
     const filePath = "test.ts";
     const absolutePath = path.resolve(filePath);
 
-    vi.mocked(fs.readFile).mockResolvedValue(content);
+    vi.mocked(fs.readFile).mockResolvedValue(content as never);
     vi.mocked(prettier.resolveConfig).mockResolvedValue({ semi: true });
     vi.mocked(prettier.format).mockResolvedValue("const x = 1;");
 
@@ -60,9 +60,7 @@ describe("formatFile", () => {
 
   it("uses Pint for PHP files when vendor/bin/pint exists", async () => {
     const filePath = "test.php";
-    vi.mocked(fs.pathExists).mockImplementation(
-      async (p) => p === "./vendor/bin/pint",
-    );
+    vi.mocked(fs.pathExists).mockResolvedValue(true as never);
 
     await formatFileInPlace(filePath);
 
@@ -75,8 +73,8 @@ describe("formatFile", () => {
     const content = "<?php echo 'hi';";
     const filePath = "test.php";
     const absolutePath = path.resolve(filePath);
-    vi.mocked(fs.pathExists).mockResolvedValue(false); // Pint missing
-    vi.mocked(fs.readFile).mockResolvedValue(content);
+    vi.mocked(fs.pathExists).mockResolvedValue(false as never); // Pint missing
+    vi.mocked(fs.readFile).mockResolvedValue(content as never);
     vi.mocked(prettier.format).mockResolvedValue("<?php\n\necho 'hi';");
     await formatFileInPlace(filePath);
     expect(prettier.format).toHaveBeenCalled();

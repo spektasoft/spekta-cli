@@ -11,7 +11,7 @@ async function runPintInPlace(filePath: string): Promise<boolean> {
     if (!pintExists) return false;
     await execa(pintPath, [filePath]);
     return true;
-  } catch (err) {
+  } catch {
     console.warn(
       `Pint formatting failed for ${filePath}. Falling back to Prettier.`,
     );
@@ -45,7 +45,10 @@ export async function formatFileInPlace(filePath: string): Promise<void> {
     if (content !== formatted) {
       await fs.writeFile(absolutePath, formatted, "utf-8");
     }
-  } catch (err: any) {
-    console.warn(`Prettier formatting failed for ${filePath}: ${err.message}.`);
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `Prettier formatting failed for ${filePath}: ${errorMessage}.`,
+    );
   }
 }

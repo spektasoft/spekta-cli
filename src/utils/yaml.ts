@@ -13,15 +13,21 @@ export async function readYaml<T>(filePath: string): Promise<T | null> {
   const content = await fs.readFile(filePath, "utf8");
   try {
     return YAML.parse(content) as T;
-  } catch (err: any) {
-    throw new Error(`Failed to parse YAML at ${filePath}: ${err.message}`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to parse YAML at ${filePath}: ${message}`, {
+      cause: err,
+    });
   }
 }
 
 /**
  * Serializes an object to YAML and writes it to a file.
  */
-export async function writeYaml(filePath: string, data: any): Promise<void> {
+export async function writeYaml(
+  filePath: string,
+  data: unknown,
+): Promise<void> {
   const content = YAML.stringify(data, {
     indent: 2,
     blockQuote: "literal",

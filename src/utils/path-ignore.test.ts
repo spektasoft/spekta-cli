@@ -26,7 +26,7 @@ describe("isPathIgnored", () => {
   });
 
   it("returns true when path is ignored by git check-ignore", async () => {
-    vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as any);
+    vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as never);
     const result = await isPathIgnored("spekta/test-results.json");
     expect(result).toBe(true);
     expect(execa).toHaveBeenCalledWith("git", [
@@ -46,7 +46,7 @@ describe("isPathIgnored", () => {
     vi.mocked(getIgnorePatterns).mockResolvedValue([
       "!spekta/whitelisted.json",
     ]);
-    vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as any);
+    vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as never);
     const result = await isPathIgnored("spekta/whitelisted.json");
     expect(result).toBe(false);
   });
@@ -70,7 +70,7 @@ describe("assertPathNotIgnored", () => {
   });
 
   it("throws the default git message when blocked by git and no verb override is given", async () => {
-    vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as any);
+    vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as never);
     await expect(
       assertPathNotIgnored(
         "spekta/test-results.json",
@@ -82,7 +82,7 @@ describe("assertPathNotIgnored", () => {
   });
 
   it("throws a custom-verb git message when a verb override is given", async () => {
-    vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as any);
+    vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as never);
     await expect(
       assertPathNotIgnored("new/file.ts", "new/file.ts", { git: "would be" }),
     ).rejects.toThrow("Access Denied: new/file.ts would be ignored by git.");
@@ -92,7 +92,7 @@ describe("assertPathNotIgnored", () => {
     vi.mocked(getIgnorePatterns).mockResolvedValue([
       "!spekta/whitelisted.json",
     ]);
-    vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as any);
+    vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as never);
     await expect(
       assertPathNotIgnored(
         "spekta/whitelisted.json",

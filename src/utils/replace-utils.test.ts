@@ -80,7 +80,7 @@ describe("findUniqueMatch", () => {
 describe("applyReplacements Integration", () => {
   let tempFile: string;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     tempFile = path.join(os.tmpdir(), `spekta-test-${Date.now()}.txt`);
   });
 

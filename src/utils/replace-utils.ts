@@ -31,13 +31,6 @@ export const detectLineEnding = (content: string): string => {
 };
 
 /**
- * Reconstructs the file while preserving original line endings.
- */
-const reconstructFile = (lines: string[], lineEnding: string): string => {
-  return lines.join(lineEnding);
-};
-
-/**
  * Normalizes the end index for a range.
  */
 export const getEndIndex = (end: number | "$", totalLines: number): number => {
@@ -52,7 +45,7 @@ export const getEndIndex = (end: number | "$", totalLines: number): number => {
  * - Trims leading/trailing empty lines
  */
 export const normalizeWhitespace = (text: string): string => {
-  let lines = text
+  const lines = text
     .replace(/\r\n/g, "\n")
     .split("\n")
     .map((line) => line.replace(/\t/g, "  ").replace(/[ \t]+$/, "")); // Only trim trailing whitespace
@@ -139,7 +132,6 @@ export const findUniqueMatch = (
   search: string,
 ): { start: number; end: number } => {
   const normalize = (s: string) => s.replace(/\s+/g, " ").trim();
-  const normalizedContent = normalize(content);
   const normalizedSearch = normalize(search);
 
   // Map normalized index back to original index

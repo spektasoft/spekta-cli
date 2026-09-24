@@ -132,10 +132,7 @@ export async function executeTool(call: ToolCall): Promise<string> {
       blocks: [],
     };
 
-    const { message, appliedCount } = await executeSafeReplace(
-      request,
-      call.content,
-    );
+    const { message } = await executeSafeReplace(request, call.content);
 
     // Return minimal summary only - no additional context appending
     return `${message}`;

@@ -1,18 +1,28 @@
 export function registerCleanup(cleanupFn: () => Promise<void>) {
-  const handler = async (signal: string) => {
-    try {
-      await cleanupFn();
-    } catch (error) {
-      console.error("Cleanup failed:", error);
-    } finally {
-      process.exit(signal === "SIGINT" ? 130 : 0);
-    }
+  const handler = (signal: string) => {
+    void (async () => {
+      try {
+        await cleanupFn();
+      } catch (error) {
+        console.error("Cleanup failed:", error);
+      } finally {
+        process.exit(signal === "SIGINT" ? 130 : 0);
+      }
+    })();
   };
-  process.on("SIGINT", () => handler("SIGINT"));
-  process.on("SIGTERM", () => handler("SIGTERM"));
+
+  const sigintListener = () => {
+    handler("SIGINT");
+  };
+  const sigtermListener = () => {
+    handler("SIGTERM");
+  };
+
+  process.on("SIGINT", sigintListener);
+  process.on("SIGTERM", sigtermListener);
 
   return () => {
-    process.off("SIGINT", handler);
-    process.off("SIGTERM", handler);
+    process.off("SIGINT", sigintListener);
+    process.off("SIGTERM", sigtermListener);
   };
 }

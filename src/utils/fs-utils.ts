@@ -8,7 +8,9 @@ export function getTempPath(prefix: string): string {
   try {
     fs.accessSync(tmpDir, fs.constants.W_OK);
   } catch (err) {
-    throw new Error(`Temporary directory is not writable: ${tmpDir}`);
+    throw new Error(`Temporary directory is not writable: ${tmpDir}`, {
+      cause: err,
+    });
   }
 
   const fileName = `${prefix}-${Date.now()}.md`;

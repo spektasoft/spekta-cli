@@ -8,7 +8,7 @@ describe("Vite Configuration and Static Copy Setup", () => {
     expect(viteConfig).toBeDefined();
     expect(viteConfig.plugins).toBeDefined();
 
-    const plugins = viteConfig.plugins as any[];
+    const plugins = (viteConfig.plugins ?? []) as unknown[];
     expect(plugins.length).toBeGreaterThan(0);
   });
 
