@@ -78,10 +78,11 @@ export const validatePathAccess = async (targetPath: string): Promise<void> => {
         `Access Denied: File exceeds size limit (${MAX_FILE_SIZE_MB}MB).`,
       );
     }
-  } catch (error: any) {
-    if (error.code === "ENOENT") {
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new Error(
         `Access Denied: The path '${targetPath}' does not exist.`,
+        { cause: error },
       );
     }
     throw error;
@@ -126,9 +127,10 @@ export const validateGitTracked = async (targetPath: string): Promise<void> => {
   try {
     // git ls-files --error-unmatch returns exit code 0 if file is tracked
     await execa("git", ["ls-files", "--error-unmatch", relativePath]);
-  } catch (error: any) {
+  } catch (error: unknown) {
     throw new Error(
       `Edit Denied: ${targetPath} is not tracked by git. Only tracked files can be edited.`,
+      { cause: error },
     );
   }
 };

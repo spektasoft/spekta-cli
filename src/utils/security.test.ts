@@ -1,15 +1,7 @@
 import { execa } from "execa";
 import fs from "fs-extra";
 import path from "node:path";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-  type Mock,
-} from "vitest";
+import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { getIgnorePatterns } from "../core/config";
 import {
   findExistingAncestor,
@@ -39,6 +31,24 @@ const mockPathExists = fs.pathExists as unknown as Mock;
 const mockRealpath = fs.realpath as unknown as Mock;
 const mockEnsureDir = fs.ensureDir as unknown as Mock;
 const mockRemove = fs.remove as unknown as Mock;
+
+type MockStatOptions = {
+  size?: number;
+  isFile?: () => boolean;
+  isDirectory?: () => boolean;
+};
+
+const createMockStat = (opts: MockStatOptions = {}): fs.Stats =>
+  ({
+    size: opts.size ?? 0,
+    isFile: opts.isFile ?? (() => false),
+    isDirectory: opts.isDirectory ?? (() => false),
+  }) as unknown as fs.Stats;
+
+const createMockExecaResult = (
+  stdout = "",
+): Awaited<ReturnType<typeof execa>> =>
+  ({ stdout }) as unknown as Awaited<ReturnType<typeof execa>>;
 
 // 2. Mock execa (named export)
 vi.mock("execa", () => ({
@@ -93,11 +103,13 @@ describe("Security Validation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // Default happy path setups
-    mockStat.mockResolvedValue({
-      size: 1024,
-      isFile: () => true,
-      isDirectory: () => false, // Default to file, not directory
-    } as any);
+    mockStat.mockResolvedValue(
+      createMockStat({
+        size: 1024,
+        isFile: () => true,
+        isDirectory: () => false, // Default to file, not directory
+      }),
+    );
     mockPathExists.mockResolvedValue(true); // Default: directories exist
     vi.mocked(getIgnorePatterns).mockResolvedValue([]);
     // Default execa behavior: Reject with exitCode 1 (meaning "git check-ignore" found nothing, so file is NOT ignored)
@@ -125,20 +137,24 @@ describe("Security Validation", () => {
   });
 
   it("should allow access to the project root '.'", async () => {
-    mockStat.mockResolvedValue({
-      size: 0,
-      isFile: () => false,
-      isDirectory: () => true,
-    } as any);
+    mockStat.mockResolvedValue(
+      createMockStat({
+        size: 0,
+        isFile: () => false,
+        isDirectory: () => true,
+      }),
+    );
     await expect(validatePathAccess(".")).resolves.not.toThrow();
   });
 
   it("should allow directory paths", async () => {
-    mockStat.mockResolvedValue({
-      size: 0,
-      isFile: () => false,
-      isDirectory: () => true,
-    } as any);
+    mockStat.mockResolvedValue(
+      createMockStat({
+        size: 0,
+        isFile: () => false,
+        isDirectory: () => true,
+      }),
+    );
     await expect(validatePathAccess("src")).resolves.not.toThrow();
   });
 
@@ -175,7 +191,7 @@ describe("Security Validation", () => {
 
   it("should deny access to files ignored by git", async () => {
     // When git check-ignore succeeds (exitCode 0), it means the file IS ignored
-    vi.mocked(execa).mockResolvedValue({ stdout: "ignored.txt" } as any);
+    vi.mocked(execa).mockResolvedValue(createMockExecaResult("ignored.txt"));
     vi.mocked(getIgnorePatterns).mockResolvedValue([]);
 
     await expect(validatePathAccess("ignored.txt")).rejects.toThrow(
@@ -185,25 +201,31 @@ describe("Security Validation", () => {
 
   it("should allow access to git-ignored files if whitelisted in .spektaignore", async () => {
     // File is ignored by git
-    vi.mocked(execa).mockResolvedValue({ stdout: "git-ignored.txt" } as any);
+    vi.mocked(execa).mockResolvedValue(
+      createMockExecaResult("git-ignored.txt"),
+    );
     // File is explicitly whitelisted (negation pattern)
     vi.mocked(getIgnorePatterns).mockResolvedValue(["!git-ignored.txt"]);
     // Mock stat to ensure file exists
-    mockStat.mockResolvedValue({
-      size: 0,
-      isFile: () => true,
-      isDirectory: () => false,
-    } as any);
+    mockStat.mockResolvedValue(
+      createMockStat({
+        size: 0,
+        isFile: () => true,
+        isDirectory: () => false,
+      }),
+    );
 
     await expect(validatePathAccess("git-ignored.txt")).resolves.not.toThrow();
   });
 
   it("rejects files larger than 10MB", async () => {
-    mockStat.mockResolvedValue({
-      size: 20 * 1024 * 1024,
-      isFile: () => true,
-      isDirectory: () => false,
-    } as any);
+    mockStat.mockResolvedValue(
+      createMockStat({
+        size: 20 * 1024 * 1024,
+        isFile: () => true,
+        isDirectory: () => false,
+      }),
+    );
 
     await expect(validatePathAccess("big.log")).rejects.toThrow(
       "exceeds size limit",
@@ -211,8 +233,7 @@ describe("Security Validation", () => {
   });
 
   it("rejects non-existent paths with descriptive error", async () => {
-    const error = new Error("ENOENT");
-    (error as any).code = "ENOENT";
+    const error = Object.assign(new Error("ENOENT"), { code: "ENOENT" });
     mockStat.mockRejectedValue(error);
 
     await expect(validatePathAccess("missing.txt")).rejects.toThrow(
@@ -222,7 +243,9 @@ describe("Security Validation", () => {
 
   describe("validateGitTracked", () => {
     it("should pass for tracked files", async () => {
-      vi.mocked(execa).mockResolvedValue({ stdout: "tracked-file.ts" } as any);
+      vi.mocked(execa).mockResolvedValue(
+        createMockExecaResult("tracked-file.ts"),
+      );
       await expect(
         validateGitTracked("tracked-file.ts"),
       ).resolves.not.toThrow();
@@ -246,8 +269,8 @@ describe("Security Validation", () => {
       //    - execa (ls-files) -> should resolve (tracked)
 
       vi.mocked(execa)
-        .mockRejectedValueOnce({ exitCode: 1 } as any) // check-ignore
-        .mockResolvedValueOnce({ stdout: "valid-file.ts" } as any); // ls-files
+        .mockRejectedValueOnce({ exitCode: 1 }) // check-ignore
+        .mockResolvedValueOnce(createMockExecaResult("valid-file.ts")); // ls-files
 
       await expect(validateEditAccess("valid-file.ts")).resolves.not.toThrow();
     });
@@ -276,9 +299,9 @@ describe("validatePathAccessForWrite and validateParentDirForCreate", () => {
 
     it("should deny write to gitignored path via git check-ignore", async () => {
       // Mock git check-ignore to succeed (exitCode 0), meaning file WOULD BE ignored
-      vi.mocked(execa).mockResolvedValue({
-        stdout: "ignored-new-file.txt",
-      } as any);
+      vi.mocked(execa).mockResolvedValue(
+        createMockExecaResult("ignored-new-file.txt"),
+      );
 
       await expect(
         validatePathAccessForWrite("ignored-new-file.txt"),
@@ -293,16 +316,18 @@ describe("validateParentDirForCreate", () => {
   it("should permit write to new file in git repository", async () => {
     // Mock parent directory exists and is a directory
     mockPathExists.mockResolvedValue(true);
-    mockStat.mockResolvedValue({
-      isFile: () => false,
-      isDirectory: () => true,
-    } as any);
+    mockStat.mockResolvedValue(
+      createMockStat({
+        isFile: () => false,
+        isDirectory: () => true,
+      }),
+    );
 
     // Mock fs.realpath to return the same path (no symlink resolution needed)
     mockRealpath.mockResolvedValue(path.resolve(process.cwd(), "src"));
 
     // Mock git rev-parse to succeed (we are inside a git repository)
-    vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
+    vi.mocked(execa).mockResolvedValue(createMockExecaResult("true"));
 
     await expect(
       validateParentDirForCreate("src/new-feature.ts"),
@@ -312,10 +337,12 @@ describe("validateParentDirForCreate", () => {
   it("should deny write to new file outside git repository", async () => {
     // Mock parent directory exists and is a directory
     mockPathExists.mockResolvedValue(true);
-    mockStat.mockResolvedValue({
-      isFile: () => false,
-      isDirectory: () => true,
-    } as any);
+    mockStat.mockResolvedValue(
+      createMockStat({
+        isFile: () => false,
+        isDirectory: () => true,
+      }),
+    );
 
     // Mock fs.realpath to return the same path (no symlink resolution needed)
     mockRealpath.mockResolvedValue(path.resolve(process.cwd(), "src"));
@@ -332,38 +359,33 @@ describe("validateParentDirForCreate", () => {
 describe("validateParentDirForCreate (new tests)", () => {
   const testDir = path.join(process.cwd(), "test-temp-validate");
 
-  beforeEach(async () => {
+  beforeEach(() => {
     // Clear mocks between each test
     vi.clearAllMocks();
-    await fs.ensureDir(testDir);
-  });
-
-  afterEach(async () => {
-    await fs.remove(testDir);
+    mockEnsureDir.mockResolvedValue(undefined);
+    mockRemove.mockResolvedValue(undefined);
   });
 
   it("should allow creation in nested non-existent directories", async () => {
     const targetFile = path.join(testDir, "new", "nested", "file.ts");
-    const targetDir = path.dirname(targetFile);
 
     // Mock findExistingAncestor to return the existing testDir
-    mockPathExists.mockImplementation(async (p: string) => {
-      if (p === testDir) return true;
-      if (p === path.join(testDir, "new")) return false;
-      if (p === targetDir) return false;
-      return false;
-    });
+    mockPathExists.mockImplementation((p: string) =>
+      Promise.resolve(p === testDir),
+    );
 
-    mockStat.mockResolvedValue({
-      isFile: () => false,
-      isDirectory: () => true,
-    } as any);
+    mockStat.mockResolvedValue(
+      createMockStat({
+        isFile: () => false,
+        isDirectory: () => true,
+      }),
+    );
 
     // Mock fs.realpath to return the testDir (no symlink resolution)
     mockRealpath.mockResolvedValue(testDir);
 
     // Mock git rev-parse to succeed (we're in a git repository)
-    vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
+    vi.mocked(execa).mockResolvedValue(createMockExecaResult("true"));
 
     // Should not throw
     await expect(validateParentDirForCreate(targetFile)).resolves.not.toThrow();
@@ -380,13 +402,17 @@ describe("validateParentDirForCreate (new tests)", () => {
   it("rejects symlink ancestor pointing outside project root", async () => {
     const targetFile = path.join(testDir, "symlink-dir", "file.txt");
 
-    mockPathExists.mockImplementation(async (p: string) => p === testDir);
-    mockStat.mockResolvedValue({
-      isFile: () => false,
-      isDirectory: () => true,
-    } as any);
+    mockPathExists.mockImplementation((p: string) =>
+      Promise.resolve(p === testDir),
+    );
+    mockStat.mockResolvedValue(
+      createMockStat({
+        isFile: () => false,
+        isDirectory: () => true,
+      }),
+    );
     mockRealpath.mockResolvedValue("/outside/dangerous");
-    vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
+    vi.mocked(execa).mockResolvedValue(createMockExecaResult("true"));
 
     await expect(validateParentDirForCreate(targetFile)).rejects.toThrow(
       /Real path of ancestor.*outside project root/,
@@ -397,12 +423,14 @@ describe("validateParentDirForCreate (new tests)", () => {
     const targetFile = path.join(testDir, ".env", "secrets", "newfile.txt");
 
     mockPathExists.mockResolvedValue(true);
-    mockStat.mockResolvedValue({
-      isFile: () => false,
-      isDirectory: () => true,
-    } as any);
+    mockStat.mockResolvedValue(
+      createMockStat({
+        isFile: () => false,
+        isDirectory: () => true,
+      }),
+    );
     mockRealpath.mockResolvedValue(testDir);
-    vi.mocked(execa).mockResolvedValue({ stdout: "true" } as any);
+    vi.mocked(execa).mockResolvedValue(createMockExecaResult("true"));
 
     await expect(validateParentDirForCreate(targetFile)).rejects.toThrow(
       /Cannot create.*restricted path segment/,
@@ -414,12 +442,12 @@ describe("findExistingAncestor", () => {
   const testDir = path.join(process.cwd(), "test-temp-ancestor");
   const existingPath = path.join(testDir, "existing");
 
-  beforeEach(async () => {
+  beforeEach(() => {
     // Mock ensureDir to do nothing
-    vi.mocked(fs.ensureDir).mockImplementation(() => Promise.resolve());
+    mockEnsureDir.mockResolvedValue(undefined);
 
     // Mock remove to do nothing
-    vi.mocked(fs.remove).mockImplementation(() => Promise.resolve());
+    mockRemove.mockResolvedValue(undefined);
   });
 
   it("should find existing parent when nested path does not exist", async () => {
@@ -431,14 +459,18 @@ describe("findExistingAncestor", () => {
       .mockResolvedValueOnce(true); // root (/)
 
     mockStat
-      .mockResolvedValueOnce({
-        isFile: () => false,
-        isDirectory: () => true,
-      } as any) // testDir/existing
-      .mockResolvedValueOnce({
-        isFile: () => false,
-        isDirectory: () => true,
-      } as any); // testDir
+      .mockResolvedValueOnce(
+        createMockStat({
+          isFile: () => false,
+          isDirectory: () => true,
+        }),
+      ) // testDir/existing
+      .mockResolvedValueOnce(
+        createMockStat({
+          isFile: () => false,
+          isDirectory: () => true,
+        }),
+      ); // testDir
 
     const targetPath = path.join(testDir, "existing", "nested", "file.ts");
     const ancestor = await findExistingAncestor(path.dirname(targetPath));
@@ -455,10 +487,12 @@ describe("findExistingAncestor", () => {
       .mockResolvedValueOnce(true) // testDir
       .mockResolvedValueOnce(true); // root (/)
 
-    mockStat.mockResolvedValueOnce({
-      isFile: () => false,
-      isDirectory: () => true,
-    } as any); // existingPath
+    mockStat.mockResolvedValueOnce(
+      createMockStat({
+        isFile: () => false,
+        isDirectory: () => true,
+      }),
+    ); // existingPath
 
     const ancestor = await findExistingAncestor(existingPath);
 
