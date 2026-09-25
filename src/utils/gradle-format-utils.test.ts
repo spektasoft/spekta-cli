@@ -11,7 +11,10 @@ import os from "os";
 import fs from "fs-extra";
 import { execa } from "execa";
 
-import { formatKotlinFileInPlace } from "./gradle-format-utils";
+import {
+  formatKotlinFileInPlace,
+  clearGradleTaskCache,
+} from "./gradle-format-utils";
 
 vi.mock("os", () => ({
   default: {
@@ -32,6 +35,7 @@ vi.mock("execa", () => ({
 describe("formatKotlinFileInPlace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (clearGradleTaskCache as () => void)();
     vi.mocked(os.platform).mockReturnValue("linux");
     vi.mocked(execa).mockResolvedValue({
       exitCode: 0,
@@ -128,15 +132,80 @@ describe("formatKotlinFileInPlace", () => {
     ]);
   });
 
-  it("does not invoke Gradle when the wrapper is missing", async () => {
+  it("uses formatKotlin when kotlinter plugin is configured", async () => {
+    vi.mocked(execa)
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "formatKotlin - Formats Kotlin code",
+      } as never)
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "",
+      } as never);
+
+    await formatKotlinFileInPlace("/project/src/Main.kt");
+
+    expect(vi.mocked(execa).mock.calls[1]?.[1]).toEqual([
+      "/project/gradlew",
+      "formatKotlin",
+    ]);
+  });
+
+  it("detects tasks in multi-project builds with subproject prefixes", async () => {
+    vi.mocked(execa)
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: ":app:spotlessApply - Applies Spotless formatting",
+      } as never)
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "",
+      } as never);
+
+    await formatKotlinFileInPlace("/project/src/Main.kt");
+
+    expect(vi.mocked(execa).mock.calls[1]?.[1]).toEqual([
+      "/project/gradlew",
+      "spotlessApply",
+    ]);
+  });
+
+  it("caches task resolution per project root", async () => {
+    vi.mocked(execa)
+      .mockResolvedValueOnce({
+        exitCode: 0,
+        stdout: "spotlessApply - Applies Spotless formatting",
+      } as never)
+      .mockResolvedValue({
+        exitCode: 0,
+        stdout: "",
+      } as never);
+
+    await formatKotlinFileInPlace("/project/src/Main.kt");
+    await formatKotlinFileInPlace("/project/src/Other.kt");
+
+    // Only one "tasks --all" invocation should occur
+    const taskListCalls = vi
+      .mocked(execa)
+      .mock.calls.filter(
+        (call) => Array.isArray(call[1]) && call[1][1] === "tasks",
+      );
+    expect(taskListCalls).toHaveLength(1);
+  });
+
+  it("does not invoke Gradle and does not warn when the wrapper is missing", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(fs.pathExists).mockResolvedValue(false as never);
 
     const result = await formatKotlinFileInPlace("/project/src/Main.kt");
 
     expect(result).toBe(false);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
-  it("does not invoke the formatter when no supported task exists", async () => {
+  it("does not invoke the formatter and does not warn when no supported task exists", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.mocked(execa).mockResolvedValueOnce({
       exitCode: 0,
       stdout: "compileKotlin - Compiles Kotlin",
@@ -145,6 +214,8 @@ describe("formatKotlinFileInPlace", () => {
     const result = await formatKotlinFileInPlace("/project/src/Main.kt");
 
     expect(result).toBe(false);
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 
   it("throws when the selected formatting task fails", async () => {

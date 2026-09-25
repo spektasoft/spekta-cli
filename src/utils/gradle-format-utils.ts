@@ -3,9 +3,21 @@ import os from "os";
 import path from "path";
 import { execa } from "execa";
 
-const FORMAT_TASKS = ["spotlessApply", "ktlintFormat"] as const;
+const FORMAT_TASKS = [
+  "spotlessApply",
+  "spotlessKotlinApply",
+  "ktlintFormat",
+  "formatKotlin",
+  "ktfmtFormat",
+] as const;
 
 type FormatTask = (typeof FORMAT_TASKS)[number];
+
+const projectTaskCache = new Map<string, FormatTask | null>();
+
+export function clearGradleTaskCache(): void {
+  projectTaskCache.clear();
+}
 
 function getGradleWrapperName(platform = os.platform()): string {
   return platform === "win32" ? "gradlew.bat" : "gradlew";
@@ -67,23 +79,35 @@ async function getAvailableGradleTasks(projectRoot: string): Promise<string[]> {
 async function findFormattingTask(
   projectRoot: string,
 ): Promise<FormatTask | null> {
+  if (projectTaskCache.has(projectRoot)) {
+    return projectTaskCache.get(projectRoot) ?? null;
+  }
+
   const output = await getAvailableGradleTasks(projectRoot);
 
   for (const task of FORMAT_TASKS) {
-    if (
-      output.some((line) => {
-        const normalized = line.trim();
-        return (
-          normalized === task ||
-          normalized.startsWith(`${task} -`) ||
-          normalized.startsWith(`${task} `)
-        );
-      })
-    ) {
-      return task;
+    for (const line of output) {
+      const normalized = line.trim();
+      if (
+        normalized === task ||
+        normalized.startsWith(`${task} -`) ||
+        normalized.startsWith(`${task} `)
+      ) {
+        projectTaskCache.set(projectRoot, task);
+        return task;
+      }
+
+      const subprojectMatch = normalized.match(
+        new RegExp(`^(?:[:\\w-]+:)?(${task})(?:\\s|$)`),
+      );
+      if (subprojectMatch) {
+        projectTaskCache.set(projectRoot, task);
+        return task;
+      }
     }
   }
 
+  projectTaskCache.set(projectRoot, null);
   return null;
 }
 
@@ -93,18 +117,12 @@ export async function formatKotlinFileInPlace(
   const projectRoot = await findGradleProjectRoot(filePath);
 
   if (!projectRoot) {
-    console.warn(
-      `Kotlin formatting skipped for ${filePath}: Gradle Wrapper not found.`,
-    );
     return false;
   }
 
   const task = await findFormattingTask(projectRoot);
 
   if (!task) {
-    console.warn(
-      `Kotlin formatting skipped for ${filePath}: no supported Gradle formatting task found.`,
-    );
     return false;
   }
 
