@@ -1,3 +1,4 @@
+import type { Node } from "@xberg-io/tree-sitter-language-pack";
 import { CollapseRegion } from "./types";
 import {
   TEST_CALL_NAMES,
@@ -7,16 +8,20 @@ import {
 } from "./ast";
 
 export interface TestRegionContext {
-  getNodeText: (node: any) => string;
+  getNodeText: (node: Node) => string;
   lineOffset: number;
 }
 
 export interface TestSuiteDetection {
   handled: boolean;
-  callbackBody: any | null;
+  callbackBody: Node | null;
 }
 
-export function findArgumentsNode(node: any): any | null {
+export function findArgumentsNode(node: Node | null): Node | null {
+  if (!node) {
+    return null;
+  }
+
   for (let i = 0; i < node.childCount(); i++) {
     const child = node.child(i);
     if (child && child.kind() === "arguments") {
@@ -29,7 +34,7 @@ export function findArgumentsNode(node: any): any | null {
 
 export function detectTestSuite(
   baseCallee: string,
-  argsNode: any | null,
+  argsNode: Node | null,
 ): TestSuiteDetection {
   if (!TEST_SUITE_NAMES.has(baseCallee)) {
     return { handled: false, callbackBody: null };
@@ -50,7 +55,7 @@ export function detectTestSuite(
 
 export function detectTestCallRegion(
   baseCallee: string,
-  argsNode: any | null,
+  argsNode: Node | null,
   context: TestRegionContext,
 ): CollapseRegion | null {
   if (!TEST_CALL_NAMES.has(baseCallee) || !argsNode) {
@@ -80,7 +85,7 @@ export function detectTestCallRegion(
 
 export function detectAssertionObjectRegions(
   calleeText: string,
-  argsNode: any | null,
+  argsNode: Node | null,
   context: TestRegionContext,
 ): CollapseRegion[] {
   if (

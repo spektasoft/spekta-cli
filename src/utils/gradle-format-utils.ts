@@ -31,19 +31,24 @@ async function findGradleProjectRoot(filePath: string): Promise<string | null> {
   }
 }
 
+interface GradleExecutionResult {
+  exitCode?: number;
+  stdout: string;
+}
+
 async function executeGradleWrapper(
   projectRoot: string,
   args: string[],
-): Promise<ReturnType<typeof execa>> {
+): Promise<GradleExecutionResult> {
   const wrapperName = getGradleWrapperName();
   const wrapperPath = path.join(projectRoot, wrapperName);
 
   return os.platform() === "win32"
-    ? await execa(wrapperPath, args, {
+    ? execa(wrapperPath, args, {
         cwd: projectRoot,
         reject: false,
       })
-    : await execa("bash", [wrapperPath, ...args], {
+    : execa("bash", [wrapperPath, ...args], {
         cwd: projectRoot,
         reject: false,
       });

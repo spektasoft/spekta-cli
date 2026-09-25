@@ -35,7 +35,7 @@ describe("getGitDiff", () => {
     const mockExeca = vi.mocked(execa);
     mockExeca.mockResolvedValue({
       stdout: "diff content",
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof execa>>);
 
     const start = "abc1234";
     const end = "def5678";
@@ -66,7 +66,9 @@ describe("getGitDiff", () => {
 describe("getStagedDiff", () => {
   it("constructs correct git pathspecs for ignore patterns", async () => {
     const mockExeca = vi.mocked(execa);
-    mockExeca.mockResolvedValue({ stdout: "staged content" } as any);
+    mockExeca.mockResolvedValue({
+      stdout: "staged content",
+    } as unknown as Awaited<ReturnType<typeof execa>>);
 
     const ignore = ["*.log", "dist/"];
     await getStagedDiff(ignore);
@@ -80,7 +82,9 @@ describe("getStagedDiff", () => {
 
   it("handles empty ignore patterns", async () => {
     const mockExeca = vi.mocked(execa);
-    mockExeca.mockResolvedValue({ stdout: "all staged" } as any);
+    mockExeca.mockResolvedValue({
+      stdout: "all staged",
+    } as unknown as Awaited<ReturnType<typeof execa>>);
 
     await getStagedDiff([]);
 
@@ -100,19 +104,21 @@ describe("Git Hash Validation", () => {
 
   it("should fail resolution for non-existent commits", async () => {
     // Explicitly mock a rejection for this specific test
-    vi.mocked(execa).mockRejectedValue(
-      new Error("fatal: Not a valid object name"),
-    );
+    const failureError = new Error("fatal: Not a valid object name");
+    vi.mocked(execa).mockRejectedValue(failureError);
 
-    await expect(resolveHash("deadbeef")).rejects.toThrow(
-      "does not resolve to a valid commit",
-    );
+    await expect(resolveHash("deadbeef")).rejects.toMatchObject({
+      message: "Hash deadbeef does not resolve to a valid commit.",
+      cause: failureError,
+    });
   });
 });
 
 describe("getGitDiff Edge Cases", () => {
   it("should handle empty diff responses gracefully", async () => {
-    vi.mocked(execa).mockResolvedValue({ stdout: "" } as any);
+    vi.mocked(execa).mockResolvedValue({
+      stdout: "",
+    } as unknown as Awaited<ReturnType<typeof execa>>);
     const result = await getGitDiff("abc1234", "abc1234");
     expect(result).toBe("");
   });

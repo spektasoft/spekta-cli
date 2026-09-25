@@ -67,12 +67,10 @@ function hello() {
     const filePath = path.join(sandboxDir, "test.txt");
     await fs.writeFile(filePath, mockContent);
 
-    const request: any = {
+    const { message, appliedCount } = await getReplaceContent({
       path: filePath,
       blocks: [{ search: "line3", replace: "updated" }],
-    };
-
-    const { message, appliedCount } = await getReplaceContent(request);
+    });
 
     expect(appliedCount).toBe(1);
     expect(message).toContain(`Replaced 1 block(s) in ${filePath}`);

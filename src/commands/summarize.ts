@@ -107,10 +107,7 @@ Generate the structured summary now.`;
       const shouldProceed = await confirmLargePayload(tokenCount);
       if (!shouldProceed) {
         console.log("Operation cancelled by user due to payload size.");
-        const saveOnly = await processOutput(
-          finalPromptPayload,
-          "spekta-summarize-large",
-        );
+        await processOutput(finalPromptPayload, "spekta-summarize-large");
         return;
       }
     }
@@ -148,11 +145,12 @@ Generate the structured summary now.`;
     });
 
     // Save to file and optionally open in editor (via SPEKTA_EDITOR)
-    const outputPath = await processOutput(result, "spekta-summarize");
+    await processOutput(result, "spekta-summarize");
 
     console.log("\nSummary generated successfully.");
-  } catch (error: any) {
-    console.error(`Error: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Error: ${message}`);
     process.exitCode = 1;
   }
 }

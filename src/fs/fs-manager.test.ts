@@ -1,4 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  type MockedFunction,
+} from "vitest";
 import {
   getNextReviewMetadata,
   getReviewDir,
@@ -15,7 +22,11 @@ describe("getNextReviewMetadata", () => {
   });
 
   it("should return nextNum 1 when directory is empty", async () => {
-    vi.mocked(fs.readdir).mockResolvedValue([] as any);
+    (
+      fs.readdir as unknown as MockedFunction<
+        (dir: string) => Promise<string[]>
+      >
+    ).mockResolvedValue([]);
     const result = await getNextReviewMetadata("/mock/dir");
     expect(result.nextNum).toBe(1);
     expect(result.lastFile).toBeNull();
@@ -23,7 +34,11 @@ describe("getNextReviewMetadata", () => {
 
   it("should correctly parse standard file patterns with valid hex", async () => {
     const files = ["r-001-abcdef..123456.md", "r-002-deadbe..efc0de.md"];
-    vi.mocked(fs.readdir).mockResolvedValue(files as any);
+    (
+      fs.readdir as unknown as MockedFunction<
+        (dir: string) => Promise<string[]>
+      >
+    ).mockResolvedValue(files);
 
     const result = await getNextReviewMetadata("/mock/dir");
     expect(result.nextNum).toBe(3);
@@ -37,7 +52,11 @@ describe("getNextReviewMetadata", () => {
       "r-string-abcdef..123456.md",
       "r-002-ghi..jkl.md",
     ];
-    vi.mocked(fs.readdir).mockResolvedValue(files as any);
+    (
+      fs.readdir as unknown as MockedFunction<
+        (dir: string) => Promise<string[]>
+      >
+    ).mockResolvedValue(files);
 
     const result = await getNextReviewMetadata("/mock/dir");
     expect(result.nextNum).toBe(2);
@@ -51,9 +70,13 @@ describe("getReviewDir", () => {
   });
 
   it("should create directory asynchronously for initial review", async () => {
-    vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-    vi.mocked(fs.pathExists).mockResolvedValue(false as any);
-    vi.mocked(fs.writeFile).mockResolvedValue(undefined as any);
+    vi.mocked(fs.ensureDir).mockResolvedValue(undefined);
+    (
+      fs.pathExists as unknown as MockedFunction<
+        (path: string) => Promise<boolean>
+      >
+    ).mockResolvedValue(false);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
     const result = await getReviewDir(true);
 
@@ -63,10 +86,14 @@ describe("getReviewDir", () => {
   });
 
   it("should throw error if folderId is provided but directory does not exist", async () => {
-    vi.mocked(fs.pathExists).mockResolvedValue(false as any);
+    (
+      fs.pathExists as unknown as MockedFunction<
+        (path: string) => Promise<boolean>
+      >
+    ).mockResolvedValue(false);
 
     await expect(getReviewDir(false, "202301010101")).rejects.toThrow(
-      "Review folder not found: 202301010101"
+      "Review folder not found: 202301010101",
     );
   });
 });
@@ -80,8 +107,8 @@ describe("ensureIgnoredDir", () => {
   });
 
   it("creates the input directory and initializes .gitignore if missing", async () => {
-    vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
-    vi.mocked(fs.writeFile).mockResolvedValue(undefined as any);
+    vi.mocked(fs.ensureDir).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
     await ensureIgnoredDir(mockDir, mockRoot);
 
@@ -94,9 +121,9 @@ describe("ensureIgnoredDir", () => {
   });
 
   it("does not overwrite existing .gitignore", async () => {
-    vi.mocked(fs.ensureDir).mockResolvedValue(undefined as any);
+    vi.mocked(fs.ensureDir).mockResolvedValue(undefined);
     vi.mocked(fs.writeFile).mockRejectedValue(
-      Object.assign(new Error("File exists"), { code: "EEXIST" })
+      Object.assign(new Error("File exists"), { code: "EEXIST" }),
     );
 
     await expect(ensureIgnoredDir(mockDir, mockRoot)).resolves.not.toThrow();
@@ -105,5 +132,16 @@ describe("ensureIgnoredDir", () => {
     expect(fs.writeFile).toHaveBeenCalledWith(expectedIgnorePath, "*\n", {
       flag: "wx",
     });
+  });
+
+  it("rethrows non-EEXIST errors from writeFile", async () => {
+    vi.mocked(fs.ensureDir).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFile).mockRejectedValue(
+      Object.assign(new Error("Permission denied"), { code: "EACCES" }),
+    );
+
+    await expect(ensureIgnoredDir(mockDir, mockRoot)).rejects.toThrow(
+      "Permission denied",
+    );
   });
 });

@@ -1,3 +1,4 @@
+import type { Node } from "@xberg-io/tree-sitter-language-pack";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -8,11 +9,16 @@ import {
 } from "./test-regions";
 import { getOrCreateParser } from "./parser";
 
-function parse(code: string): any {
-  return getOrCreateParser("typescript").parse(code).rootNode();
+function parse(code: string): Node {
+  const tree = getOrCreateParser("typescript").parse(code);
+  const root = tree?.rootNode();
+  if (!root) {
+    throw new Error("Failed to parse code");
+  }
+  return root;
 }
 
-function getNodeText(node: any, code: string): string {
+function getNodeText(node: Node, code: string): string {
   const buffer = Buffer.from(code, "utf8");
   return buffer.subarray(node.startByte(), node.endByte()).toString("utf8");
 }
@@ -23,7 +29,7 @@ describe("findArgumentsNode", () => {
   expect(value).toEqual({ a: 1 });
 });`;
     const root = parse(code);
-    const call = root.child(0).namedChild(0);
+    const call = root.child(0)?.child(0) ?? null;
 
     expect(findArgumentsNode(call)).toBeTruthy();
   });
@@ -37,7 +43,7 @@ describe("detectTestSuite", () => {
   });
 });`;
     const root = parse(code);
-    const call = root.child(0).namedChild(0);
+    const call = root.child(0)?.child(0) ?? null;
     const argsNode = findArgumentsNode(call);
 
     const result = detectTestSuite("describe", argsNode);
@@ -54,7 +60,7 @@ describe("detectTestCallRegion", () => {
   return value;
 });`;
     const root = parse(code);
-    const call = root.child(0).namedChild(0);
+    const call = root.child(0)?.namedChild(0) ?? null;
     const argsNode = findArgumentsNode(call);
 
     const result = detectTestCallRegion("test", argsNode, {
@@ -77,7 +83,7 @@ describe("detectAssertionObjectRegions", () => {
   b: 2,
 });`;
     const root = parse(code);
-    const call = root.child(0).namedChild(0);
+    const call = root.child(0)?.namedChild(0) ?? null;
     const argsNode = findArgumentsNode(call);
 
     const result = detectAssertionObjectRegions("toEqual", argsNode, {

@@ -11,14 +11,14 @@ export const selectPromptPartials = async (): Promise<PartialSelection> => {
     return { include: [], exclude: [] };
   }
 
-  const mode = (await select<PartialSelectionChoice>({
+  const mode = await select<PartialSelectionChoice>({
     message: "How would you like to handle partials?",
     choices: [
       { name: "Generate Now", value: "default" },
       { name: "Include", value: "include" },
       { name: "Exclude", value: "exclude" },
     ],
-  })) as PartialSelectionChoice;
+  });
 
   if (mode === "default") {
     return { include: [], exclude: [] };

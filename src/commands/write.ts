@@ -31,8 +31,9 @@ export async function getWriteContent(
   // 5. Format in-place
   try {
     await formatFileInPlace(filePath);
-  } catch (err: any) {
-    Logger.warn(`Formatting failed: ${err.message}.`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    Logger.warn(`Formatting failed: ${message}.`);
   }
 
   return {
@@ -69,8 +70,9 @@ export async function runWrite(args?: string[]): Promise<void> {
       Logger.error(result.message);
       process.exitCode = 1;
     }
-  } catch (err: any) {
-    Logger.error(`Write failed: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    Logger.error(`Write failed: ${message}`);
     process.exitCode = 1;
   }
 }

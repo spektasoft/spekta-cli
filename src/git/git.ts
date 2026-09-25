@@ -1,6 +1,18 @@
 import { execa } from "execa";
 import prettier from "prettier";
 
+const getErrorMessage = (error: unknown): string => {
+  if (typeof error === "object" && error !== null) {
+    if ("stderr" in error && typeof error.stderr === "string" && error.stderr) {
+      return error.stderr;
+    }
+    if ("message" in error && typeof error.message === "string") {
+      return error.message;
+    }
+  }
+  return error instanceof Error ? error.message : String(error);
+};
+
 export const isValidHash = (hash: string): boolean => {
   return /^[0-9a-f]{7,40}$/i.test(hash);
 };
@@ -31,10 +43,10 @@ export const getGitDiff = async (
     });
 
     return stdout;
-  } catch (error: any) {
+  } catch (error: unknown) {
     // Best practice: include the underlying stderr for debugging
-    const message = error.stderr || error.message;
-    throw new Error(`Git diff failed: ${message}`);
+    const message = getErrorMessage(error);
+    throw new Error(`Git diff failed: ${message}`, { cause: error });
   }
 };
 
@@ -49,8 +61,10 @@ export const resolveHash = async (ref: string): Promise<string> => {
       `${ref}^{commit}`,
     ]);
     return stdout.trim();
-  } catch (error: any) {
-    throw new Error(`Hash ${ref} does not resolve to a valid commit.`);
+  } catch (error: unknown) {
+    throw new Error(`Hash ${ref} does not resolve to a valid commit.`, {
+      cause: error,
+    });
   }
 };
 
@@ -84,8 +98,13 @@ export const getInitialCommit = async (): Promise<string> => {
     ]);
     // rev-list returns all roots; we take the first one (usually just one)
     return stdout.trim().split("\n")[0];
-  } catch (error: any) {
-    throw new Error(`Failed to find initial commit: ${error.message}`);
+  } catch (error: unknown) {
+    throw new Error(
+      `Failed to find initial commit: ${getErrorMessage(error)}`,
+      {
+        cause: error,
+      },
+    );
   }
 };
 
@@ -107,9 +126,9 @@ export const getStagedDiff = async (
     });
 
     return stdout.trim();
-  } catch (error: any) {
-    const message = error.stderr || error.message;
-    throw new Error(`Git staged diff failed: ${message}`);
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    throw new Error(`Git staged diff failed: ${message}`, { cause: error });
   }
 };
 
@@ -128,9 +147,11 @@ export const getCommitMessages = async (
   try {
     const { stdout } = await execa("git", args);
     return stdout.trim();
-  } catch (error: any) {
-    const message = error.stderr || error.message;
-    throw new Error(`Failed to get commit messages: ${message}`);
+  } catch (error: unknown) {
+    const message = getErrorMessage(error);
+    throw new Error(`Failed to get commit messages: ${message}`, {
+      cause: error,
+    });
   }
 };
 
@@ -139,8 +160,10 @@ export async function commitWithFile(filePath: string): Promise<void> {
     await execa("git", ["commit", "--file", filePath], {
       stdio: "inherit",
     });
-  } catch (err: any) {
-    throw new Error(`git commit failed: ${err.message}`);
+  } catch (err: unknown) {
+    throw new Error(`git commit failed: ${getErrorMessage(err)}`, {
+      cause: err,
+    });
   }
 }
 
@@ -174,9 +197,9 @@ export async function formatCommitMessage(content: string): Promise<string> {
     return await prettier.format(content, {
       parser: "markdown",
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     console.warn(
-      `Prettier formatting failed: ${err.message}. Returning original content.`,
+      `Prettier formatting failed: ${getErrorMessage(err)}. Returning original content.`,
     );
     return content;
   }

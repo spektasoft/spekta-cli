@@ -9,6 +9,7 @@ import {
   generateSessionId,
 } from "./session-utils";
 import { getSessionsPath } from "../fs/fs-manager";
+import { Message } from "../api/api";
 
 // Mock the fs-manager module
 vi.mock("../fs/fs-manager", () => ({
@@ -23,9 +24,9 @@ describe("Session Utils - Atomic Write", () => {
     `session-test-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
   );
   const mockSessionId = "test-session-123";
-  const mockMessages = [
-    { role: "user", content: "Hello" } as any,
-    { role: "assistant", content: "Hi there!" } as any,
+  const mockMessages: Message[] = [
+    { role: "user", content: "Hello" },
+    { role: "assistant", content: "Hi there!" },
   ];
 
   beforeEach(async () => {
@@ -57,7 +58,7 @@ describe("Session Utils - Atomic Write", () => {
         expect.objectContaining({
           sessionId: mockSessionId,
           messages: mockMessages,
-          updatedAt: expect.any(String),
+          updatedAt: expect.any(String) as string,
         }),
         { spaces: 2 },
       );
@@ -83,16 +84,14 @@ describe("Session Utils - Atomic Write", () => {
       // Create an existing valid session file (Uses REAL fs because mocks are restored)
       const originalData = {
         sessionId: mockSessionId,
-        messages: [{ role: "user", content: "Original" }] as any,
+        messages: [{ role: "user" as const, content: "Original" }],
         updatedAt: new Date().toISOString(),
       };
       const finalPath = path.join(tmpDir, `${mockSessionId}.json`);
       await fs.writeJSON(finalPath, originalData, { spaces: 2 });
 
       // Mock writeJSON to fail
-      const mockWriteJSON = vi
-        .spyOn(fs, "writeJSON")
-        .mockRejectedValue(new Error("Write failed"));
+      vi.spyOn(fs, "writeJSON").mockRejectedValue(new Error("Write failed"));
 
       // Attempt to save new session
       await expect(saveSession(mockSessionId, mockMessages)).rejects.toThrow(
@@ -102,7 +101,10 @@ describe("Session Utils - Atomic Write", () => {
       // Verify original file still exists and contains original data
       // We must check if path exists using the real FS (which is fine, because spy only affects writeJSON)
       expect(await fs.pathExists(finalPath)).toBe(true);
-      const savedData = await fs.readJSON(finalPath);
+      const savedData = (await fs.readJSON(finalPath)) as {
+        messages: Message[];
+        updatedAt: string;
+      };
       expect(savedData.messages).toEqual(originalData.messages);
       expect(savedData.updatedAt).toBe(originalData.updatedAt);
     });
@@ -312,9 +314,7 @@ describe("Session Utils - Atomic Write", () => {
     });
 
     it("should handle directory read errors", async () => {
-      const mockReaddir = vi
-        .spyOn(fs, "readdir")
-        .mockRejectedValue(new Error("Read failed"));
+      vi.spyOn(fs, "readdir").mockRejectedValue(new Error("Read failed"));
 
       await expect(listSessions()).rejects.toThrow("Read failed");
     });

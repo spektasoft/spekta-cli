@@ -21,14 +21,14 @@ async function openInEditorWithConfirmation(
 
     await openEditor(editorCmd, filePath);
 
-    const choice = (await select({
+    const choice = await select({
       message: `What would you like to do?`,
       choices: [
         { name: "Send the message", value: "send" },
         { name: "Cancel and start over", value: "cancel" },
         { name: "Exit", value: "exit" },
       ],
-    })) as "send" | "cancel" | "exit";
+    });
 
     let content = "";
     if (choice === "send") {
@@ -38,8 +38,9 @@ async function openInEditorWithConfirmation(
     await fs.remove(filePath).catch(() => {});
 
     return { action: choice, content };
-  } catch (err: any) {
-    console.warn(`Editor failed (${err.message}), returning to input...`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`Editor failed (${message}), returning to input...`);
     return { action: "cancel", content: "" };
   }
 }
@@ -68,7 +69,7 @@ export async function getUserMessage(): Promise<InputResult> {
     const { action, content } = await runSingleInputSession(currentBuffer);
 
     switch (action) {
-      case "send":
+      case "send": {
         const trimmed = content.trim();
         if (trimmed === "") {
           currentBuffer = "";
@@ -76,6 +77,7 @@ export async function getUserMessage(): Promise<InputResult> {
           continue; // Retry loop with cleared buffer
         }
         return trimmed;
+      }
 
       case "cancel":
         currentBuffer = "";

@@ -48,11 +48,15 @@ function buildGeminiHistory(messages: Message[]): {
   return { systemInstruction, history, lastUserMessage };
 }
 
+import { GeminiPart, stripGemmaThinkingTokens } from "./gemini-helpers";
+
+export { stripGemmaThinkingTokens, type GeminiPart };
+
 function getModel(
   client: GoogleGenerativeAI,
   model: string,
   systemInstruction: string | undefined,
-  config: Record<string, any>,
+  config: Record<string, unknown>,
 ): GenerativeModel {
   return client.getGenerativeModel({
     model,
@@ -65,7 +69,7 @@ export const callGemini = async (
   apiKey: string,
   model: string,
   messages: Message[],
-  config: Record<string, any> = {},
+  config: Record<string, unknown> = {},
 ): Promise<string> => {
   const client = getGeminiClient(apiKey);
   const { systemInstruction, history, lastUserMessage } =
@@ -75,13 +79,13 @@ export const callGemini = async (
   const chat = generativeModel.startChat({ history });
   const result = await chat.sendMessage(lastUserMessage);
 
-  const parts: Array<{ text?: string; thought?: boolean }> =
-    result.response.candidates?.[0]?.content?.parts ?? [];
+  const parts = (result.response.candidates?.[0]?.content?.parts ??
+    []) as unknown as GeminiPart[];
 
   let contentText = "";
 
   for (const part of parts) {
-    if ((part as any).thought === true) {
+    if (part.thought === true) {
       continue;
     }
     contentText += part.text ?? "";
@@ -107,7 +111,7 @@ export const callGeminiStream = async (
   apiKey: string,
   model: string,
   messages: Message[],
-  config: Record<string, any> = {},
+  config: Record<string, unknown> = {},
   signal?: AbortSignal,
 ): Promise<AsyncIterable<ChatCompletionChunk>> => {
   const client = getGeminiClient(apiKey);
@@ -126,14 +130,14 @@ export const callGeminiStream = async (
         throw err;
       }
 
-      const parts: Array<{ text?: string; thought?: boolean }> =
-        chunk.candidates?.[0]?.content?.parts ?? [];
+      const parts = (chunk.candidates?.[0]?.content?.parts ??
+        []) as unknown as GeminiPart[];
 
       let contentText = "";
       const thoughtParts: Array<{ text: string }> = [];
 
       for (const part of parts) {
-        if ((part as any).thought === true) {
+        if (part.thought === true) {
           if (part.text) {
             thoughtParts.push({ text: part.text });
           }
@@ -177,20 +181,5 @@ export const callGeminiStream = async (
 
   return normalize();
 };
-
-/**
- * Removes Gemma 4 thinking channel blocks from a response string.
- *
- * Gemma 4 uses <|channel>thought\n…<channel|> delimiters to wrap
- * internal reasoning. The Gemini SDK may surface these as raw text in
- * certain response shapes. This function strips the entire block,
- * including the delimiters, and trims the result.
- *
- * The regex is non-greedy and uses the `s` (dotAll) flag so that
- * multi-line thought blocks are matched correctly.
- */
-export function stripGemmaThinkingTokens(text: string): string {
-  return text.replace(/<\|channel>thought\n[\s\S]*?<channel\|>/g, "");
-}
 
 export const _clearClientCache = () => clientMap.clear();

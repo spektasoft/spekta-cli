@@ -47,13 +47,11 @@ describe("saveDiagnosticReport", () => {
     const fixedDate = new Date(2026, 8, 15, 20, 26);
     const expectedPath = path.join(DEFAULT_DIAGNOSTICS_DIR, "202609152026.md");
 
-    const ensureDirSpy = vi
-      .spyOn(fs, "ensureDir")
-      .mockResolvedValue(undefined as unknown as void);
-    const pathExistsSpy = vi.spyOn(fs, "pathExists").mockResolvedValue(false);
-    const writeFileSpy = vi
-      .spyOn(fs, "writeFile")
-      .mockResolvedValue(undefined as unknown as void);
+    const ensureDirSpy = vi.spyOn(fs, "ensureDir").mockResolvedValue(undefined);
+    const pathExistsSpy = vi
+      .spyOn(fs, "pathExists")
+      .mockResolvedValue(false as unknown as void);
+    const writeFileSpy = vi.spyOn(fs, "writeFile").mockResolvedValue(undefined);
 
     const savedPath = await saveDiagnosticReport(
       "# Spekta Diagnostics",

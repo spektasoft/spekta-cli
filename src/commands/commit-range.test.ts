@@ -41,20 +41,19 @@ vi.mock("../git/git", () => ({
 }));
 
 describe("runCommitRange", () => {
-  const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-  const consoleErrorSpy = vi
-    .spyOn(console, "error")
-    .mockImplementation(() => {});
-
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
     process.exitCode = 0;
 
     // Default happy path mocks
     vi.mocked(git.isAncestor).mockResolvedValue(true);
     vi.mocked(git.sanitizeMessageForPrompt).mockImplementation((msg) => msg);
     vi.mocked(git.stripCodeFences).mockImplementation((msg) => msg);
-    vi.mocked(git.formatCommitMessage).mockImplementation(async (msg) => msg);
+    vi.mocked(git.formatCommitMessage).mockImplementation((msg) =>
+      Promise.resolve(msg),
+    );
   });
 
   afterEach(() => {
@@ -79,7 +78,7 @@ describe("runCommitRange", () => {
     vi.mocked(config.getProviders).mockResolvedValue({ providers: [] });
     vi.mocked(config.getEnv).mockResolvedValue({
       OPENROUTER_API_KEY: "test",
-    } as any);
+    });
 
     // Mock UI - select "Only Prompt"
     vi.mocked(ui.promptProviderSelection).mockResolvedValue({

@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { ChatCompletionChunk } from "openai/resources/chat/completions";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Mock the SDK before importing the adapter
 vi.mock("@google/generative-ai", () => {
   // Define the generator function, but DON'T execute it here
   const createMockStream = async function* () {
+    await Promise.resolve();
     yield {
       candidates: [{ content: { parts: [{ text: "chunk one" }] } }],
     };
@@ -61,11 +64,42 @@ describe("callGemini", () => {
     expect(result).toBe("Hello from Gemini");
   });
 
-  it("throws if response text is empty", async () => {
-    const { GoogleGenerativeAI } = await import("@google/generative-ai");
+  it("filters thought parts and accepts unknown configuration values", async () => {
+    const genai = await import("@google/generative-ai");
+    vi.mocked(genai.GoogleGenerativeAI).mockImplementationOnce(function () {
+      return {
+        getGenerativeModel: vi.fn().mockReturnValue({
+          startChat: vi.fn().mockReturnValue({
+            sendMessage: vi.fn().mockResolvedValue({
+              response: {
+                candidates: [
+                  {
+                    content: {
+                      parts: [
+                        { text: "Internal reasoning", thought: true },
+                        { text: "Synthesized answer" },
+                      ],
+                    },
+                  },
+                ],
+              },
+            }),
+          }),
+        }),
+      } as unknown as GoogleGenerativeAI;
+    });
 
-    // Use 'function' here too
-    (GoogleGenerativeAI as any).mockImplementationOnce(function () {
+    const result = await callGemini("fake-key", "gemini-2.0-flash", messages, {
+      temperature: 0.2,
+      customFlag: true,
+    });
+    expect(result).toBe("Synthesized answer");
+  });
+
+  it("throws if response text is empty", async () => {
+    const genai = await import("@google/generative-ai");
+
+    vi.mocked(genai.GoogleGenerativeAI).mockImplementationOnce(function () {
       return {
         getGenerativeModel: vi.fn().mockReturnValue({
           startChat: vi.fn().mockReturnValue({
@@ -74,7 +108,7 @@ describe("callGemini", () => {
             }),
           }),
         }),
-      };
+      } as unknown as GoogleGenerativeAI;
     });
 
     await expect(
@@ -111,6 +145,7 @@ describe("stripGemmaThinkingTokens", () => {
 describe("callGeminiStream — Gemma 4 raw token guard", () => {
   it("strips raw channel token delimiters from streamed content chunks", async () => {
     async function* fakeStream() {
+      await Promise.resolve();
       yield {
         candidates: [
           {
@@ -138,14 +173,14 @@ describe("callGeminiStream — Gemma 4 raw token guard", () => {
     // Need to access the internal mock import to set up the implementation
     const genai = await import("@google/generative-ai");
     vi.mocked(genai.GoogleGenerativeAI).mockImplementationOnce(function () {
-      return mockClient as any;
+      return mockClient as unknown as GoogleGenerativeAI;
     });
 
     const iterable = await callGeminiStream("key", "gemma-4-27b-it", [
       { role: "user", content: "Generate a commit message." },
     ]);
 
-    const chunks: any[] = [];
+    const chunks: ChatCompletionChunk[] = [];
     for await (const chunk of iterable) {
       chunks.push(chunk);
     }
@@ -182,8 +217,8 @@ describe("callGeminiStream", () => {
       controller.signal,
     );
     await expect(async () => {
-      for await (const _ of stream) {
-        // should not reach here
+      for await (const chunk of stream) {
+        void chunk;
       }
     }).rejects.toThrow("AbortError");
   });

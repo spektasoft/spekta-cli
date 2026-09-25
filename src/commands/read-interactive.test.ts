@@ -27,7 +27,7 @@ describe("runReadInteractive", () => {
     // Default mock for execa to return a file list
     vi.mocked(execa).mockResolvedValue({
       stdout: "src/utils/helpers.ts\ntest.ts",
-    } as any);
+    } as unknown as Awaited<ReturnType<typeof execa>>);
     // Default mock for getEnv
     vi.mocked(getEnv).mockResolvedValue({
       SPEKTA_EDITOR: "mock-editor",

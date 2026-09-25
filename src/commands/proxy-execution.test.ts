@@ -35,7 +35,7 @@ describe("executeRtkCommand", () => {
         env: expect.objectContaining({
           NO_COLOR: "1",
           TERM: "dumb",
-        }),
+        }) as Record<string, unknown>,
       }),
     );
   });

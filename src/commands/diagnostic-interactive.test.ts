@@ -11,16 +11,18 @@ vi.mock("@inquirer/prompts", () => ({
 
 // Mock the internal runDiagnostic to avoid real dependency side effects during test
 vi.mock("./diagnostic", () => ({
-  runDiagnostic: vi.fn().mockImplementation(async (args) => {
-    process.stdout.write(`Diagnostic completed\nTarget: ${args[0]}`);
+  runDiagnostic: vi.fn().mockImplementation((args?: string[]) => {
+    const target = args?.[0] ?? "";
+    process.stdout.write(`Diagnostic completed\nTarget: ${target}`);
     process.exitCode = 0;
+    return Promise.resolve();
   }),
 }));
 
 describe("runDiagnosticInteractive", () => {
   let tempDir: string;
   let originalCwd: string;
-  let originalExitCode: number | undefined;
+  let originalExitCode: string | number | null | undefined;
 
   beforeEach(async () => {
     originalCwd = process.cwd();

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
-import * as editorUtils from "../utils/editor-utils";
 import * as compactor from "../utils/compactor";
 import * as readUtils from "../utils/read-utils";
 import * as security from "../utils/security";
@@ -33,15 +32,13 @@ vi.mock("../utils/logger", () => ({
 describe("runRead", () => {
   const mockGetReadTokenLimit = vi.mocked(config.getReadTokenLimit);
   const mockGetCompactThreshold = vi.mocked(config.getCompactThreshold);
-  const mockGetEnv = vi.mocked(config.getEnv);
   const mockGetFileLines = vi.mocked(readUtils.getFileLines);
   const mockGetTokenCount = vi.mocked(readUtils.getTokenCount);
   const mockValidatePathAccess = vi.mocked(security.validatePathAccess);
   const mockCompactFile = vi.mocked(compactor.compactFile);
-  const mockProcessOutput = vi.mocked(editorUtils.processOutput);
   const mockLogger = vi.mocked(Logger);
 
-  let stdoutSpy: any;
+  let stdoutSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -124,7 +121,7 @@ describe("runRead", () => {
         total: 500,
       })
       .mockResolvedValueOnce({
-        lines: Array(500).fill("line"),
+        lines: Array<string>(500).fill("line"),
         total: 500,
       });
     mockGetTokenCount.mockReturnValueOnce(10).mockReturnValueOnce(2000);
@@ -145,7 +142,7 @@ describe("runRead", () => {
         total: 500,
       })
       .mockResolvedValueOnce({
-        lines: Array(500).fill("line"),
+        lines: Array<string>(500).fill("line"),
         total: 500,
       });
     mockGetTokenCount.mockReturnValueOnce(10).mockReturnValueOnce(2000);
@@ -219,7 +216,7 @@ describe("runRead", () => {
 
     it("should retain token counting and enforcement in non-interactive mode", async () => {
       mockGetFileLines.mockResolvedValue({
-        lines: Array(1000).fill("large content line"),
+        lines: Array<string>(1000).fill("large content line"),
         total: 1000,
       });
       // First call: compaction gate — exceeds threshold so compactFile runs.

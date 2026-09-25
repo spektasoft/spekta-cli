@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseToolCalls, validateFilePath } from "../utils/agent-utils";
 
 describe("Agent Read Tool Security - E2E", () => {
-  it("agent read tool parses single file request securely", async () => {
+  it("agent read tool parses single file request securely", () => {
     const xmlInput = `<read path="src/index.ts" />`;
     const calls = parseToolCalls(xmlInput);
     expect(calls).toHaveLength(1);
@@ -10,7 +10,7 @@ describe("Agent Read Tool Security - E2E", () => {
     expect(calls[0].path).toBe("src/index.ts");
   });
 
-  it("rejects malicious paths with path traversal", async () => {
+  it("rejects malicious paths with path traversal", () => {
     // Test various malicious patterns
     const maliciousPatterns = [
       `<read path="../secret/file.ts" />`,
@@ -25,7 +25,7 @@ describe("Agent Read Tool Security - E2E", () => {
     }
   });
 
-  it("validates file paths correctly", async () => {
+  it("validates file paths correctly", () => {
     // Test valid paths
     expect(validateFilePath("src/index.ts")).toBe(true);
     expect(validateFilePath("test file.ts")).toBe(true);

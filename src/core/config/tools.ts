@@ -76,10 +76,9 @@ export const loadToolDefinitions = async (
       };
 
       tools.push(safeDefinition);
-    } catch (err: any) {
-      Logger.warn(
-        `Failed to load tool ${name} from ${filePath}: ${err.message}`,
-      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      Logger.warn(`Failed to load tool ${name} from ${filePath}: ${message}`);
     }
   }
 

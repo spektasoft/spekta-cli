@@ -36,9 +36,11 @@ export async function runMcpServer() {
     try {
       server.registerTool(
         tool.name,
-        tool.description,
-        implementation.schema(tool.params).shape,
-        async (args) => {
+        {
+          description: tool.description,
+          inputSchema: implementation.schema(tool.params).shape,
+        },
+        async (args: Record<string, unknown>) => {
           try {
             return await implementation.handler(args);
           } catch (error: unknown) {

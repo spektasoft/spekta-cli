@@ -1,12 +1,6 @@
 import OpenAI from "openai";
 import { describe, expect, it, vi } from "vitest";
-import {
-  callAI,
-  callAIStream,
-  Message,
-  resolveApiKey,
-  callAIWithProvider,
-} from "./api";
+import { callAI, callAIStream, Message, resolveApiKey } from "./api";
 import { Provider } from "../core/config";
 
 describe("resolveApiKey", () => {
@@ -90,12 +84,19 @@ describe("callAI", () => {
   });
 
   it("strips the reasoning field from the message history for callAI", async () => {
+    const createMock = vi
+      .fn<
+        (params: {
+          messages: Array<Record<string, unknown>>;
+        }) => Promise<unknown>
+      >()
+      .mockResolvedValue({
+        choices: [{ message: { content: "Refactored code" } }],
+      });
     const mockClient = {
       chat: {
         completions: {
-          create: vi.fn().mockResolvedValue({
-            choices: [{ message: { content: "Refactored code" } }],
-          }),
+          create: createMock,
         },
       },
     } as unknown as OpenAI;
@@ -108,9 +109,8 @@ describe("callAI", () => {
       },
     ] as Message[];
 
-    const result = await callAI("key", "model", messages, {}, mockClient);
-    // @ts-ignore
-    const payload = mockClient.chat.completions.create.mock.calls[0][0];
+    await callAI("key", "model", messages, {}, mockClient);
+    const payload = createMock.mock.calls[0][0];
     expect(payload.messages).toHaveLength(1);
     expect(payload.messages[0]).toEqual({
       role: "user",
@@ -119,12 +119,19 @@ describe("callAI", () => {
   });
 
   it("strips the reasoning field from the message history for callAIStream", async () => {
+    const createMock = vi
+      .fn<
+        (params: {
+          messages: Array<Record<string, unknown>>;
+        }) => Promise<unknown>
+      >()
+      .mockResolvedValue({
+        choices: [{ message: { content: "Refactored code" } }],
+      });
     const mockClient = {
       chat: {
         completions: {
-          create: vi.fn().mockResolvedValue({
-            choices: [{ message: { content: "Refactored code" } }],
-          }),
+          create: createMock,
         },
       },
     } as unknown as OpenAI;
@@ -137,9 +144,8 @@ describe("callAI", () => {
       },
     ] as Message[];
 
-    const result = await callAIStream("key", "model", messages, {}, mockClient);
-    // @ts-ignore
-    const payload = mockClient.chat.completions.create.mock.calls[0][0];
+    await callAIStream("key", "model", messages, {}, mockClient);
+    const payload = createMock.mock.calls[0][0];
     expect(payload.messages).toHaveLength(1);
     expect(payload.messages[0]).toEqual({
       role: "user",
@@ -148,12 +154,19 @@ describe("callAI", () => {
   });
 
   it("preserves standard fields like 'name' while removing 'reasoning'", async () => {
+    const createMock = vi
+      .fn<
+        (params: {
+          messages: Array<Record<string, unknown>>;
+        }) => Promise<unknown>
+      >()
+      .mockResolvedValue({
+        choices: [{ message: { content: "test response" } }],
+      });
     const mockClient = {
       chat: {
         completions: {
-          create: vi.fn().mockResolvedValue({
-            choices: [{ message: { content: "test response" } }],
-          }),
+          create: createMock,
         },
       },
     } as unknown as OpenAI;
@@ -172,9 +185,8 @@ describe("callAI", () => {
       },
     ] as unknown as Message[];
 
-    const result = await callAI("key", "gpt-4", messages, {}, mockClient);
-    // @ts-ignore
-    const payload = mockClient.chat.completions.create.mock.calls[0][0];
+    await callAI("key", "gpt-4", messages, {}, mockClient);
+    const payload = createMock.mock.calls[0][0];
 
     expect(payload.messages).toHaveLength(2);
     expect(payload.messages[0]).toEqual({

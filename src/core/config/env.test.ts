@@ -7,7 +7,7 @@ import { getEnv, resetInternalState } from "./env";
 describe("Environment Loading", () => {
   const tempTestDir = path.join(os.tmpdir(), "spekta-env-test");
   const tempHome = path.join(os.tmpdir(), "spekta-env-home");
-  const originalCwd = process.cwd;
+  const originalCwd = process.cwd.bind(process);
 
   beforeEach(async () => {
     vi.clearAllMocks();

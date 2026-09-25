@@ -1,4 +1,4 @@
-import fs from "fs";
+import fs, { ReadStream } from "fs";
 import { Readable } from "stream";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -42,7 +42,9 @@ describe("read-utils", () => {
     it("should return correct lines using streams", async () => {
       const mockContent = "line1\nline2\nline3";
       const mockStream = Readable.from(mockContent);
-      vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
+      vi.mocked(fs.createReadStream).mockReturnValue(
+        mockStream as unknown as ReadStream,
+      );
 
       const result = await getFileLines("test.txt", { start: 2, end: 2 });
       expect(result.lines).toEqual(["line2"]);
@@ -83,7 +85,9 @@ describe("read-utils", () => {
   describe("validateFileRange", () => {
     it("should return valid for content under token limit", async () => {
       const mockStream = Readable.from("line1\nline2\nline3");
-      vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
+      vi.mocked(fs.createReadStream).mockReturnValue(
+        mockStream as unknown as ReadStream,
+      );
 
       const result = await validateFileRange(
         "test.ts",
@@ -98,7 +102,9 @@ describe("read-utils", () => {
 
     it("should return invalid with helpful message when exceeding limit", async () => {
       const mockStream = Readable.from("word1 word2 word3 word4 word5");
-      vi.mocked(fs.createReadStream).mockReturnValue(mockStream as any);
+      vi.mocked(fs.createReadStream).mockReturnValue(
+        mockStream as unknown as ReadStream,
+      );
 
       const result = await validateFileRange(
         "test.ts",
@@ -114,7 +120,9 @@ describe("read-utils", () => {
 
     it("should provide specific error message for full file vs range", async () => {
       const mockStreamFull = Readable.from("word1 word2 word3 word4 word5");
-      vi.mocked(fs.createReadStream).mockReturnValueOnce(mockStreamFull as any);
+      vi.mocked(fs.createReadStream).mockReturnValueOnce(
+        mockStreamFull as unknown as ReadStream,
+      );
 
       const resultFull = await validateFileRange(
         "large-file.ts",
@@ -128,7 +136,7 @@ describe("read-utils", () => {
         "word1\nword2\nword3\nword4\nword5",
       );
       vi.mocked(fs.createReadStream).mockReturnValueOnce(
-        mockStreamRange as any,
+        mockStreamRange as unknown as ReadStream,
       );
 
       const resultRange = await validateFileRange(

@@ -23,20 +23,24 @@ export interface McpToolResponse {
   [key: string]: unknown;
 }
 
-export const TOOL_REGISTRY: Record<
-  string,
-  {
-    schema: (params: ToolDefinition["params"]) => z.ZodObject<any>;
-    handler: (args: any) => Promise<McpToolResponse>;
-  }
-> = {
+export type McpToolHandler = (
+  args: Record<string, unknown>,
+) => Promise<McpToolResponse>;
+
+export interface ToolRegistryEntry {
+  schema: (params: ToolDefinition["params"]) => z.ZodObject<z.ZodRawShape>;
+  handler: McpToolHandler;
+}
+
+export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
   spekta_read: {
     schema: (params) =>
       z.object({
         paths: z.array(z.string()).describe(params.paths?.description || ""),
       }),
-    handler: async ({ paths }) => {
-      const fileRequests = paths.map((p: string) => parseFilePathWithRange(p));
+    handler: async (rawArgs) => {
+      const { paths } = rawArgs as { paths: string[] };
+      const fileRequests = paths.map((p) => parseFilePathWithRange(p));
       const content = await getReadContent(fileRequests);
       return { content: [{ type: "text", text: content }] };
     },
@@ -48,7 +52,11 @@ export const TOOL_REGISTRY: Record<
         path: z.string().describe(params.path?.description || ""),
         blocks: z.string().describe(params.blocks?.description || ""),
       }),
-    handler: async ({ path: filePath, blocks }) => {
+    handler: async (rawArgs) => {
+      const { path: filePath, blocks } = rawArgs as {
+        path: string;
+        blocks: string;
+      };
       const { message } = await executeSafeReplace(
         { path: filePath, blocks: [] },
         blocks,
@@ -63,7 +71,11 @@ export const TOOL_REGISTRY: Record<
         path: z.string().describe(params.path?.description || ""),
         content: z.string().describe(params.content?.description || ""),
       }),
-    handler: async ({ path: filePath, content }) => {
+    handler: async (rawArgs) => {
+      const { path: filePath, content } = rawArgs as {
+        path: string;
+        content: string;
+      };
       const result = await getWriteContent(filePath, content);
       return {
         isError: !result.success,
@@ -89,7 +101,8 @@ export const TOOL_REGISTRY: Record<
           .optional()
           .describe(params.case_insensitive?.description || ""),
       }),
-    handler: async (args) => {
+    handler: async (rawArgs) => {
+      const args = rawArgs as unknown as Parameters<typeof getGrepContent>[0];
       const result = await getGrepContent(args);
       return { content: [{ type: "text", text: result }] };
     },
@@ -104,7 +117,11 @@ export const TOOL_REGISTRY: Record<
           .optional()
           .describe(params?.args?.description || ""),
       }),
-    handler: async ({ command, args }) => {
+    handler: async (rawArgs) => {
+      const { command, args } = rawArgs as {
+        command: string;
+        args?: string[];
+      };
       const cleanArgs = args ?? [];
 
       if (!isCommandSafe(command, cleanArgs)) {

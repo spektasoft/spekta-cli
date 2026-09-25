@@ -21,13 +21,13 @@ vi.mock("../config", () => ({
 describe("getGrepContent pattern validation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (execa as any).mockReturnValue(
+    vi.mocked(execa).mockReturnValue(
       Object.assign(Promise.resolve({ exitCode: 0 }), {
         stdout: null,
         kill: vi.fn(),
-      }),
+      }) as never,
     );
-    (fs.pathExists as any).mockResolvedValue(false);
+    vi.mocked(fs.pathExists).mockResolvedValue(false as never);
   });
 
   it("rejects empty string pattern", async () => {

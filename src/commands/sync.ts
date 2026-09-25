@@ -12,8 +12,9 @@ export async function runSync() {
   try {
     const count = await syncFreeModels(env.OPENROUTER_API_KEY);
     spinner.succeed(`Successfully synced ${count} free models.`);
-  } catch (err: any) {
-    spinner.fail(`Sync failed: ${err.message}`);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    spinner.fail(`Sync failed: ${message}`);
     throw err;
   }
 }

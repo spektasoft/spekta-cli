@@ -17,9 +17,10 @@ vi.mock("../commands/grep-search", () => ({
 }));
 
 vi.mock("./read-utils", async () => {
-  const actual = await vi.importActual("./read-utils");
+  const actual =
+    await vi.importActual<typeof import("./read-utils")>("./read-utils");
   return {
-    ...(actual as any),
+    ...actual,
     parseFilePathWithRange: vi.fn(),
   };
 });
@@ -83,7 +84,7 @@ describe("agent-utils", () => {
   });
 
   describe("validateFilePath", () => {
-    it("validates file paths for security", async () => {
+    it("validates file paths for security", () => {
       // Test valid path
       expect(validateFilePath("src/file.ts")).toBe(true);
       expect(validateFilePath("file.ts")).toBe(true);

@@ -22,7 +22,7 @@ beforeEach(() => {
 // Re-defining the structure expected by the SDK based on the error message
 // (The SDK expects a result that allows string indexing)
 type SdkExpectedResult = {
-  content: Array<any>;
+  content: Array<unknown>;
   isError?: boolean;
   [x: string]: unknown;
 };

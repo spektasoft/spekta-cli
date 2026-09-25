@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockedFunction,
+} from "vitest";
 
 import os from "os";
 import fs from "fs-extra";
@@ -30,9 +37,13 @@ describe("formatKotlinFileInPlace", () => {
       exitCode: 0,
       stdout: "spotlessApply - Applies Spotless formatting",
     } as never);
-    vi.mocked(fs.pathExists).mockImplementation(async (targetPath) => {
-      const normalized = String(targetPath).replace(/\\/g, "/");
-      return !normalized.includes("/src/");
+    (
+      fs.pathExists as unknown as MockedFunction<
+        (path: string) => Promise<boolean>
+      >
+    ).mockImplementation((targetPath) => {
+      const normalized = targetPath.replace(/\\/g, "/");
+      return Promise.resolve(!normalized.includes("/src/"));
     });
   });
 
@@ -118,7 +129,7 @@ describe("formatKotlinFileInPlace", () => {
   });
 
   it("does not invoke Gradle when the wrapper is missing", async () => {
-    vi.mocked(fs.pathExists).mockResolvedValue(false);
+    vi.mocked(fs.pathExists).mockResolvedValue(false as never);
 
     const result = await formatKotlinFileInPlace("/project/src/Main.kt");
 

@@ -123,12 +123,12 @@ export class SelectivePartialLoader extends nunjucks.FileSystemLoader {
   getSource(
     name: string,
     ...args: Parameters<nunjucks.FileSystemLoader["getSource"]> extends [
-      any,
+      unknown,
       ...infer Rest,
     ]
       ? Rest
       : never
-  ) {
+  ): nunjucks.LoaderSource {
     const normalized = normalizePartialName(name);
     const marker = "partials/";
 
@@ -139,6 +139,7 @@ export class SelectivePartialLoader extends nunjucks.FileSystemLoader {
         return {
           src: "",
           path: name,
+          noCache: true,
         };
       }
     }

@@ -6,7 +6,35 @@ import { isPathIgnored } from "../utils/path-ignore";
 export const MAX_MATCHES = 500;
 const MAX_FILES = 100;
 
-export async function parseGrepOutput(child: any): Promise<string> {
+export interface GrepProcessSubmatch {
+  start: number;
+}
+
+export interface GrepProcessMatchData {
+  path: { text: string };
+  line_number: number;
+  submatches: GrepProcessSubmatch[];
+  lines: { text: string };
+}
+
+export interface GrepProcessMatchMessage {
+  type: string;
+  data: GrepProcessMatchData;
+}
+
+export interface GrepChildProcess extends PromiseLike<unknown> {
+  stdout?: NodeJS.ReadableStream | null;
+  kill?: () => unknown;
+}
+
+interface ProcessErrorLike {
+  exitCode?: number;
+  message?: string;
+}
+
+export async function parseGrepOutput(
+  child: GrepChildProcess,
+): Promise<string> {
   const resultsByFile: Record<string, string[]> = {};
   let totalMatches = 0;
   let totalTokens = 0;
@@ -27,12 +55,12 @@ export async function parseGrepOutput(child: any): Promise<string> {
         totalTokens >= MAX_GREP_TOKENS
       ) {
         truncated = true;
-        child.kill();
+        child.kill?.();
         break;
       }
       try {
-        const parsed = JSON.parse(line);
-        if (parsed.type === "match") {
+        const parsed = JSON.parse(line) as unknown as GrepProcessMatchMessage;
+        if (parsed?.type === "match" && parsed.data?.path?.text) {
           const filePath = parsed.data.path.text;
 
           let isIgnored = ignoreCache.get(filePath);
@@ -46,7 +74,7 @@ export async function parseGrepOutput(child: any): Promise<string> {
 
           const lineNum = parsed.data.line_number;
           const colNums = parsed.data.submatches
-            .map((m: any) => m.start)
+            .map((m: GrepProcessSubmatch) => m.start)
             .join(",");
           const text = parsed.data.lines.text.trimEnd();
           const formattedLine = `${lineNum}:${colNums}:${text}`;
@@ -56,7 +84,7 @@ export async function parseGrepOutput(child: any): Promise<string> {
           totalMatches++;
           totalTokens += getTokenCount(formattedLine);
         }
-      } catch (e) {
+      } catch {
         continue;
       }
     }
@@ -64,9 +92,14 @@ export async function parseGrepOutput(child: any): Promise<string> {
 
   try {
     await child;
-  } catch (error: any) {
-    if (error.exitCode !== 1 && !truncated) {
-      throw new Error(`Ripgrep error: ${error.message}`);
+  } catch (error: unknown) {
+    const procError = error as ProcessErrorLike;
+    if (procError?.exitCode !== 1 && !truncated) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : String(procError?.message ?? error);
+      throw new Error(`Ripgrep error: ${message}`, { cause: error });
     }
   }
 

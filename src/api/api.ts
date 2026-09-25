@@ -41,16 +41,18 @@ export const callAI = async (
   apiKey: string,
   model: string,
   messages: Message[],
-  config: Record<string, any> = {},
+  config: Record<string, unknown> = {},
   // Best practice: Allow injection for testing
   clientOverride?: OpenAI,
 ): Promise<string> => {
   const client = clientOverride || getAIClient(apiKey);
 
-  // Use destructuring to exclude reasoning while preserving all other fields
-  const sanitizedMessages: SanitizedMessage[] = messages.map(
-    ({ reasoning, ...rest }) => rest,
-  );
+  // Exclude reasoning while preserving all other fields
+  const sanitizedMessages: SanitizedMessage[] = messages.map((message) => {
+    const copy = { ...message };
+    delete copy.reasoning;
+    return copy;
+  });
 
   const response = await client.chat.completions.create({
     model,
@@ -66,6 +68,10 @@ export const callAI = async (
 
   return content;
 };
+
+interface OpenRouterApiResponse {
+  data?: OpenRouterModel[];
+}
 
 export const fetchFreeModels = async (
   apiKey: string,
@@ -83,12 +89,12 @@ export const fetchFreeModels = async (
       throw new Error(`OpenRouter API error: ${response.status}`);
     }
 
-    const data = await response.json();
+    const data = (await response.json()) as OpenRouterApiResponse;
     if (!data?.data || !Array.isArray(data.data)) {
       throw new Error("Invalid response format from OpenRouter.");
     }
 
-    return data.data.filter((m: any) => {
+    return data.data.filter((m) => {
       const p = m.pricing;
       if (!p || typeof p !== "object") return false;
 
@@ -103,17 +109,19 @@ export const callAIStream = async (
   apiKey: string,
   model: string,
   messages: Message[],
-  config: Record<string, any> = {},
+  config: Record<string, unknown> = {},
   // Best practice: Allow injection for testing
   clientOverride?: OpenAI,
   signal?: AbortSignal, // Add signal parameter
 ): Promise<AsyncIterable<ChatCompletionChunk>> => {
   const client = clientOverride || getAIClient(apiKey);
 
-  // Use destructuring to exclude reasoning while preserving all other fields
-  const sanitizedMessages: SanitizedMessage[] = messages.map(
-    ({ reasoning, ...rest }) => rest,
-  );
+  // Exclude reasoning while preserving all other fields
+  const sanitizedMessages: SanitizedMessage[] = messages.map((message) => {
+    const copy = { ...message };
+    delete copy.reasoning;
+    return copy;
+  });
 
   return await client.chat.completions.create(
     {
@@ -149,7 +157,7 @@ export function resolveApiKey(provider: Provider): string {
 export const callAIWithProvider = async (
   provider: Provider,
   messages: Message[],
-  config: Record<string, any> = {},
+  config: Record<string, unknown> = {},
   clientOverride?: OpenAI,
 ): Promise<string> => {
   const type = provider.type ?? "openrouter";
@@ -169,7 +177,7 @@ export const callAIWithProvider = async (
 export const callAIStreamWithProvider = async (
   provider: Provider,
   messages: Message[],
-  config: Record<string, any> = {},
+  config: Record<string, unknown> = {},
   clientOverride?: OpenAI,
   signal?: AbortSignal,
 ): Promise<AsyncIterable<ChatCompletionChunk>> => {

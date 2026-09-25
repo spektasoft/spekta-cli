@@ -27,8 +27,9 @@ export async function runDiagnostic(
 
   try {
     await validatePathAccess(rawTarget);
-  } catch (error: any) {
-    Logger.error(`Execution failed: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    Logger.error(`Execution failed: ${message}`);
     process.exitCode = 2;
     return;
   }
@@ -74,8 +75,9 @@ export async function runDiagnostic(
     } else {
       process.exitCode = 0;
     }
-  } catch (error: any) {
-    Logger.error(`Execution failed: ${error.message}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    Logger.error(`Execution failed: ${message}`);
     process.exitCode = 2;
   }
 }

@@ -1,4 +1,4 @@
-import { input, select, confirm } from "@inquirer/prompts";
+import { input, select } from "@inquirer/prompts";
 import { encode } from "gpt-tokenizer";
 import autocomplete from "inquirer-autocomplete-standalone";
 import { Provider } from "../core/config";
@@ -33,13 +33,15 @@ export async function searchableSelect<T>(
 ): Promise<T> {
   return await autocomplete<T>({
     message,
-    source: async (input) => {
-      if (!input) return choices;
+    source: (input) => {
+      if (!input) return Promise.resolve(choices);
       const term = input.toLowerCase();
-      return choices.filter(
-        (c) =>
-          c.name.toLowerCase().includes(term) ||
-          (c.description && c.description.toLowerCase().includes(term)),
+      return Promise.resolve(
+        choices.filter(
+          (c) =>
+            c.name.toLowerCase().includes(term) ||
+            (c.description && c.description.toLowerCase().includes(term)),
+        ),
       );
     },
   });

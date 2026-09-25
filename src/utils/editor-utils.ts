@@ -31,9 +31,11 @@ export async function openEditor(
       stdio: "inherit",
       shell: false, // Explicitly disable shell to prevent injection
     });
-  } catch (error: any) {
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
     throw new Error(
-      `Failed to open editor "${editorCommand}": ${error.message}`,
+      `Failed to open editor "${editorCommand}": ${errorMessage}`,
+      { cause: error },
     );
   }
 }
@@ -53,8 +55,10 @@ export async function processOutput(
   if (editor && !noEditor && env.SPEKTA_NO_EDITOR !== "1") {
     try {
       await openEditor(editor, filePath);
-    } catch (error: any) {
-      console.warn(`Warning: Could not open editor: ${error.message}`);
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.warn(`Warning: Could not open editor: ${errorMessage}`);
     }
   } else if (!silent) {
     console.log(`\nGenerated Content (${prefix}):\n`);

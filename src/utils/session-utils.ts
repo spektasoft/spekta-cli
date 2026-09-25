@@ -36,49 +36,65 @@ export async function loadSession(sessionId: string): Promise<{
     return null;
   }
 
-  const data = await fs.readJSON(filePath);
+  const data = (await fs.readJSON(filePath)) as Record<string, unknown>;
 
   // Validate that messages conform to the Message interface
-  if (!data.messages || !Array.isArray(data.messages)) {
+  if (!data || !Array.isArray(data.messages)) {
     console.warn(`Invalid messages format in session ${sessionId}`);
     return null;
   }
 
   // Ensure each message has the required fields and handle optional reasoning
-  const validatedMessages = data.messages
-    .map((message: any) => {
-      if (!message.role || !message.content) {
-        console.warn(
-          `Invalid message format in session ${sessionId}: missing required fields`,
-        );
-        return null;
-      }
+  const rawMessages = data.messages as unknown[];
+  const validatedMessages: Message[] = [];
 
-      // Create a new message object with validated structure
-      const validatedMessage: Message = {
-        role: message.role,
-        content: message.content,
+  for (const item of rawMessages) {
+    if (
+      typeof item === "object" &&
+      item !== null &&
+      "role" in item &&
+      "content" in item
+    ) {
+      const msg = item as {
+        role: unknown;
+        content: unknown;
+        reasoning?: unknown;
       };
-
-      // Add reasoning field if present (it's optional)
-      if (message.reasoning !== undefined) {
-        validatedMessage.reasoning = message.reasoning;
+      if (
+        (msg.role === "system" ||
+          msg.role === "user" ||
+          msg.role === "assistant") &&
+        typeof msg.content === "string"
+      ) {
+        const validatedMessage: Message = {
+          role: msg.role,
+          content: msg.content,
+        };
+        if (typeof msg.reasoning === "string") {
+          validatedMessage.reasoning = msg.reasoning;
+        }
+        validatedMessages.push(validatedMessage);
+        continue;
       }
+    }
+    console.warn(
+      `Invalid message format in session ${sessionId}: missing required fields`,
+    );
+  }
 
-      return validatedMessage;
-    })
-    .filter(Boolean); // Filter out any null messages
-
-  if (validatedMessages.length !== data.messages.length) {
+  if (validatedMessages.length !== rawMessages.length) {
     console.warn(
       `Some messages in session ${sessionId} were invalid and removed`,
     );
   }
 
   return {
-    sessionId: data.sessionId || sessionId,
+    sessionId: typeof data.sessionId === "string" ? data.sessionId : sessionId,
     messages: validatedMessages,
-    updatedAt: data.updatedAt || new Date().toISOString(),
+    updatedAt:
+      typeof data.updatedAt === "string"
+        ? data.updatedAt
+        : new Date().toISOString(),
   };
 }
 

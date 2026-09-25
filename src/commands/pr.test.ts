@@ -99,7 +99,9 @@ describe("Command: runPr", () => {
 
     expect(orchestrator.executeAiAction).toHaveBeenCalledWith(
       expect.objectContaining({
-        provider: expect.objectContaining({ model: "gpt-4" }),
+        provider: expect.objectContaining({
+          model: "gpt-4",
+        }) as unknown as config.Provider,
         messages: [
           {
             role: "system",
@@ -107,7 +109,9 @@ describe("Command: runPr", () => {
           },
           {
             role: "user",
-            content: expect.stringContaining("feat: add login"),
+            content: expect.stringContaining(
+              "feat: add login",
+            ) as unknown as string,
           },
         ],
         spinnerTitle: "Generating PR message...",

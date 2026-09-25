@@ -39,12 +39,9 @@ vi.mock("../git/git", () => ({
 }));
 
 describe("runSummarize", () => {
-  const consoleLogSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-  const consoleErrorSpy = vi
-    .spyOn(console, "error")
-    .mockImplementation(() => {});
-
   beforeEach(() => {
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
     vi.clearAllMocks();
     process.exitCode = 0;
 
@@ -75,7 +72,7 @@ describe("runSummarize", () => {
     vi.mocked(config.getProviders).mockResolvedValue({ providers: [] });
     vi.mocked(config.getEnv).mockResolvedValue({
       OPENROUTER_API_KEY: "test",
-    } as any);
+    });
 
     // Mock UI - select "Only Prompt"
     vi.mocked(ui.promptProviderSelection).mockResolvedValue({
@@ -212,7 +209,7 @@ describe("runSummarize", () => {
     vi.mocked(config.getProviders).mockResolvedValue({ providers: [] });
     vi.mocked(config.getEnv).mockResolvedValue({
       OPENROUTER_API_KEY: "test",
-    } as any);
+    });
 
     // Mock UI - select "Only Prompt"
     vi.mocked(ui.promptProviderSelection).mockResolvedValue({

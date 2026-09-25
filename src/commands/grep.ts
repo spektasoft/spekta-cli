@@ -29,8 +29,9 @@ export async function runGrep(args?: string[]) {
       globs: globs.length > 0 ? globs.join(",") : undefined,
     });
     process.stdout.write(content + "\n");
-  } catch (error: any) {
-    Logger.error(error.message);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    Logger.error(message);
     process.exitCode = 1;
   }
 }

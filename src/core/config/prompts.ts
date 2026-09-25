@@ -34,17 +34,24 @@ export const listPrompts = async (): Promise<PromptMetadata[]> => {
           const content = await fs.readFile(filePath, "utf-8");
           const parsed = matter(content);
 
-          if (parsed.data && parsed.data.name && parsed.data.description) {
+          const data = parsed.data as Record<string, unknown> | undefined;
+
+          if (
+            data &&
+            typeof data.name === "string" &&
+            typeof data.description === "string"
+          ) {
             promptMap.set(entry.name, {
+              ...data,
               filename: entry.name,
-              name: parsed.data.name,
-              description: parsed.data.description,
-              ...parsed.data,
+              name: data.name,
+              description: data.description,
             });
           }
-        } catch (err) {
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : String(err);
           Logger.warn(
-            `Failed to parse frontmatter for prompt ${entry.name}: ${err}`,
+            `Failed to parse frontmatter for prompt ${entry.name}: ${message}`,
           );
         }
       }
@@ -78,7 +85,7 @@ export const resolvePrompt = async (
 
 export const renderPrompt = async (
   fileName: string,
-  extraContext: Record<string, any> = {},
+  extraContext: Record<string, unknown> = {},
   partialSelection: PartialSelection = { include: [], exclude: [] },
 ): Promise<string> => {
   const assetPaths = getAssetPaths();
