@@ -106,7 +106,9 @@ describe("SessionRunner", () => {
   it("aborts active stream controller on interrupt invocation", async () => {
     const runner = new SessionRunner("session-1", provider, []);
     const abortSpy = vi.fn();
-    (runner as any).currentAbortController = {
+    (
+      runner as unknown as { currentAbortController: { abort: () => void } }
+    ).currentAbortController = {
       abort: abortSpy,
     };
 

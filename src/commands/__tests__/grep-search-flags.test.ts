@@ -63,7 +63,9 @@ describe("getGrepContent - flags", () => {
   it("includes ignore-file flags when ignore files exist", async () => {
     vi.mocked(execa).mockImplementation(() => mockExecaStream(""));
 
-    vi.mocked(fs.pathExists).mockImplementation((p: string) => {
+    vi.mocked<(p: string) => Promise<boolean>>(
+      fs.pathExists,
+    ).mockImplementation((p: string) => {
       return Promise.resolve(
         p.includes(".spektaignore") || p.includes("default.ignore"),
       );

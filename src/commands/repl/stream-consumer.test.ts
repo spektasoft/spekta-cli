@@ -5,22 +5,17 @@ import { ChatCompletionChunkWithReasoning } from "../../api/api";
 async function* createMockStream(
   chunks: Array<{ content?: string; reasoning?: string }>,
 ): AsyncIterable<ChatCompletionChunkWithReasoning> {
+  await Promise.resolve();
   for (const chunk of chunks) {
     yield {
-      id: "mock-chunk",
-      object: "chat.completion.chunk",
-      created: Date.now(),
-      model: "mock-model",
       choices: [
         {
-          index: 0,
           delta: {
-            content: chunk.content,
+            content: chunk.content ?? "",
             reasoning_details: chunk.reasoning
-              ? [{ type: "text", text: chunk.reasoning }]
+              ? [{ text: chunk.reasoning }]
               : undefined,
           },
-          finish_reason: null,
         },
       ],
     };
