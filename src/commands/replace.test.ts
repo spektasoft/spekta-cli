@@ -1,9 +1,10 @@
 import fs from "fs-extra";
 import path from "path";
+import { Readable } from "stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getReplaceContent } from "./replace";
-import { ReplaceRequest } from "../utils/replace-utils";
+import { getReplaceContent, runReplace } from "./replace";
 import * as security from "../utils/security";
+import { ReplaceRequest } from "../utils/replace-utils";
 
 // Mock security validation to isolate logic from Git environment
 vi.mock("../utils/security", () => ({
@@ -60,6 +61,54 @@ function hello() {
         "<<<<<<< SEARCH\na\n=======\nb\n>>>>>>> REPLACE",
       ),
     ).rejects.toThrow("Security Violation");
+  });
+
+  it("runs replace with inline block content", async () => {
+    const testFile = path.join(sandboxDir, "cli-inline.ts");
+    await fs.writeFile(testFile, 'const value = "old";\n');
+
+    const blocks = `<<<<<<< SEARCH
+const value = "old";
+=======
+const value = "new";
+>>>>>>> REPLACE`;
+
+    process.exitCode = 0;
+
+    await runReplace([testFile, blocks]);
+
+    expect(await fs.readFile(testFile, "utf-8")).toContain(
+      'const value = "new";',
+    );
+    expect(process.exitCode).toBe(0);
+  });
+
+  it("runs replace with SEARCH/REPLACE blocks supplied via stdin", async () => {
+    const testFile = path.join(sandboxDir, "cli-stdin.ts");
+    await fs.writeFile(testFile, 'const value = "old";\n');
+
+    const blocks = `<<<<<<< SEARCH
+const value = "old";
+=======
+const value = "from-stdin";
+>>>>>>> REPLACE
+`;
+
+    const stdinMock = Readable.from([blocks]);
+    Object.assign(stdinMock, { isTTY: false });
+
+    vi.spyOn(process, "stdin", "get").mockReturnValue(
+      stdinMock as typeof process.stdin,
+    );
+
+    process.exitCode = 0;
+
+    await runReplace([testFile]);
+
+    expect(await fs.readFile(testFile, "utf-8")).toContain(
+      'const value = "from-stdin";',
+    );
+    expect(process.exitCode).toBe(0);
   });
 
   it("generates minimal summary for single replacement", async () => {

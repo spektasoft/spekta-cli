@@ -49,6 +49,7 @@ describe("write command logic", () => {
 
     // Mock stdin
     const stdinMock = Readable.from([content]);
+    Object.assign(stdinMock, { isTTY: false });
     vi.stubGlobal("process", { ...process, stdin: stdinMock });
 
     vi.mocked(security.validatePathAccessForWrite).mockResolvedValue(undefined);
@@ -68,5 +69,26 @@ describe("write command logic", () => {
     );
 
     vi.unstubAllGlobals();
+  });
+
+  it("should successfully write file when provided content via argument", async () => {
+    const filePath = "new-file.ts";
+    const content = "console.log('from argument');";
+
+    vi.mocked(security.validatePathAccessForWrite).mockResolvedValue(undefined);
+    vi.mocked(security.validateParentDirForCreate).mockResolvedValue(undefined);
+    vi.mocked(fs.pathExists).mockResolvedValue(false as never);
+
+    await runWrite([filePath, content]);
+
+    expect(fs.ensureDir).toHaveBeenCalled();
+    expect(fs.writeFile).toHaveBeenCalledWith(
+      expect.any(String),
+      content,
+      "utf-8",
+    );
+    expect(Logger.info).toHaveBeenCalledWith(
+      expect.stringContaining("Successfully created"),
+    );
   });
 });
