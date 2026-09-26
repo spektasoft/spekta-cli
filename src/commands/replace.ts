@@ -8,9 +8,9 @@ import {
   ReplaceRequest,
 } from "../utils/replace-utils";
 import { resolveCommandInput } from "../utils/cli-input";
+import { validateEditAccess } from "../utils/security";
 
 const MAX_BLOCKS_PER_REPLACE = 50;
-import { validateEditAccess } from "../utils/security";
 
 /**
  * Core logic for applying replacements to a file.
@@ -150,8 +150,7 @@ export async function executeSafeReplace(
     return { message, appliedCount };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    const errMsg = `Replacement failed: ${message}`;
-    Logger.error(errMsg);
+    const errMsg = `Replacement failed for "${request.path}": ${message}`;
     throw new Error(errMsg, { cause: error });
   }
 }
