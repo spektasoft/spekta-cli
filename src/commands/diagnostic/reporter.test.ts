@@ -12,7 +12,7 @@ describe("generateDiagnosticReport", () => {
     const result: ScanResult = {
       target: ".",
       scannedCount: 15,
-      violations: [],
+      findings: [],
       errors: [],
     };
 
@@ -35,9 +35,10 @@ describe("generateDiagnosticReport", () => {
     const result: ScanResult = {
       target: "src",
       scannedCount: 2,
-      violations: [
+      findings: [
         {
           path: "src/b.ts",
+          status: "Violation",
           rawTokens: 1500,
           finalTokens: 1200,
           excessTokens: 200,
@@ -47,6 +48,7 @@ describe("generateDiagnosticReport", () => {
         },
         {
           path: "src/a.ts",
+          status: "Violation",
           rawTokens: 1400,
           finalTokens: 1400,
           excessTokens: 400,
@@ -72,7 +74,7 @@ describe("generateDiagnosticReport", () => {
     const result: ScanResult = {
       target: ".",
       scannedCount: 3,
-      violations: [],
+      findings: [],
       errors: [
         {
           path: "src/z.ts",

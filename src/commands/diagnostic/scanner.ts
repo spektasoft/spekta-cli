@@ -3,10 +3,14 @@ import fs from "fs-extra";
 import ignore from "ignore";
 import isBinaryPath from "is-binary-path";
 import path from "path";
-import { getIgnorePatterns } from "../../core/config";
+import {
+  getCompactThreshold,
+  getIgnorePatterns,
+  getReadTokenLimit,
+} from "../../core/config";
 import { analyzeFile } from "../../utils/file-analyzer";
 import { RESTRICTED_FILES } from "../../utils/security";
-import { ErrorFinding, ScanResult, ViolationFinding } from "./types";
+import { DiagnosticFinding, ErrorFinding, ScanResult } from "./types";
 
 function normalizeRelative(filePath: string): string {
   const rel = path.relative(process.cwd(), path.resolve(filePath));
@@ -126,6 +130,58 @@ async function collectFilesFallback(
   return [];
 }
 
+export function classifyAnalysis(
+  analysis: Awaited<ReturnType<typeof analyzeFile>>,
+  compactThreshold: number,
+  readTokenLimit: number,
+): DiagnosticFinding | undefined {
+  if (analysis.rawTokens <= compactThreshold) {
+    if (analysis.finalTokens > readTokenLimit) {
+      return {
+        path: "",
+        status: "Optimization opportunity",
+        rawTokens: analysis.rawTokens,
+        finalTokens: analysis.finalTokens,
+        excessTokens: analysis.finalTokens - readTokenLimit,
+        isCompacted: analysis.isCompacted,
+        compactionWarning: analysis.compactionWarning,
+        action: "optimization recommended",
+      };
+    }
+
+    return undefined;
+  }
+
+  if (analysis.isCompacted && analysis.finalTokens <= readTokenLimit) {
+    return undefined;
+  }
+
+  if (analysis.isCompacted && analysis.finalTokens > readTokenLimit) {
+    return {
+      path: "",
+      status: "Violation",
+      rawTokens: analysis.rawTokens,
+      finalTokens: analysis.finalTokens,
+      excessTokens: analysis.finalTokens - readTokenLimit,
+      isCompacted: analysis.isCompacted,
+      compactionWarning: analysis.compactionWarning,
+      action: "refactoring required",
+    };
+  }
+
+  return {
+    path: "",
+    status: "Analysis incomplete",
+    rawTokens: analysis.rawTokens,
+    finalTokens: analysis.finalTokens,
+    excessTokens: analysis.exceedsLimit ? analysis.excessTokens : 0,
+    isCompacted: analysis.isCompacted,
+    compactionWarning:
+      analysis.compactionWarning ??
+      "Compaction could not be completed; manual review required.",
+  };
+}
+
 export async function scanTarget(
   target: string,
   onProgress?: (current: number, total: number, displayPath: string) => void,
@@ -168,7 +224,7 @@ export async function scanTarget(
     files = await collectFilesFallback(resolvedTarget, projectRoot, ig);
   }
 
-  const violations: ViolationFinding[] = [];
+  const findings: DiagnosticFinding[] = [];
   const errors: ErrorFinding[] = [];
 
   for (let index = 0; index < files.length; index++) {
@@ -177,15 +233,16 @@ export async function scanTarget(
     onProgress?.(index + 1, files.length, displayPath);
     try {
       const analysis = await analyzeFile(file);
-      if (analysis.exceedsLimit) {
-        violations.push({
+      const finding = classifyAnalysis(
+        analysis,
+        getCompactThreshold(),
+        getReadTokenLimit(),
+      );
+
+      if (finding) {
+        findings.push({
+          ...finding,
           path: displayPath,
-          rawTokens: analysis.rawTokens,
-          finalTokens: analysis.finalTokens,
-          excessTokens: analysis.excessTokens,
-          isCompacted: analysis.isCompacted,
-          compactionWarning: analysis.compactionWarning,
-          action: "refactoring required",
         });
       }
     } catch (error: unknown) {
@@ -215,7 +272,7 @@ export async function scanTarget(
   return {
     target: normalizeRelative(target) || ".",
     scannedCount: files.length,
-    violations,
+    findings,
     errors,
   };
 }

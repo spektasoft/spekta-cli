@@ -9,7 +9,9 @@ export function generateDiagnosticReport(
     "",
     `Target: ${result.target}`,
     `Scanned: ${result.scannedCount}`,
-    `Violations: ${result.violations.length}`,
+    `Violations: ${
+      result.findings.filter((finding) => finding.status === "Violation").length
+    }`,
     `Errors: ${result.errors.length}`,
     "",
     "## Policy",
@@ -19,10 +21,14 @@ export function generateDiagnosticReport(
     "## Violations",
   ];
 
-  if (result.violations.length === 0) {
+  const violations = result.findings.filter(
+    (finding) => finding.status === "Violation",
+  );
+
+  if (violations.length === 0) {
     lines.push("No files exceed the read token limit.");
   } else {
-    const sortedViolations = [...result.violations].sort((a, b) =>
+    const sortedViolations = [...violations].sort((a, b) =>
       a.path.localeCompare(b.path),
     );
 

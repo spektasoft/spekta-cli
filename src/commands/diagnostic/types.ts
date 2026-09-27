@@ -1,13 +1,17 @@
-export type FindingStatus = "Healthy" | "Violation" | "Analysis error";
+export type FindingStatus =
+  "Healthy" | "Optimization opportunity" | "Violation" | "Analysis incomplete";
 
-export interface ViolationFinding {
+export type FindingAction = "optimization recommended" | "refactoring required";
+
+export interface DiagnosticFinding {
   path: string;
+  status: FindingStatus;
   rawTokens: number;
   finalTokens: number;
   excessTokens: number;
   isCompacted: boolean;
   compactionWarning?: string;
-  action: "refactoring required";
+  action?: FindingAction;
 }
 
 export interface ErrorFinding {
@@ -19,7 +23,7 @@ export interface ErrorFinding {
 export interface ScanResult {
   target: string;
   scannedCount: number;
-  violations: ViolationFinding[];
+  findings: DiagnosticFinding[];
   errors: ErrorFinding[];
 }
 

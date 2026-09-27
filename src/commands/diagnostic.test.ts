@@ -3,11 +3,12 @@ import fs from "fs-extra";
 import path from "path";
 import os from "os";
 import { runDiagnostic } from "./diagnostic";
+import * as fileAnalyzer from "../utils/file-analyzer";
 
 describe("runDiagnostic", () => {
   let tempDir: string;
   let originalCwd: string;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
 
   beforeEach(async () => {
     originalCwd = process.cwd();
@@ -100,6 +101,18 @@ describe("runDiagnostic", () => {
 
   it("completes scan with violations and sets exit code 1", async () => {
     await fs.writeFile("large.ts", "token ".repeat(2500));
+
+    vi.spyOn(fileAnalyzer, "analyzeFile").mockResolvedValue({
+      path: "large.ts",
+      content: "",
+      totalLines: 1,
+      rawTokens: 2500,
+      finalTokens: 2000,
+      isCompacted: true,
+      exceedsLimit: true,
+      excessTokens: 1000,
+    });
+
     const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
 
     await runDiagnostic(["large.ts"], {
