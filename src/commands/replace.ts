@@ -7,9 +7,10 @@ import {
   parseReplaceBlocks,
   ReplaceRequest,
 } from "../utils/replace-utils";
+import { resolveCommandInput } from "../utils/cli-input";
+import { validateEditAccess } from "../utils/security";
 
 const MAX_BLOCKS_PER_REPLACE = 50;
-import { validateEditAccess } from "../utils/security";
 
 /**
  * Core logic for applying replacements to a file.
@@ -149,8 +150,7 @@ export async function executeSafeReplace(
     return { message, appliedCount };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    const errMsg = `Replacement failed: ${message}`;
-    Logger.error(errMsg);
+    const errMsg = `Replacement failed for "${request.path}": ${message}`;
     throw new Error(errMsg, { cause: error });
   }
 }
@@ -159,31 +159,27 @@ export async function executeSafeReplace(
  * CLI command for replace operation.
  */
 export async function runReplace(args?: string[]): Promise<void> {
-  const safeArgs = args || [];
+  const usageMessage =
+    "Usage: spekta replace <relative/path/to/file.ext> [blocks]\n" +
+    "Blocks may be passed as arguments or provided via stdin.";
+
   try {
-    if (safeArgs.length < 2) {
-      Logger.error(
-        "Usage: spekta replace <file> <blocks>\n" +
-          "Example: spekta replace src/file.ts 'blocks content'",
-      );
-      process.exitCode = 1;
+    const resolved = await resolveCommandInput(args, usageMessage);
+    if (!resolved) {
       return;
     }
 
-    const filePath = safeArgs[0];
-    const blocksInput = safeArgs.slice(1).join(" ");
-
-    const request: ReplaceRequest = { path: filePath, blocks: [] };
+    const request: ReplaceRequest = { path: resolved.filePath, blocks: [] };
 
     const { message, appliedCount } = await executeSafeReplace(
       request,
-      blocksInput,
+      resolved.content,
     );
 
     process.stdout.write(message);
     if (appliedCount > 0) {
       Logger.info(
-        `Successfully applied ${appliedCount} replacement(s) to ${filePath}`,
+        `Successfully applied ${appliedCount} replacement(s) to ${resolved.filePath}`,
       );
     }
   } catch (error: unknown) {

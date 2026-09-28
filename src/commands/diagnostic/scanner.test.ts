@@ -11,6 +11,17 @@ import { execa } from "execa";
 import fs from "fs-extra";
 import path from "path";
 import os from "os";
+import * as fileAnalyzer from "../../utils/file-analyzer";
+
+vi.mock("../../utils/file-analyzer", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../utils/file-analyzer")
+  >("../../utils/file-analyzer");
+  return {
+    ...actual,
+    analyzeFile: vi.fn(actual.analyzeFile),
+  };
+});
 
 vi.mock("fs", async () => {
   const actual = await vi.importActual<typeof import("fs")>("fs");
@@ -20,7 +31,124 @@ vi.mock("fs", async () => {
   };
 });
 
-import { scanTarget } from "./scanner";
+import { classifyAnalysis, scanTarget } from "./scanner";
+
+describe("classifyAnalysis", () => {
+  const analysis = {
+    path: "example.ts",
+    content: "",
+    totalLines: 10,
+    rawTokens: 0,
+    finalTokens: 0,
+    isCompacted: false,
+    exceedsLimit: false,
+    excessTokens: 0,
+  };
+
+  it("classifies a small file over the read limit as an optimization opportunity", () => {
+    const finding = classifyAnalysis(
+      {
+        ...analysis,
+        rawTokens: 400,
+        finalTokens: 1200,
+        exceedsLimit: true,
+        excessTokens: 200,
+      },
+      500,
+      1000,
+    );
+
+    expect(finding).toMatchObject({
+      status: "Optimization opportunity",
+      excessTokens: 200,
+      action: "optimization recommended",
+    });
+  });
+
+  it("classifies a compacted file within the read limit as an optimization opportunity", () => {
+    const finding = classifyAnalysis(
+      {
+        ...analysis,
+        rawTokens: 1200,
+        finalTokens: 900,
+        isCompacted: true,
+      },
+      500,
+      1000,
+    );
+
+    expect(finding).toMatchObject({
+      status: "Optimization opportunity",
+      rawTokens: 1200,
+      finalTokens: 900,
+      excessTokens: 0,
+      isCompacted: true,
+      action: "optimization recommended",
+    });
+  });
+
+  it("classifies a successfully compacted file still over the limit as a violation", () => {
+    const finding = classifyAnalysis(
+      {
+        ...analysis,
+        rawTokens: 1200,
+        finalTokens: 1100,
+        isCompacted: true,
+        exceedsLimit: true,
+        excessTokens: 100,
+      },
+      500,
+      1000,
+    );
+
+    expect(finding).toMatchObject({
+      status: "Violation",
+      excessTokens: 100,
+      action: "refactoring required",
+    });
+  });
+
+  it("classifies an un-compacted large file as analysis incomplete", () => {
+    const finding = classifyAnalysis(
+      {
+        ...analysis,
+        rawTokens: 1200,
+        finalTokens: 1200,
+        compactionWarning: "Node limit reached",
+        exceedsLimit: true,
+        excessTokens: 200,
+      },
+      500,
+      1000,
+    );
+
+    expect(finding).toMatchObject({
+      status: "Analysis incomplete",
+      excessTokens: 200,
+      compactionWarning: "Node limit reached",
+    });
+  });
+
+  it("uses the fallback warning when compaction is incomplete without a warning", () => {
+    const finding = classifyAnalysis(
+      {
+        ...analysis,
+        rawTokens: 1200,
+        finalTokens: 1200,
+        exceedsLimit: true,
+        excessTokens: 200,
+      },
+      500,
+      1000,
+    );
+
+    expect(finding).toMatchObject({
+      status: "Analysis incomplete",
+      compactionWarning:
+        "Compaction could not be completed; manual review required.",
+    });
+  });
+});
 
 describe("scanTarget", () => {
   let tempDir: string;
@@ -44,7 +172,7 @@ describe("scanTarget", () => {
     const result = await scanTarget("small.txt");
 
     expect(result.scannedCount).toBe(1);
-    expect(result.violations.length).toBe(0);
+    expect(result.findings.length).toBe(0);
     expect(result.errors.length).toBe(0);
   });
 
@@ -54,22 +182,35 @@ describe("scanTarget", () => {
     const result = await scanTarget("empty-dir");
 
     expect(result.scannedCount).toBe(0);
-    expect(result.violations.length).toBe(0);
+    expect(result.findings.length).toBe(0);
     expect(result.errors.length).toBe(0);
   });
 
-  it("classifies file exceeding read token limit as violation", async () => {
+  it("classifies a compacted file that remains above the read token limit as violation", async () => {
     const hugeContent = "word ".repeat(2000);
     await fs.writeFile("large.txt", hugeContent);
+    const file = path.resolve("large.txt");
+
+    vi.spyOn(fileAnalyzer, "analyzeFile").mockResolvedValue({
+      path: file,
+      content: "compacted content",
+      totalLines: 1,
+      rawTokens: 2000,
+      finalTokens: 1200,
+      isCompacted: true,
+      exceedsLimit: true,
+      excessTokens: 200,
+    });
 
     const result = await scanTarget("large.txt");
 
     expect(result.scannedCount).toBe(1);
-    expect(result.violations.length).toBe(1);
-    expect(result.violations[0].path).toBe("large.txt");
-    expect(result.violations[0].action).toBe("refactoring required");
-    expect(result.violations[0].finalTokens).toBeGreaterThan(1000);
-    expect(result.violations[0].excessTokens).toBeGreaterThan(0);
+    expect(result.findings.length).toBe(1);
+    expect(result.findings[0].path).toBe("large.txt");
+    expect(result.findings[0].status).toBe("Violation");
+    expect(result.findings[0].action).toBe("refactoring required");
+    expect(result.findings[0].finalTokens).toBeGreaterThan(1000);
+    expect(result.findings[0].excessTokens).toBeGreaterThan(0);
   });
 
   it("skips binary and ignored files during directory scan without error", async () => {
@@ -78,10 +219,23 @@ describe("scanTarget", () => {
     await fs.writeFile(".spektaignore", "ignored.ts\n");
     await fs.writeFile("ignored.ts", "export const y = 2;");
 
+    vi.spyOn(fileAnalyzer, "analyzeFile").mockImplementation((filePath) =>
+      Promise.resolve({
+        path: filePath,
+        content: "",
+        totalLines: 1,
+        rawTokens: 50,
+        finalTokens: 50,
+        isCompacted: false,
+        exceedsLimit: false,
+        excessTokens: 0,
+      }),
+    );
+
     const result = await scanTarget(".");
 
     expect(result.scannedCount).toBe(1);
-    expect(result.violations.length).toBe(0);
+    expect(result.findings.length).toBe(0);
     expect(result.errors.length).toBe(0);
   });
 
@@ -114,10 +268,31 @@ describe("scanTarget", () => {
       },
     );
 
+    vi.spyOn(fileAnalyzer, "analyzeFile").mockImplementation((filePath) => {
+      if (filePath.endsWith("unreadable.ts")) {
+        return Promise.reject(
+          Object.assign(new Error("EACCES: permission denied"), {
+            code: "EACCES",
+          }),
+        );
+      }
+
+      return Promise.resolve({
+        path: filePath,
+        content: "",
+        totalLines: 1,
+        rawTokens: 50,
+        finalTokens: 50,
+        isCompacted: false,
+        exceedsLimit: false,
+        excessTokens: 0,
+      });
+    });
+
     const result = await scanTarget(".");
 
     expect(result.scannedCount).toBe(2);
-    expect(result.violations.length).toBe(0);
+    expect(result.findings.length).toBe(0);
     expect(result.errors.length).toBe(1);
     expect(result.errors[0].path).toBe("unreadable.ts");
     expect(result.errors[0].action).toBe("investigate file access");
@@ -152,7 +327,7 @@ describe("scanTarget", () => {
     const result = await scanTarget(".");
 
     expect(result.scannedCount).toBe(1);
-    expect(result.violations.some((v) => v.path.includes("node_modules"))).toBe(
+    expect(result.findings.some((v) => v.path.includes("node_modules"))).toBe(
       false,
     );
     expect(result.errors.some((e) => e.path.includes("node_modules"))).toBe(
@@ -171,7 +346,7 @@ describe("scanTarget", () => {
     const result = await scanTarget(".");
 
     expect(result.scannedCount).toBe(1);
-    expect(result.violations.some((v) => v.path.includes(".git"))).toBe(false);
+    expect(result.findings.some((v) => v.path.includes(".git"))).toBe(false);
     expect(result.errors.some((e) => e.path.includes(".git"))).toBe(false);
   });
 
@@ -203,10 +378,23 @@ describe("scanTarget", () => {
 
     await execa("git", ["add", ".gitignore", "src/index.ts"], { cwd: tempDir });
 
+    vi.spyOn(fileAnalyzer, "analyzeFile").mockImplementation((filePath) =>
+      Promise.resolve({
+        path: filePath,
+        content: "",
+        totalLines: 1,
+        rawTokens: 50,
+        finalTokens: 50,
+        isCompacted: false,
+        exceedsLimit: false,
+        excessTokens: 0,
+      }),
+    );
+
     const result = await scanTarget(".");
 
     expect(result.scannedCount).toBe(1);
-    expect(result.violations).toHaveLength(0);
+    expect(result.findings).toHaveLength(0);
     expect(result.errors).toHaveLength(0);
   });
 
@@ -234,10 +422,23 @@ describe("scanTarget", () => {
     await fs.mkdirp(srcDir);
     await fs.writeFile(path.join(srcDir, "app.ts"), "export const app = true;");
 
+    vi.spyOn(fileAnalyzer, "analyzeFile").mockImplementation((filePath) =>
+      Promise.resolve({
+        path: filePath,
+        content: "",
+        totalLines: 1,
+        rawTokens: 50,
+        finalTokens: 50,
+        isCompacted: false,
+        exceedsLimit: false,
+        excessTokens: 0,
+      }),
+    );
+
     const result = await scanTarget(".");
 
     expect(result.scannedCount).toBe(1);
-    expect(result.violations).toHaveLength(0);
+    expect(result.findings).toHaveLength(0);
     expect(result.errors).toHaveLength(0);
   });
 });

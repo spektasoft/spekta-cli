@@ -1,5 +1,6 @@
 import fs from "fs-extra";
 import path from "path";
+import { resolveCommandInput } from "../utils/cli-input";
 import { Logger } from "../utils/logger";
 import { validateParentDirForCreate } from "../utils/security";
 import { formatFileInPlace } from "../utils/format-utils";
@@ -43,27 +44,17 @@ export async function getWriteContent(
 }
 
 export async function runWrite(args?: string[]): Promise<void> {
-  const safeArgs = args || [];
-  if (safeArgs.length !== 1) {
-    Logger.error("Usage: spekta write <relative/path/to/newfile.ext>");
-    Logger.error("Content must be provided via stdin.");
-    process.exitCode = 1;
-    return;
-  }
-
-  const filePath = safeArgs[0];
+  const usageMessage =
+    "Usage: spekta write <relative/path/to/newfile.ext> [content]\n" +
+    "Content may be passed as an argument or provided via stdin.";
 
   try {
-    // Read content from stdin
-    let content = "";
-    for await (const chunk of process.stdin) {
-      content += chunk;
-    }
-    if (!content.trim()) {
-      throw new Error("No content provided via stdin.");
+    const resolved = await resolveCommandInput(args, usageMessage);
+    if (!resolved) {
+      return;
     }
 
-    const result = await getWriteContent(filePath, content);
+    const result = await getWriteContent(resolved.filePath, resolved.content);
     if (result.success) {
       Logger.info(result.message);
     } else {

@@ -63,14 +63,29 @@ export async function runDiagnostic(
       status: "Completed",
       target: scanResult.target,
       scannedCount: scanResult.scannedCount,
-      violationCount: scanResult.violations.length,
+      violationCount: scanResult.findings.filter(
+        (finding) => finding.status === "Violation",
+      ).length,
+      optimizationOpportunityCount: scanResult.findings.filter(
+        (finding) => finding.status === "Optimization opportunity",
+      ).length,
+      analysisIncompleteCount: scanResult.findings.filter(
+        (finding) => finding.status === "Analysis incomplete",
+      ).length,
       errorCount: scanResult.errors.length,
       reportPath: relativeReportPath,
     });
 
     process.stdout.write(terminalSummary + "\n");
 
-    if (scanResult.violations.length > 0 || scanResult.errors.length > 0) {
+    if (
+      scanResult.findings.some(
+        (finding) =>
+          finding.status === "Violation" ||
+          finding.status === "Analysis incomplete",
+      ) ||
+      scanResult.errors.length > 0
+    ) {
       process.exitCode = 1;
     } else {
       process.exitCode = 0;
