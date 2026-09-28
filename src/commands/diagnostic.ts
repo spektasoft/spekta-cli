@@ -73,7 +73,11 @@ export async function runDiagnostic(
     process.stdout.write(terminalSummary + "\n");
 
     if (
-      scanResult.findings.some((finding) => finding.status === "Violation") ||
+      scanResult.findings.some(
+        (finding) =>
+          finding.status === "Violation" ||
+          finding.status === "Analysis incomplete",
+      ) ||
       scanResult.errors.length > 0
     ) {
       process.exitCode = 1;
