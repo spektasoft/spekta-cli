@@ -62,12 +62,116 @@ describe("generateDiagnosticReport", () => {
     const report = generateDiagnosticReport(result, policy);
 
     expect(report.indexOf("src/a.ts")).toBeLessThan(report.indexOf("src/b.ts"));
+    expect(report).toContain("Status: Violation");
     expect(report).toContain("Final tokens: 1400");
     expect(report).toContain("Raw tokens: 1400");
     expect(report).toContain("Excess tokens: 400");
     expect(report).toContain("Compacted: false");
     expect(report).toContain("Action: refactoring required");
     expect(report).toContain("Compaction warning: Node limit reached");
+  });
+
+  it("renders optimization opportunity with status and recommended action", () => {
+    const result: ScanResult = {
+      target: "src",
+      scannedCount: 1,
+      findings: [
+        {
+          path: "src/opt.ts",
+          status: "Optimization opportunity",
+          rawTokens: 600,
+          finalTokens: 1100,
+          excessTokens: 100,
+          isCompacted: false,
+        },
+      ],
+      errors: [],
+    };
+
+    const report = generateDiagnosticReport(result, policy);
+
+    expect(report).toContain("### src/opt.ts");
+    expect(report).toContain("- Status: Optimization opportunity");
+    expect(report).toContain("- Action: optimization recommended");
+    expect(report).toContain("- Excess tokens: 100");
+  });
+
+  it("renders analysis incomplete preserving custom compaction warning", () => {
+    const result: ScanResult = {
+      target: "src",
+      scannedCount: 1,
+      findings: [
+        {
+          path: "src/incomplete.ts",
+          status: "Analysis incomplete",
+          rawTokens: 2000,
+          finalTokens: 2000,
+          excessTokens: 1000,
+          isCompacted: false,
+          compactionWarning: "AST parser crashed on syntax",
+        },
+      ],
+      errors: [],
+    };
+
+    const report = generateDiagnosticReport(result, policy);
+
+    expect(report).toContain("### src/incomplete.ts");
+    expect(report).toContain("- Status: Analysis incomplete");
+    expect(report).toContain(
+      "- Compaction warning: AST parser crashed on syntax",
+    );
+    expect(report).not.toContain("- Action:");
+  });
+
+  it("renders analysis incomplete with fallback compaction warning when none provided", () => {
+    const result: ScanResult = {
+      target: "src",
+      scannedCount: 1,
+      findings: [
+        {
+          path: "src/incomplete-fallback.ts",
+          status: "Analysis incomplete",
+          rawTokens: 1500,
+          finalTokens: 1500,
+          excessTokens: 500,
+          isCompacted: false,
+        },
+      ],
+      errors: [],
+    };
+
+    const report = generateDiagnosticReport(result, policy);
+
+    expect(report).toContain("### src/incomplete-fallback.ts");
+    expect(report).toContain("- Status: Analysis incomplete");
+    expect(report).toContain(
+      "- Compaction warning: Compaction could not be completed; manual review required.",
+    );
+  });
+
+  it("omits healthy findings and reports clean scan message", () => {
+    const result: ScanResult = {
+      target: "src",
+      scannedCount: 2,
+      findings: [
+        {
+          path: "src/healthy.ts",
+          status: "Healthy",
+          rawTokens: 300,
+          finalTokens: 300,
+          excessTokens: 0,
+          isCompacted: false,
+        },
+      ],
+      errors: [],
+    };
+
+    const report = generateDiagnosticReport(result, policy);
+
+    expect(report).toContain("No files exceed the read token limit.");
+    expect(report).not.toContain("### src/healthy.ts");
+    expect(report).not.toContain("Status: Healthy");
   });
 
   it("includes Errors section when errors exist, sorted independently", () => {

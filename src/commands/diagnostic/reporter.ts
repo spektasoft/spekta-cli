@@ -21,28 +21,46 @@ export function generateDiagnosticReport(
     "## Violations",
   ];
 
-  const violations = result.findings.filter(
-    (finding) => finding.status === "Violation",
+  const reportableFindings = result.findings.filter(
+    (finding) => finding.status !== "Healthy",
   );
 
-  if (violations.length === 0) {
+  if (reportableFindings.length === 0) {
     lines.push("No files exceed the read token limit.");
   } else {
-    const sortedViolations = [...violations].sort((a, b) =>
+    const sortedFindings = [...reportableFindings].sort((a, b) =>
       a.path.localeCompare(b.path),
     );
 
-    for (const v of sortedViolations) {
+    for (const f of sortedFindings) {
       lines.push("");
-      lines.push(`### ${v.path}`);
-      lines.push(`- Raw tokens: ${v.rawTokens}`);
-      lines.push(`- Final tokens: ${v.finalTokens}`);
-      lines.push(`- Excess tokens: ${v.excessTokens}`);
-      lines.push(`- Compacted: ${v.isCompacted}`);
-      if (v.compactionWarning) {
-        lines.push(`- Compaction warning: ${v.compactionWarning}`);
+      lines.push(`### ${f.path}`);
+      lines.push(`- Status: ${f.status}`);
+      lines.push(`- Raw tokens: ${f.rawTokens}`);
+      lines.push(`- Final tokens: ${f.finalTokens}`);
+      lines.push(`- Excess tokens: ${f.excessTokens}`);
+      lines.push(`- Compacted: ${f.isCompacted}`);
+
+      const warning =
+        f.compactionWarning ||
+        (f.status === "Analysis incomplete"
+          ? "Compaction could not be completed; manual review required."
+          : undefined);
+
+      if (warning) {
+        lines.push(`- Compaction warning: ${warning}`);
       }
-      lines.push(`- Action: ${v.action}`);
+
+      let action = f.action;
+      if (f.status === "Optimization opportunity") {
+        action = action ?? "optimization recommended";
+      } else if (f.status === "Violation") {
+        action = action ?? "refactoring required";
+      }
+
+      if (action) {
+        lines.push(`- Action: ${action}`);
+      }
     }
   }
 
