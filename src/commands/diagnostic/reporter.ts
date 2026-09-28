@@ -4,14 +4,26 @@ export function generateDiagnosticReport(
   result: ScanResult,
   policy: DiagnosticPolicy,
 ): string {
+  const violations = result.findings
+    .filter((finding) => finding.status === "Violation")
+    .sort((a, b) => a.path.localeCompare(b.path));
+
+  const optimizationOpportunities = result.findings
+    .filter((finding) => finding.status === "Optimization opportunity")
+    .sort((a, b) => a.path.localeCompare(b.path));
+
+  const analysisIncomplete = result.findings
+    .filter((finding) => finding.status === "Analysis incomplete")
+    .sort((a, b) => a.path.localeCompare(b.path));
+
   const lines: string[] = [
     "# Spekta Diagnostics",
     "",
     `Target: ${result.target}`,
     `Scanned: ${result.scannedCount}`,
-    `Violations: ${
-      result.findings.filter((finding) => finding.status === "Violation").length
-    }`,
+    `Violations: ${violations.length}`,
+    `Optimization opportunities: ${optimizationOpportunities.length}`,
+    `Analysis incomplete: ${analysisIncomplete.length}`,
     `Errors: ${result.errors.length}`,
     "",
     "## Policy",
@@ -21,18 +33,54 @@ export function generateDiagnosticReport(
     "## Violations",
   ];
 
-  const reportableFindings = result.findings.filter(
-    (finding) => finding.status !== "Healthy",
-  );
-
-  if (reportableFindings.length === 0) {
+  if (violations.length === 0) {
     lines.push("No files exceed the read token limit.");
   } else {
-    const sortedFindings = [...reportableFindings].sort((a, b) =>
-      a.path.localeCompare(b.path),
-    );
+    for (const f of violations) {
+      lines.push("");
+      lines.push(`### ${f.path}`);
+      lines.push(`- Status: ${f.status}`);
+      lines.push(`- Raw tokens: ${f.rawTokens}`);
+      lines.push(`- Final tokens: ${f.finalTokens}`);
+      lines.push(`- Excess tokens: ${f.excessTokens}`);
+      lines.push(`- Compacted: ${f.isCompacted}`);
 
-    for (const f of sortedFindings) {
+      if (f.compactionWarning) {
+        lines.push(`- Compaction warning: ${f.compactionWarning}`);
+      }
+
+      const action = f.action ?? "refactoring required";
+      lines.push(`- Action: ${action}`);
+    }
+  }
+
+  if (optimizationOpportunities.length > 0) {
+    lines.push("");
+    lines.push("## Optimization Opportunities");
+
+    for (const f of optimizationOpportunities) {
+      lines.push("");
+      lines.push(`### ${f.path}`);
+      lines.push(`- Status: ${f.status}`);
+      lines.push(`- Raw tokens: ${f.rawTokens}`);
+      lines.push(`- Final tokens: ${f.finalTokens}`);
+      lines.push(`- Excess tokens: ${f.excessTokens}`);
+      lines.push(`- Compacted: ${f.isCompacted}`);
+
+      if (f.compactionWarning) {
+        lines.push(`- Compaction warning: ${f.compactionWarning}`);
+      }
+
+      const action = f.action ?? "optimization recommended";
+      lines.push(`- Action: ${action}`);
+    }
+  }
+
+  if (analysisIncomplete.length > 0) {
+    lines.push("");
+    lines.push("## Analysis Incomplete");
+
+    for (const f of analysisIncomplete) {
       lines.push("");
       lines.push(`### ${f.path}`);
       lines.push(`- Status: ${f.status}`);
@@ -43,23 +91,11 @@ export function generateDiagnosticReport(
 
       const warning =
         f.compactionWarning ||
-        (f.status === "Analysis incomplete"
-          ? "Compaction could not be completed; manual review required."
-          : undefined);
+        "Compaction could not be completed; manual review required.";
+      lines.push(`- Compaction warning: ${warning}`);
 
-      if (warning) {
-        lines.push(`- Compaction warning: ${warning}`);
-      }
-
-      let action = f.action;
-      if (f.status === "Optimization opportunity") {
-        action = action ?? "optimization recommended";
-      } else if (f.status === "Violation") {
-        action = action ?? "refactoring required";
-      }
-
-      if (action) {
-        lines.push(`- Action: ${action}`);
+      if (f.action) {
+        lines.push(`- Action: ${f.action}`);
       }
     }
   }

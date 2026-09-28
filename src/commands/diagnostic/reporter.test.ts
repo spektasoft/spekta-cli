@@ -8,7 +8,7 @@ describe("generateDiagnosticReport", () => {
     compactThreshold: 500,
   };
 
-  it("renders a clean scan with zero violations and omits error section", () => {
+  it("renders a clean scan with zero violations and omits error, optimization, and incomplete sections", () => {
     const result: ScanResult = {
       target: ".",
       scannedCount: 15,
@@ -22,16 +22,21 @@ describe("generateDiagnosticReport", () => {
     expect(report).toContain("Target: .");
     expect(report).toContain("Scanned: 15");
     expect(report).toContain("Violations: 0");
+    expect(report).toContain("Optimization opportunities: 0");
+    expect(report).toContain("Analysis incomplete: 0");
     expect(report).toContain("Errors: 0");
     expect(report).toContain("## Policy");
     expect(report).toContain("- Read token limit: 1000");
     expect(report).toContain("- Compact threshold: 500");
-    expect(report).toContain("## Violations");
-    expect(report).toContain("No files exceed the read token limit.");
+    expect(report).toContain(
+      "## Violations\nNo files exceed the read token limit.",
+    );
+    expect(report).not.toContain("## Optimization Opportunities");
+    expect(report).not.toContain("## Analysis Incomplete");
     expect(report).not.toContain("## Errors");
   });
 
-  it("renders sorted violations with final tokens, excess tokens, and refactoring required", () => {
+  it("renders sorted violations under Violations section with refactoring required", () => {
     const result: ScanResult = {
       target: "src",
       scannedCount: 2,
@@ -61,6 +66,8 @@ describe("generateDiagnosticReport", () => {
 
     const report = generateDiagnosticReport(result, policy);
 
+    expect(report).toContain("## Violations");
+    expect(report).not.toContain("No files exceed the read token limit.");
     expect(report.indexOf("src/a.ts")).toBeLessThan(report.indexOf("src/b.ts"));
     expect(report).toContain("Status: Violation");
     expect(report).toContain("Final tokens: 1400");
@@ -69,9 +76,11 @@ describe("generateDiagnosticReport", () => {
     expect(report).toContain("Compacted: false");
     expect(report).toContain("Action: refactoring required");
     expect(report).toContain("Compaction warning: Node limit reached");
+    expect(report).not.toContain("## Optimization Opportunities");
+    expect(report).not.toContain("## Analysis Incomplete");
   });
 
-  it("renders optimization opportunity with status and recommended action", () => {
+  it("renders optimization opportunity under dedicated section", () => {
     const result: ScanResult = {
       target: "src",
       scannedCount: 1,
@@ -90,13 +99,20 @@ describe("generateDiagnosticReport", () => {
 
     const report = generateDiagnosticReport(result, policy);
 
+    expect(report).toContain("Optimization opportunities: 1");
+    expect(report).toContain("Analysis incomplete: 0");
+    expect(report).toContain(
+      "## Violations\nNo files exceed the read token limit.",
+    );
+    expect(report).toContain("## Optimization Opportunities");
     expect(report).toContain("### src/opt.ts");
     expect(report).toContain("- Status: Optimization opportunity");
     expect(report).toContain("- Action: optimization recommended");
     expect(report).toContain("- Excess tokens: 100");
+    expect(report).not.toContain("## Analysis Incomplete");
   });
 
-  it("renders analysis incomplete preserving custom compaction warning", () => {
+  it("renders analysis incomplete under dedicated section preserving custom compaction warning", () => {
     const result: ScanResult = {
       target: "src",
       scannedCount: 1,
@@ -116,12 +132,19 @@ describe("generateDiagnosticReport", () => {
 
     const report = generateDiagnosticReport(result, policy);
 
+    expect(report).toContain("Optimization opportunities: 0");
+    expect(report).toContain("Analysis incomplete: 1");
+    expect(report).toContain(
+      "## Violations\nNo files exceed the read token limit.",
+    );
+    expect(report).toContain("## Analysis Incomplete");
     expect(report).toContain("### src/incomplete.ts");
     expect(report).toContain("- Status: Analysis incomplete");
     expect(report).toContain(
       "- Compaction warning: AST parser crashed on syntax",
     );
     expect(report).not.toContain("- Action:");
+    expect(report).not.toContain("## Optimization Opportunities");
   });
 
   it("renders analysis incomplete with fallback compaction warning when none provided", () => {
@@ -143,6 +166,8 @@ describe("generateDiagnosticReport", () => {
 
     const report = generateDiagnosticReport(result, policy);
 
+    expect(report).toContain("Optimization opportunities: 0");
+    expect(report).toContain("Analysis incomplete: 1");
     expect(report).toContain("### src/incomplete-fallback.ts");
     expect(report).toContain("- Status: Analysis incomplete");
     expect(report).toContain(
