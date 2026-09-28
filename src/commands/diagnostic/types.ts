@@ -37,6 +37,8 @@ export interface DiagnosticSummary {
   target: string;
   scannedCount: number;
   violationCount: number;
+  optimizationOpportunityCount: number;
+  analysisIncompleteCount: number;
   errorCount: number;
   reportPath: string;
 }

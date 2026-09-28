@@ -123,6 +123,8 @@ describe("runDiagnostic", () => {
     expect(process.exitCode).toBe(1);
     const output = stdoutSpy.mock.calls.map((c) => c[0]).join("");
     expect(output).toContain("Violations: 1");
+    expect(output).toContain("Optimization opportunities: 0");
+    expect(output).toContain("Analysis incomplete: 0");
 
     const reportFiles = await fs.readdir(reportDir);
     const reportContent = await fs.readFile(
@@ -159,6 +161,8 @@ describe("runDiagnostic", () => {
     expect(process.exitCode).toBe(0);
     const output = stdoutSpy.mock.calls.map((c) => c[0]).join("");
     expect(output).toContain("Violations: 0");
+    expect(output).toContain("Optimization opportunities: 1");
+    expect(output).toContain("Analysis incomplete: 0");
 
     const reportFiles = await fs.readdir(reportDir);
     const reportContent = await fs.readFile(

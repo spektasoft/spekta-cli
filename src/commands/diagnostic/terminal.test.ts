@@ -9,6 +9,8 @@ describe("formatTerminalSummary", () => {
       target: "src",
       scannedCount: 20,
       violationCount: 1,
+      optimizationOpportunityCount: 2,
+      analysisIncompleteCount: 3,
       errorCount: 0,
       reportPath: "spekta/docs/diagnostics/202609152026.md",
     };
@@ -19,6 +21,8 @@ describe("formatTerminalSummary", () => {
     expect(output).toContain("Target: src");
     expect(output).toContain("Scanned: 20");
     expect(output).toContain("Violations: 1");
+    expect(output).toContain("Optimization opportunities: 2");
+    expect(output).toContain("Analysis incomplete: 3");
     expect(output).toContain("Errors: 0");
     expect(output).toContain("Report: spekta/docs/diagnostics/202609152026.md");
   });

@@ -66,6 +66,12 @@ export async function runDiagnostic(
       violationCount: scanResult.findings.filter(
         (finding) => finding.status === "Violation",
       ).length,
+      optimizationOpportunityCount: scanResult.findings.filter(
+        (finding) => finding.status === "Optimization opportunity",
+      ).length,
+      analysisIncompleteCount: scanResult.findings.filter(
+        (finding) => finding.status === "Analysis incomplete",
+      ).length,
       errorCount: scanResult.errors.length,
       reportPath: relativeReportPath,
     });
