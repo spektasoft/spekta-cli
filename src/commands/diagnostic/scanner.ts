@@ -153,7 +153,16 @@ export function classifyAnalysis(
   }
 
   if (analysis.isCompacted && analysis.finalTokens <= readTokenLimit) {
-    return undefined;
+    return {
+      path: "",
+      status: "Optimization opportunity",
+      rawTokens: analysis.rawTokens,
+      finalTokens: analysis.finalTokens,
+      excessTokens: 0,
+      isCompacted: analysis.isCompacted,
+      compactionWarning: analysis.compactionWarning,
+      action: "optimization recommended",
+    };
   }
 
   if (analysis.isCompacted && analysis.finalTokens > readTokenLimit) {

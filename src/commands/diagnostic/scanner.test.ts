@@ -65,7 +65,7 @@ describe("classifyAnalysis", () => {
     });
   });
 
-  it("returns no finding when compaction brings a large file within the limit", () => {
+  it("classifies a compacted file within the read limit as an optimization opportunity", () => {
     const finding = classifyAnalysis(
       {
         ...analysis,
@@ -77,7 +77,14 @@ describe("classifyAnalysis", () => {
       1000,
     );
 
-    expect(finding).toBeUndefined();
+    expect(finding).toMatchObject({
+      status: "Optimization opportunity",
+      rawTokens: 1200,
+      finalTokens: 900,
+      excessTokens: 0,
+      isCompacted: true,
+      action: "optimization recommended",
+    });
   });
 
   it("classifies a successfully compacted file still over the limit as a violation", () => {

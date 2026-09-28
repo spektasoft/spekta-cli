@@ -171,6 +171,44 @@ describe("runDiagnostic", () => {
     stdoutSpy.mockRestore();
   });
 
+  it("exits with 0 and reports optimization opportunity for compacted file within limit", async () => {
+    await fs.writeFile("compacted-opt.ts", "export const value = 1;");
+
+    vi.spyOn(fileAnalyzer, "analyzeFile").mockResolvedValue({
+      path: "compacted-opt.ts",
+      content: "",
+      totalLines: 1,
+      rawTokens: 1500,
+      finalTokens: 800,
+      isCompacted: true,
+      exceedsLimit: false,
+      excessTokens: 0,
+    });
+
+    const stdoutSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const reportDir = path.join(tempDir, "diagnostic-reports");
+
+    await runDiagnostic(["compacted-opt.ts"], {
+      outputDir: reportDir,
+    });
+
+    expect(process.exitCode).toBe(0);
+    const output = stdoutSpy.mock.calls.map((c) => c[0]).join("");
+    expect(output).toContain("Violations: 0");
+
+    const reportFiles = await fs.readdir(reportDir);
+    const reportContent = await fs.readFile(
+      path.join(reportDir, reportFiles[0]),
+      "utf-8",
+    );
+    expect(reportContent).toContain("Status: Optimization opportunity");
+    expect(reportContent).toContain("Action: optimization recommended");
+    expect(reportContent).toContain("- Compacted: true");
+    expect(reportContent).toContain("- Excess tokens: 0");
+
+    stdoutSpy.mockRestore();
+  });
+
   it("exits with 1 when scan contains analysis incomplete findings", async () => {
     await fs.writeFile("incomplete.ts", "export const data = 1;");
 
