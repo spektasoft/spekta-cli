@@ -35,7 +35,7 @@ vi.mock("execa", () => ({
 describe("formatKotlinFileInPlace", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    (clearGradleTaskCache as () => void)();
+    clearGradleTaskCache();
     vi.mocked(os.platform).mockReturnValue("linux");
     vi.mocked(execa).mockResolvedValue({
       exitCode: 0,
