@@ -5,6 +5,7 @@ vi.mock("execa", () => ({
 }));
 
 import { execa } from "execa";
+import { acceptedBranchRequests } from "./proxy-branch.test-fixtures";
 import {
   executeRtkCommand,
   isRtkAvailable,
@@ -45,6 +46,7 @@ describe("executeRtkCommand", () => {
   });
 
   it.each([
+    ...acceptedBranchRequests.map((args) => ({ args, expected: [...args] })),
     {
       args: ["status", "--porcelain=v2", "--", "-file"],
       expected: ["status", "--porcelain=v2", "--", "-file"],

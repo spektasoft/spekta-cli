@@ -10,6 +10,10 @@ import { TOOL_REGISTRY } from "../api/mcp-server/registry";
 import { redactSecrets } from "./proxy-secret-redaction";
 import { truncateOutput } from "./proxy-output";
 import { getTokenCount } from "../utils/read-utils";
+import {
+  acceptedBranchRequests,
+  rejectedBranchRequests,
+} from "./proxy-branch.test-fixtures";
 
 const missing = ["git", "rtk", "script"].filter(
   (binary) =>
@@ -22,6 +26,7 @@ if (missing.length && process.env.SPEKTA_REQUIRE_GIT_INTEGRATION === "1") {
 }
 const secret = "ghp_abcdefghijklmnopqrstuvwxyz";
 const realRequests: string[][] = [
+  ...acceptedBranchRequests,
   ["status"],
   ["status", "-s"],
   ["status", "--short"],
@@ -260,7 +265,10 @@ describe.skipIf(missing.length > 0)(
     it.each(realRequests.map((args) => ({ args })))(
       "preserves native Git meaning for $args in both adapters",
       async ({ args }) => {
-        const history = args[0] !== "status";
+        const history = ["log", "show", "diff"].includes(args[0]);
+        const before = ["diff", "branch"].includes(args[0])
+          ? snapshotRepository()
+          : undefined;
         // Independent reference from the user grammar, not from prepareRtkInvocation.
         const reference = await git([
           "--no-pager",
@@ -278,7 +286,6 @@ describe.skipIf(missing.length > 0)(
           .join("\n");
         const expected = redactSecrets(truncateOutput(raw).content);
         const original = [...args];
-        const before = args[0] === "diff" ? snapshotRepository() : undefined;
         const { cli, mcp } = await both(args);
         if (before !== undefined) expect(snapshotRepository()).toEqual(before);
         expect(mcp.isError).toBe(false);
@@ -760,6 +767,187 @@ describe.skipIf(missing.length > 0)(
         expect(snapshotRepository()).toEqual(before);
       }
     });
+
+    it("lists local and remote branches and filters patterns without creating refs", async () => {
+      await fixtureGit(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+      await fixtureGit([
+        "update-ref",
+        "refs/remotes/origin/topic",
+        "feature/topic",
+      ]);
+      await fixtureGit(["config", "branch.feature/topic.remote", "origin"]);
+      await fixtureGit([
+        "config",
+        "branch.feature/topic.merge",
+        "refs/heads/topic",
+      ]);
+      const before = snapshotRepository();
+      const local = await both(["branch"]);
+      expect(local.mcp.isError).toBe(false);
+      expect(local.mcp.content[0].text).toContain("main");
+      expect(local.mcp.content[0].text).toContain("feature/topic");
+      expect(local.mcp.content[0].text).not.toContain("origin/");
+      for (const flag of ["--all", "-a"]) {
+        const result = await both(["branch", flag]);
+        expect(result.mcp.isError).toBe(false);
+        expect(result.mcp.content[0].text).toContain("feature/topic");
+        expect(result.mcp.content[0].text).toContain("origin/main");
+      }
+      for (const flag of ["--remotes", "-r"]) {
+        const result = await both(["branch", flag]);
+        expect(result.mcp.isError).toBe(false);
+        expect(result.mcp.content[0].text).toContain("origin/topic");
+        expect(result.mcp.content[0].text).not.toContain("feature/topic");
+      }
+      for (const pattern of ["feature/*", "feature/to?ic", "feature/[t]opic"]) {
+        const result = await both(["branch", "--list", pattern]);
+        expect(result.mcp.isError).toBe(false);
+        expect(result.mcp.content[0].text).toContain("feature/topic");
+        expect(result.mcp.content[0].text).not.toContain("main");
+        expect(result.cli).toContain("feature/topic");
+      }
+      const multiple = await both(["branch", "-l", "--", "main", "feature/*"]);
+      expect(multiple.mcp.isError).toBe(false);
+      expect(multiple.mcp.content[0].text).toContain("main");
+      expect(multiple.mcp.content[0].text).toContain("feature/topic");
+      const remotePattern = await both([
+        "branch",
+        "-r",
+        "--list",
+        "origin/to*",
+      ]);
+      expect(remotePattern.mcp.isError).toBe(false);
+      expect(remotePattern.mcp.content[0].text).toContain("origin/topic");
+      expect(remotePattern.mcp.content[0].text).not.toContain("origin/main");
+      const unmatched = await both(["branch", "--list", "new-branch"]);
+      expect(unmatched.mcp.isError).toBe(false);
+      expect(unmatched.mcp.content[0].text).toBe("");
+      const nested = vi
+        .spyOn(process, "cwd")
+        .mockReturnValue(path.join(workspace, "nested"));
+      const nestedResult = await both(["branch", "--list", "feature/*"]);
+      expect(nestedResult.mcp.isError).toBe(false);
+      expect(nestedResult.mcp.content[0].text).toContain("feature/topic");
+      nested.mockReturnValue(workspace);
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("leaves refs, reflogs, and branch configuration unchanged for every rejection", async () => {
+      await fixtureGit(["update-ref", "refs/remotes/origin/main", "HEAD"]);
+      await fixtureGit(["config", "branch.feature/topic.remote", "origin"]);
+      await fixtureGit([
+        "config",
+        "branch.feature/topic.merge",
+        "refs/heads/main",
+      ]);
+      const before = snapshotRepository();
+      for (const [args, reason] of rejectedBranchRequests) {
+        process.exitCode = undefined;
+        const result = await both(args);
+        expect(result.mcp.isError).toBe(true);
+        expect(result.mcp.content[0].text).toMatch(reason);
+        expect(result.cli).toBe("");
+        expect(vi.mocked(console.error).mock.calls[0][0]).toBe(
+          result.mcp.content[0].text,
+        );
+        expect(process.exitCode).toBe(1);
+        expect(snapshotRepository()).toEqual(before);
+      }
+      for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"]) {
+        process.env[key] = workspace;
+        const result = await both(["branch", "--list", "*"]);
+        expect(result.mcp.isError).toBe(true);
+        expect(result.mcp.content[0].text).toMatch(/workspace override/i);
+        expect(snapshotRepository()).toEqual(before);
+        delete process.env[key];
+      }
+    }, 30000);
+
+    it("lists an unborn repository without creating branches and reports a nonrepository failure", async () => {
+      const unborn = path.join(fixture, "branch-unborn");
+      const outside = path.join(fixture, "branch-nonrepository");
+      fs.ensureDirSync(unborn);
+      fs.ensureDirSync(outside);
+      await execa("git", ["init", "--template=", "-b", "main"], {
+        cwd: unborn,
+      });
+      const cwd = vi.spyOn(process, "cwd").mockReturnValue(unborn);
+      const before = snapshotRepository(unborn);
+      for (const args of [
+        ["branch"],
+        ["branch", "--list"],
+        ["branch", "--list", "new-branch"],
+        ["branch", "--all"],
+        ["branch", "--remotes"],
+      ]) {
+        const result = await both(args);
+        expect(result.mcp.isError).toBe(false);
+        expect(result.mcp.content[0].text).toBe("");
+        expect(snapshotRepository(unborn)).toEqual(before);
+      }
+      cwd.mockReturnValue(outside);
+      const outsideBefore = snapshotRepository(outside);
+      const result = await both(["branch"]);
+      expect(result.mcp.isError).toBe(true);
+      expect(result.mcp.content[0].text).toMatch(/not a git repository/i);
+      expect(result.cli).toContain("FAILED: Exit");
+      expect(console.error).not.toHaveBeenCalled();
+      expect(snapshotRepository(outside)).toEqual(outsideBefore);
+    });
+
+    it("suppresses branch pagers in a terminal for environment and configuration controls", async () => {
+      const pager = sentinel("branch-pager");
+      await fixtureGit(["config", "core.pager", shellQuote(pager.program)]);
+      await fixtureGit(["config", "pager.branch", shellQuote(pager.program)]);
+      process.env.GIT_PAGER = shellQuote(pager.program);
+      process.env.PAGER = shellQuote(pager.program);
+      const controlEnv: NodeJS.ProcessEnv = { ...process.env, TERM: "xterm" };
+      delete controlEnv.GIT_PAGER;
+      delete controlEnv.PAGER;
+      const control = await execa(
+        "script",
+        ["-q", "-e", "-c", "git --paginate branch --list", "/dev/null"],
+        { cwd: workspace, reject: false, env: controlEnv },
+      );
+      expect(control.exitCode).toBe(0);
+      expect(fs.existsSync(pager.marker)).toBe(true);
+      fs.removeSync(pager.marker);
+      const before = snapshotRepository();
+      for (const args of [
+        ["branch"],
+        ["branch", "--list"],
+        ["branch", "-l", "feature/*"],
+        ["branch", "--all"],
+        ["branch", "--remotes"],
+        ["branch", "--verbose"],
+        ["branch", "-v", "-v"],
+        ["branch", "--list", "--", "feature/*"],
+      ]) {
+        const prepared = prepareRtkInvocation("git", args);
+        const command = ["rtk", ...prepared.args].map(shellQuote).join(" ");
+        for (const stripPagerEnv of [false, true]) {
+          const env: NodeJS.ProcessEnv = { ...prepared.env, TERM: "xterm" };
+          if (stripPagerEnv) {
+            delete env.GIT_PAGER;
+            delete env.PAGER;
+          }
+          const terminal = await execa(
+            "script",
+            ["-q", "-e", "-c", command, "/dev/null"],
+            { cwd: prepared.cwd, reject: false, env },
+          );
+          expect(terminal.exitCode).toBe(0);
+          expect(terminal.stdout).not.toContain("SENTINEL OUTPUT");
+          expect(fs.existsSync(pager.marker)).toBe(false);
+        }
+        const result = await both(args);
+        expect(result.mcp.isError).toBe(false);
+        expect(result.cli).not.toContain("SENTINEL OUTPUT");
+        expect(result.mcp.content[0].text).not.toContain("SENTINEL OUTPUT");
+        expect(fs.existsSync(pager.marker)).toBe(false);
+        expect(snapshotRepository()).toEqual(before);
+      }
+    }, 30000);
 
     it("suppresses configured pagers even with a terminal", async () => {
       const pager = sentinel("pager");

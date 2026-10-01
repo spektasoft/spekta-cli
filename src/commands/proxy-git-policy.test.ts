@@ -81,9 +81,28 @@ describe("shared Git classification", () => {
   });
   it("checks cwd even without explicit paths", () => {
     cwd.mockReturnValue(path.join(workspace, ".env"));
-    for (const name of ["status", "log", "show", "diff"]) {
+    for (const name of ["status", "log", "show", "diff", "branch"]) {
       expect(() => validateProxyRequest("git", [name])).toThrow(/restricted/i);
     }
+  });
+  it("treats branch patterns as name filters while still validating cwd", () => {
+    for (const pattern of [
+      "feature/*",
+      "feature/[t]opic",
+      ".env",
+      "../outside",
+      "escape",
+      "dangling",
+      "restricted-alias",
+    ]) {
+      expect(() =>
+        validateProxyRequest("git", ["branch", "--list", pattern]),
+      ).not.toThrow();
+    }
+    cwd.mockReturnValue(path.join(workspace, ".env"));
+    expect(() =>
+      validateProxyRequest("git", ["branch", "--list", "feature/*"]),
+    ).toThrow(/restricted/i);
   });
   it("resolves blob paths from repository root in a nested cwd", () => {
     const nested = path.join(workspace, "nested");

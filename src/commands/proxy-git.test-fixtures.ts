@@ -1,4 +1,10 @@
+import {
+  acceptedBranchRequests,
+  rejectedBranchRequests,
+} from "./proxy-branch.test-fixtures";
+
 export const acceptedGitRequests: string[][] = [
+  ...acceptedBranchRequests,
   ["status"],
   ["status", "-s"],
   ["status", "--short"],
@@ -57,6 +63,7 @@ export const acceptedGitRequests: string[][] = [
 ];
 
 export const rejectedGitRequests: Array<[string[], RegExp]> = [
+  ...rejectedBranchRequests,
   [[], /unsupported Git subcommand/i],
   [["Diff"], /unsupported Git subcommand/i],
   [["help"], /unsupported Git subcommand/i],

@@ -27,7 +27,18 @@ Commands without a native Spekta handler and MCP `spekta_shell` requests use one
 | `show`      | `--oneline`, `-p`, `--patch`, `--no-patch`, `--stat`, `--name-only`, `--name-status`                                                                                                                    | At most one revision, then optional `--` and paths; alternatively one `REV:path` blob selector                |
 | `diff`      | `--cached`, `--staged`, `-p`, `--patch`, `--no-patch`, `--stat`, `--name-only`, `--name-status`                                                                                                         | Zero, one, or two revisions; alternatively one complete two/three-dot range; optional `--` and relative paths |
 
-Put flags before revisions. `N` must be a positive decimal safe integer; use only one count option. Bundled/abbreviated options and other value spellings are unsupported. A second `--` is unsupported; ordinary filenames beginning with a dash are allowed after `--`.
+`branch` supports listing only: no arguments lists local branches. Supported flags are `--list`/`-l`, `--all`/`-a`, `--remotes`/`-r`, and `--verbose`/`-v`. All flags must precede patterns. Patterns require an explicit `--list` or `-l`, even with `--all` or `--remotes`; multiple patterns and one optional `--` before patterns are supported. Repeated supported flags are accepted, including `-v -v`; bundles such as `-vv` are unsupported. Patterns are branch-name filters, not filesystem paths. Empty patterns, control characters, and option-looking operands (including after `--`) are rejected. Bare names, start points, creation, deletion, rename, copy, tracking/upstream changes, description editing, and every unlisted option are rejected before execution. Supported listing never invokes a pager.
+
+```bash
+spekta git branch
+spekta git branch --all --verbose
+spekta git branch --list 'feature/*'
+spekta git branch -r -l -- 'origin/*'
+```
+
+Equivalent MCP requests use `command: "git"` with `args: ["branch"]`, `args: ["branch", "--all", "--verbose"]`, or `args: ["branch", "--list", "feature/*"]`. Pass patterns as individual strings; shell examples quote glob patterns to prevent shell expansion.
+
+Put flags before revisions. `N` must be a positive decimal safe integer; use only one count option. Bundled/abbreviated options and other value spellings are unsupported. A second `--` is unsupported; ordinary filenames beginning with a dash are allowed after `--` for status/log/show/diff paths.
 
 Revisions support `HEAD`, hexadecimal IDs, conservative ASCII named refs such as `main`, `feature/topic`, and `refs/heads/main`, and ancestry suffixes such as `HEAD~2` and `HEAD^`. Log also accepts two/three-dot ranges such as `main..HEAD`, `main...HEAD`, `..HEAD`, and `HEAD..`; both endpoints cannot be empty. Reflog, search, exclusion, dereference, and other revision forms are unsupported. Revisions are never checked as filesystem paths; an internal separator prevents Git from treating an unknown revision as a filename.
 

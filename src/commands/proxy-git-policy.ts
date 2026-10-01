@@ -160,14 +160,68 @@ function validateBlobSelector(selector: string): void {
   validateProxyPathOperand(path.relative(process.cwd(), target) || ".");
 }
 
+const BRANCH_FLAGS = new Set([
+  "--list",
+  "-l",
+  "--all",
+  "-a",
+  "--remotes",
+  "-r",
+  "--verbose",
+  "-v",
+]);
+
+function validateBranchListing(args: string[]): void {
+  let index = 1;
+  let explicitListing = false;
+  while (
+    index < args.length &&
+    args[index] !== "--" &&
+    args[index].startsWith("-")
+  ) {
+    const option = args[index];
+    if (!BRANCH_FLAGS.has(option)) fail(`unsupported option '${option}'.`);
+    if (option === "--list" || option === "-l") explicitListing = true;
+    index += 1;
+  }
+  if (args.filter((arg) => arg === "--").length > 1)
+    fail("multiple Git branch separators are unsupported.");
+  if (args[index] === "--") {
+    if (!explicitListing)
+      fail(
+        "Git branch separator requires explicit listing with '--list' or '-l'.",
+      );
+    index += 1;
+  }
+  const patterns = args.slice(index);
+  if (patterns.length > 0 && !explicitListing)
+    fail("Git branch patterns require explicit listing with '--list' or '-l'.");
+  for (const pattern of patterns) {
+    if (pattern.startsWith("-")) fail(`unsupported option '${pattern}'.`);
+    if (
+      pattern === "" ||
+      [...pattern].some((character) => {
+        const code = character.charCodeAt(0);
+        return code <= 0x1f || code === 0x7f;
+      })
+    )
+      fail("invalid Git branch pattern.");
+  }
+}
+
 export function validateGitProxyRequest(args: string[]): void {
   const subcommand = args[0];
-  if (!["status", "log", "show", "diff"].includes(subcommand)) {
+  if (!["status", "log", "show", "diff", "branch"].includes(subcommand)) {
     fail(`unsupported Git subcommand '${subcommand ?? ""}'.`);
   }
   for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"]) {
     if (process.env[key] !== undefined)
       fail(`unsupported Git workspace override '${key}'.`);
+  }
+  if (subcommand === "branch") {
+    validateBranchListing(args);
+    validateProxyPathOperand(".");
+    return;
   }
   const allowed =
     subcommand === "status"

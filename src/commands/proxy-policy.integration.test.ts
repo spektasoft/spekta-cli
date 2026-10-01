@@ -152,7 +152,7 @@ describe("CLI and MCP proxy parity", () => {
         command: "git",
         args,
       });
-      const history = args[0] !== "status";
+      const history = ["log", "show", "diff"].includes(args[0]);
       const expected = [
         "proxy",
         "git",
@@ -192,7 +192,7 @@ describe("CLI and MCP proxy parity", () => {
     },
   );
 
-  it.each(["status", "log", "show", "diff"])(
+  it.each(["status", "log", "show", "diff", "branch"])(
     "condenses and redacts %s output in both adapters",
     async (subcommand) => {
       vi.mocked(execa).mockResolvedValue({
@@ -214,7 +214,7 @@ describe("CLI and MCP proxy parity", () => {
     },
   );
 
-  it.each(["status", "log", "show", "diff"])(
+  it.each(["status", "log", "show", "diff", "branch"])(
     "fails closed for filesystem errors in %s",
     async (subcommand) => {
       vi.spyOn(fs, "realpathSync").mockImplementation(() => {
@@ -227,7 +227,7 @@ describe("CLI and MCP proxy parity", () => {
     },
   );
 
-  it.each(["status", "log", "show", "diff"])(
+  it.each(["status", "log", "show", "diff", "branch"])(
     "preserves nonzero/missing RTK behavior for %s",
     async (subcommand) => {
       vi.mocked(execa).mockResolvedValue({
@@ -268,7 +268,7 @@ describe("CLI and MCP proxy parity", () => {
     "rejects ambient %s through both adapters",
     async (key) => {
       process.env[key] = "override";
-      for (const subcommand of ["status", "diff"]) {
+      for (const subcommand of ["status", "diff", "branch"]) {
         await expectRejected("git", [subcommand], /workspace override/i);
       }
     },
@@ -276,8 +276,34 @@ describe("CLI and MCP proxy parity", () => {
 
   it("rejects restricted cwd without path operands through both adapters", async () => {
     vi.spyOn(process, "cwd").mockReturnValue(path.join(workspace, ".env"));
-    for (const subcommand of ["status", "log", "show", "diff"])
+    for (const subcommand of ["status", "log", "show", "diff", "branch"])
       await expectRejected("git", [subcommand], /restricted/i);
+  });
+
+  it.each(["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"])(
+    "rejects ambient %s for explicit branch listing, including empty values",
+    async (key) => {
+      for (const value of ["", "override"]) {
+        process.env[key] = value;
+        await expectRejected(
+          "git",
+          ["branch", "--list", "feature/*"],
+          /workspace override/i,
+        );
+      }
+    },
+  );
+
+  it("propagates branch subprocess launch failures through both adapters", async () => {
+    const failure = Object.assign(new Error("permission denied"), {
+      code: "EACCES",
+    });
+    vi.mocked(execa).mockRejectedValue(failure);
+    await expect(runRtkProxy("git", ["branch"])).rejects.toBe(failure);
+    await expect(
+      TOOL_REGISTRY.spekta_shell.handler({ command: "git", args: ["branch"] }),
+    ).rejects.toBe(failure);
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it("rejects missing blob root through both adapters", async () => {
