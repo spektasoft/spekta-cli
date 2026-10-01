@@ -117,6 +117,49 @@ function getPathArguments(args: string[]): string[] {
   return [...new Set(pathArguments)];
 }
 
+export function validateProxyPathOperand(operand: string): void {
+  if (
+    operand === "" ||
+    Array.from(operand).some(
+      (character) =>
+        character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+    )
+  ) {
+    throw new Error("Execution refused: invalid Git path operand.");
+  }
+  if (isWindowsAbsolutePath(operand) || path.isAbsolute(operand)) {
+    throw new Error(
+      "Access Denied: Git path resolves outside the project directory.",
+    );
+  }
+  if (/[\\:*?[\]]/.test(operand) || operand.startsWith("~/")) {
+    throw new Error("Execution refused: unsupported Git path syntax.");
+  }
+
+  validateCommandArguments([`./${operand}`]);
+  let ancestor = path.resolve(process.cwd(), operand);
+  while (true) {
+    try {
+      fs.lstatSync(ancestor);
+      break;
+    } catch (error: unknown) {
+      const code =
+        typeof error === "object" && error !== null && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : "";
+      if (code !== "ENOENT") throw error;
+      const parent = path.dirname(ancestor);
+      if (parent === ancestor) throw error;
+      ancestor = parent;
+    }
+  }
+  // lstat sees dangling links that existsSync deliberately hides.
+  fs.realpathSync(ancestor);
+  validateCommandArguments([
+    `./${path.relative(process.cwd(), ancestor) || "."}`,
+  ]);
+}
+
 export function validateCommandArguments(args: string[]): void {
   const pathArguments = getPathArguments(args);
 

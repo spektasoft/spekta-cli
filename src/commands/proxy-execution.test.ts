@@ -29,7 +29,7 @@ describe("executeRtkCommand", () => {
     expect(execa).toHaveBeenCalledTimes(1);
     expect(execa).toHaveBeenCalledWith(
       "rtk",
-      ["git", "status"],
+      ["proxy", "git", "--no-pager", "--literal-pathspecs", "status"],
       expect.objectContaining({
         reject: false,
         env: expect.objectContaining({
@@ -38,6 +38,115 @@ describe("executeRtkCommand", () => {
         }) as Record<string, unknown>,
       }),
     );
+  });
+
+  it.each([
+    {
+      args: ["status", "--porcelain=v2", "--", "-file"],
+      expected: ["status", "--porcelain=v2", "--", "-file"],
+    },
+    {
+      args: ["log", "-p", "HEAD~1..HEAD"],
+      expected: [
+        "log",
+        "--no-ext-diff",
+        "--no-textconv",
+        "-p",
+        "HEAD~1..HEAD",
+        "--",
+      ],
+    },
+    {
+      args: ["show"],
+      expected: ["show", "--no-ext-diff", "--no-textconv", "--"],
+    },
+    {
+      args: ["show", "HEAD:file.txt"],
+      expected: [
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "HEAD:file.txt",
+        "--",
+      ],
+    },
+    {
+      args: ["show", "--stat", "HEAD", "--", "file.txt"],
+      expected: [
+        "show",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--stat",
+        "HEAD",
+        "--",
+        "file.txt",
+      ],
+    },
+  ])("preserves tokens and controls $args", async ({ args, expected }) => {
+    vi.mocked(execa).mockResolvedValueOnce({
+      stdout: "safe",
+      stderr: "",
+      exitCode: 0,
+    } as never);
+    const original = [...args];
+    const oldGitPager = process.env.GIT_PAGER;
+    const oldPager = process.env.PAGER;
+    process.env.GIT_PAGER = "sentinel";
+    process.env.PAGER = "sentinel";
+    try {
+      await executeRtkCommand("git", args);
+      expect(args).toEqual(original);
+      expect(execa).toHaveBeenCalledWith(
+        "rtk",
+        ["proxy", "git", "--no-pager", "--literal-pathspecs", ...expected],
+        expect.objectContaining({
+          reject: false,
+          cwd: process.cwd(),
+          env: expect.objectContaining({
+            GIT_PAGER: "cat",
+            PAGER: "cat",
+            NO_COLOR: "1",
+            TERM: "dumb",
+          }) as Record<string, unknown>,
+        }),
+      );
+      expect(process.env.GIT_PAGER).toBe("sentinel");
+      expect(process.env.PAGER).toBe("sentinel");
+    } finally {
+      if (oldGitPager === undefined) delete process.env.GIT_PAGER;
+      else process.env.GIT_PAGER = oldGitPager;
+      if (oldPager === undefined) delete process.env.PAGER;
+      else process.env.PAGER = oldPager;
+    }
+  });
+
+  it("preserves the existing non-Git RTK route", async () => {
+    vi.mocked(execa).mockResolvedValueOnce({
+      stdout: "listing",
+      stderr: "",
+      exitCode: 0,
+    } as never);
+    await executeRtkCommand("ls", ["src"]);
+    expect(execa).toHaveBeenCalledWith(
+      "rtk",
+      ["ls", "src"],
+      expect.objectContaining({ reject: false }),
+    );
+    expect(execa).toHaveBeenCalledWith("rtk", ["ls", "src"], {
+      reject: false,
+      env: expect.objectContaining({ NO_COLOR: "1", TERM: "dumb" }) as Record<
+        string,
+        unknown
+      >,
+    });
+  });
+
+  it("propagates unexpected subprocess launch failures", async () => {
+    const failure = Object.assign(new Error("permission denied"), {
+      code: "EACCES",
+    });
+    vi.mocked(execa).mockRejectedValueOnce(failure);
+    await expect(executeRtkCommand("git", ["show"])).rejects.toBe(failure);
   });
 
   it("reports a missing RTK executable separately from command failure", async () => {

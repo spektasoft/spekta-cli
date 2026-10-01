@@ -3,6 +3,7 @@ import path from "path";
 import { validateCommandArguments } from "./proxy-path-security";
 import { redactSecrets } from "./proxy-secret-redaction";
 import { truncateOutput } from "./proxy-output";
+import { validateGitProxyRequest } from "./proxy-git-policy";
 
 export function validateProxyRequest(command: string, args: string[]): void {
   if (
@@ -11,6 +12,10 @@ export function validateProxyRequest(command: string, args: string[]): void {
     )
   ) {
     throw new Error("Execution refused: unsupported option '--spekta-force'.");
+  }
+  if (command === "git") {
+    validateGitProxyRequest(args);
+    return;
   }
   if (command !== "ls") {
     throw new Error(`Execution refused: unsupported command '${command}'.`);

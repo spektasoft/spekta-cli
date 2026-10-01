@@ -11,18 +11,52 @@ export type RtkExecutionResult =
       exitCode: number;
     };
 
+export function prepareRtkInvocation(
+  command: string,
+  args: string[],
+): {
+  args: string[];
+  env: NodeJS.ProcessEnv;
+  cwd?: string;
+} {
+  const controlledGit =
+    command === "git" && ["status", "log", "show"].includes(args[0]);
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    NO_COLOR: "1",
+    TERM: "dumb",
+  };
+  if (!controlledGit) return { args: [command, ...args], env };
+
+  env.GIT_PAGER = "cat";
+  env.PAGER = "cat";
+  const history = args[0] !== "status";
+  return {
+    args: [
+      "proxy",
+      "git",
+      "--no-pager",
+      "--literal-pathspecs",
+      args[0],
+      ...(history ? ["--no-ext-diff", "--no-textconv"] : []),
+      ...args.slice(1),
+      ...(history && !args.includes("--") ? ["--"] : []),
+    ],
+    env,
+    cwd: process.cwd(),
+  };
+}
+
 export async function executeRtkCommand(
   command: string,
   args: string[],
 ): Promise<RtkExecutionResult> {
+  const invocation = prepareRtkInvocation(command, args);
   try {
-    const result = await execa("rtk", [command, ...args], {
+    const result = await execa("rtk", invocation.args, {
       reject: false,
-      env: {
-        ...process.env,
-        NO_COLOR: "1",
-        TERM: "dumb",
-      },
+      env: invocation.env,
+      ...(invocation.cwd === undefined ? {} : { cwd: invocation.cwd }),
     });
 
     return {
