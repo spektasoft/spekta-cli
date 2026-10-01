@@ -4,12 +4,11 @@ import { getGrepContent } from "../../commands/grep-search";
 import { getReadContent } from "../../commands/read";
 import { executeSafeReplace } from "../../commands/replace";
 import { getWriteContent } from "../../commands/write";
+import { redactSecrets, truncateOutput } from "../../commands/proxy";
 import {
-  isCommandSafe,
-  redactSecrets,
-  truncateOutput,
-  validateCommandArguments,
-} from "../../commands/proxy";
+  formatProxyFailure,
+  validateProxyRequest,
+} from "../../commands/proxy-policy";
 import { executeRtkCommand } from "../../commands/proxy-execution";
 import { ToolDefinition } from "../../core/config";
 import { parseFilePathWithRange } from "../../utils/read-utils";
@@ -124,19 +123,14 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
       };
       const cleanArgs = args ?? [];
 
-      if (!isCommandSafe(command, cleanArgs)) {
+      try {
+        validateProxyRequest(command, cleanArgs);
+      } catch (error: unknown) {
         return {
           isError: true,
-          content: [
-            {
-              type: "text",
-              text: `Execution refused: '${command}' is not on the read-only allow-list.`,
-            },
-          ],
+          content: [{ type: "text", text: formatProxyFailure(error) }],
         };
       }
-
-      validateCommandArguments(cleanArgs);
       const result = await executeRtkCommand(command, cleanArgs);
 
       if (!result.available) {

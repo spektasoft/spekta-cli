@@ -22,7 +22,8 @@ function isPathLikeArgument(argument: string): boolean {
     argument.startsWith("/") ||
     argument.includes("/") ||
     argument.includes("\\") ||
-    isWindowsAbsolutePath(argument)
+    isWindowsAbsolutePath(argument) ||
+    !argument.startsWith("-")
   );
 }
 
@@ -30,7 +31,11 @@ function isInsideProjectLexically(targetPath: string): boolean {
   const absolutePath = path.resolve(process.cwd(), targetPath);
   const relativePath = path.relative(process.cwd(), absolutePath);
 
-  return !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
+  return (
+    relativePath !== ".." &&
+    !relativePath.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativePath)
+  );
 }
 
 function isInsideProjectCanonical(targetPath: string): boolean {
@@ -41,7 +46,11 @@ function isInsideProjectCanonical(targetPath: string): boolean {
     const realPath = fs.realpathSync(absolutePath);
     const relativePath = path.relative(projectRoot, realPath);
 
-    return !relativePath.startsWith("..") && !path.isAbsolute(relativePath);
+    return (
+      relativePath !== ".." &&
+      !relativePath.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relativePath)
+    );
   }
 
   let currentPath = path.dirname(absolutePath);
@@ -57,7 +66,9 @@ function isInsideProjectCanonical(targetPath: string): boolean {
   const relativeAncestor = path.relative(projectRoot, realAncestor);
 
   return (
-    !relativeAncestor.startsWith("..") && !path.isAbsolute(relativeAncestor)
+    relativeAncestor !== ".." &&
+    !relativeAncestor.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relativeAncestor)
   );
 }
 
@@ -133,6 +144,16 @@ export function validateCommandArguments(args: string[]): void {
     if (!isInsideProjectCanonical(argument)) {
       throw new Error(
         `Access Denied: command argument '${argument}' resolves outside the project directory.`,
+      );
+    }
+
+    const absolutePath = path.resolve(process.cwd(), argument);
+    if (
+      fs.existsSync(absolutePath) &&
+      targetsRestrictedFile(fs.realpathSync(absolutePath))
+    ) {
+      throw new Error(
+        `Access Denied: command argument '${argument}' targets a restricted file or path.`,
       );
     }
   }

@@ -76,8 +76,8 @@ describe("TOOL_REGISTRY", () => {
       command: { description: "command to run" },
       args: { description: "command arguments" },
     });
-    const parsed = schema.parse({ command: "git", args: ["status"] });
-    expect(parsed).toEqual({ command: "git", args: ["status"] });
+    const parsed = schema.parse({ command: "ls", args: [] });
+    expect(parsed).toEqual({ command: "ls", args: [] });
 
     vi.mocked(executeRtkCommand).mockResolvedValueOnce({
       available: true,
@@ -86,9 +86,9 @@ describe("TOOL_REGISTRY", () => {
       exitCode: 0,
     });
 
-    const result = await tool.handler({ command: "git", args: ["status"] });
+    const result = await tool.handler({ command: "ls", args: [] });
 
-    expect(executeRtkCommand).toHaveBeenCalledWith("git", ["status"]);
+    expect(executeRtkCommand).toHaveBeenCalledWith("ls", []);
     expect(result).toEqual({
       isError: false,
       content: [{ type: "text", text: "nothing to commit" }],

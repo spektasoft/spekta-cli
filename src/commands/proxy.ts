@@ -1,31 +1,25 @@
 import { executeRtkCommand } from "./proxy-execution";
-import { authorizeProxyCommand } from "./proxy-authorization";
+import { formatProxyFailure, validateProxyRequest } from "./proxy-policy";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
-import { validateCommandArguments } from "./proxy-security";
 
 export { isRtkAvailable } from "./proxy-execution";
 
 export { formatProxyOutput, truncateOutput } from "./proxy-output";
 
-export {
-  isCommandSafe,
-  redactSecrets,
-  validateCommandArguments,
-} from "./proxy-security";
+export { redactSecrets, validateCommandArguments } from "./proxy-security";
 
 export async function runRtkProxy(
   command: string,
   rawArgs: string[],
 ): Promise<void> {
-  const cleanArgs = await authorizeProxyCommand(command, rawArgs);
-
-  if (cleanArgs === null) {
+  try {
+    validateProxyRequest(command, rawArgs);
+  } catch (error: unknown) {
+    console.error(formatProxyFailure(error));
+    process.exitCode = 1;
     return;
   }
-
-  validateCommandArguments(cleanArgs);
-
-  const result = await executeRtkCommand(command, cleanArgs);
+  const result = await executeRtkCommand(command, rawArgs);
 
   if (!result.available) {
     console.log(

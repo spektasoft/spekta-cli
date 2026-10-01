@@ -45,17 +45,17 @@ describe("RTK execution", () => {
 
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    await runRtkProxy("git", ["status"]);
+    await runRtkProxy("ls", []);
 
     expect(mockExeca).toHaveBeenCalledTimes(1);
     expect(mockExeca).toHaveBeenCalledWith(
       "rtk",
-      ["git", "status"],
+      ["ls"],
       expect.objectContaining({
         reject: false,
       }),
     );
-    expect(log).toHaveBeenCalledWith(expect.stringContaining("### spekta git"));
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("### spekta ls"));
   });
 
   it("does not throw on a non-zero RTK command exit", async () => {
@@ -68,17 +68,13 @@ describe("RTK execution", () => {
 
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    await expect(runRtkProxy("git", ["status"])).resolves.toBeUndefined();
+    await expect(runRtkProxy("ls", [])).resolves.toBeUndefined();
 
     expect(log).toHaveBeenCalledWith(
       expect.stringContaining("[FAILED: Exit 2]"),
     );
     expect(mockExeca).toHaveBeenCalledTimes(1);
-    expect(mockExeca).toHaveBeenCalledWith(
-      "rtk",
-      ["git", "status"],
-      expect.any(Object),
-    );
+    expect(mockExeca).toHaveBeenCalledWith("rtk", ["ls"], expect.any(Object));
   });
 
   it("prints an advisory instead of executing missing RTK", async () => {
@@ -88,16 +84,12 @@ describe("RTK execution", () => {
 
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    await runRtkProxy("git", ["status"]);
+    await runRtkProxy("ls", []);
 
     expect(log).toHaveBeenCalledWith(
       expect.stringContaining("rtk unavailable"),
     );
     expect(mockExeca).toHaveBeenCalledTimes(1);
-    expect(mockExeca).toHaveBeenCalledWith(
-      "rtk",
-      ["git", "status"],
-      expect.any(Object),
-    );
+    expect(mockExeca).toHaveBeenCalledWith("rtk", ["ls"], expect.any(Object));
   });
 });
