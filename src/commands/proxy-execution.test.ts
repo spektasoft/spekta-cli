@@ -5,7 +5,11 @@ vi.mock("execa", () => ({
 }));
 
 import { execa } from "execa";
-import { executeRtkCommand, isRtkAvailable } from "./proxy-execution";
+import {
+  executeRtkCommand,
+  isRtkAvailable,
+  prepareRtkInvocation,
+} from "./proxy-execution";
 
 describe("executeRtkCommand", () => {
   beforeEach(() => {
@@ -82,6 +86,27 @@ describe("executeRtkCommand", () => {
         "file.txt",
       ],
     },
+    ...[
+      ["diff"],
+      ["diff", "--cached"],
+      ["diff", "--staged", "HEAD"],
+      ["diff", "--stat", "HEAD~1", "HEAD"],
+      ["diff", "HEAD~1..HEAD"],
+      ["diff", "HEAD~1...HEAD"],
+      ["diff", "--", "space name", "-file"],
+      ["diff", "--cached", "HEAD", "--", "file.txt"],
+      ["diff", "--"],
+    ].map((args) => ({
+      args,
+      expected: [
+        "diff",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--submodule=short",
+        ...args.slice(1),
+        ...(args.includes("--") ? [] : ["--"]),
+      ],
+    })),
   ])("preserves tokens and controls $args", async ({ args, expected }) => {
     vi.mocked(execa).mockResolvedValueOnce({
       stdout: "safe",
@@ -98,7 +123,14 @@ describe("executeRtkCommand", () => {
       expect(args).toEqual(original);
       expect(execa).toHaveBeenCalledWith(
         "rtk",
-        ["proxy", "git", "--no-pager", "--literal-pathspecs", ...expected],
+        [
+          "proxy",
+          "git",
+          "--no-pager",
+          "--literal-pathspecs",
+          ...(args[0] === "diff" ? ["-c", "diff.autoRefreshIndex=false"] : []),
+          ...expected,
+        ],
         expect.objectContaining({
           reject: false,
           cwd: process.cwd(),
@@ -117,6 +149,27 @@ describe("executeRtkCommand", () => {
       else process.env.GIT_PAGER = oldGitPager;
       if (oldPager === undefined) delete process.env.PAGER;
       else process.env.PAGER = oldPager;
+    }
+  });
+
+  it("disables optional locks only in the diff child environment", () => {
+    const saved = process.env.GIT_OPTIONAL_LOCKS;
+    process.env.GIT_OPTIONAL_LOCKS = "1";
+    try {
+      expect(prepareRtkInvocation("git", ["diff"]).env.GIT_OPTIONAL_LOCKS).toBe(
+        "0",
+      );
+      expect(
+        prepareRtkInvocation("git", ["diff", "--cached"]).env
+          .GIT_OPTIONAL_LOCKS,
+      ).toBe("0");
+      expect(
+        prepareRtkInvocation("git", ["status"]).env.GIT_OPTIONAL_LOCKS,
+      ).toBe("1");
+      expect(process.env.GIT_OPTIONAL_LOCKS).toBe("1");
+    } finally {
+      if (saved === undefined) delete process.env.GIT_OPTIONAL_LOCKS;
+      else process.env.GIT_OPTIONAL_LOCKS = saved;
     }
   });
 

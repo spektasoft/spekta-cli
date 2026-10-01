@@ -20,7 +20,7 @@ export function prepareRtkInvocation(
   cwd?: string;
 } {
   const controlledGit =
-    command === "git" && ["status", "log", "show"].includes(args[0]);
+    command === "git" && ["status", "log", "show", "diff"].includes(args[0]);
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     NO_COLOR: "1",
@@ -30,6 +30,7 @@ export function prepareRtkInvocation(
 
   env.GIT_PAGER = "cat";
   env.PAGER = "cat";
+  if (args[0] === "diff") env.GIT_OPTIONAL_LOCKS = "0";
   const history = args[0] !== "status";
   return {
     args: [
@@ -37,8 +38,10 @@ export function prepareRtkInvocation(
       "git",
       "--no-pager",
       "--literal-pathspecs",
+      ...(args[0] === "diff" ? ["-c", "diff.autoRefreshIndex=false"] : []),
       args[0],
       ...(history ? ["--no-ext-diff", "--no-textconv"] : []),
+      ...(args[0] === "diff" ? ["--submodule=short"] : []),
       ...args.slice(1),
       ...(history && !args.includes("--") ? ["--"] : []),
     ],

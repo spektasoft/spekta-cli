@@ -158,8 +158,10 @@ describe("CLI and MCP proxy parity", () => {
         "git",
         "--no-pager",
         "--literal-pathspecs",
+        ...(args[0] === "diff" ? ["-c", "diff.autoRefreshIndex=false"] : []),
         args[0],
         ...(history ? ["--no-ext-diff", "--no-textconv"] : []),
+        ...(args[0] === "diff" ? ["--submodule=short"] : []),
         ...args.slice(1),
         ...(history && !args.includes("--") ? ["--"] : []),
       ];
@@ -190,7 +192,7 @@ describe("CLI and MCP proxy parity", () => {
     },
   );
 
-  it.each(["status", "log", "show"])(
+  it.each(["status", "log", "show", "diff"])(
     "condenses and redacts %s output in both adapters",
     async (subcommand) => {
       vi.mocked(execa).mockResolvedValue({
@@ -212,7 +214,7 @@ describe("CLI and MCP proxy parity", () => {
     },
   );
 
-  it.each(["status", "log", "show"])(
+  it.each(["status", "log", "show", "diff"])(
     "fails closed for filesystem errors in %s",
     async (subcommand) => {
       vi.spyOn(fs, "realpathSync").mockImplementation(() => {
@@ -225,7 +227,7 @@ describe("CLI and MCP proxy parity", () => {
     },
   );
 
-  it.each(["status", "log", "show"])(
+  it.each(["status", "log", "show", "diff"])(
     "preserves nonzero/missing RTK behavior for %s",
     async (subcommand) => {
       vi.mocked(execa).mockResolvedValue({
@@ -266,13 +268,15 @@ describe("CLI and MCP proxy parity", () => {
     "rejects ambient %s through both adapters",
     async (key) => {
       process.env[key] = "override";
-      await expectRejected("git", ["status"], /workspace override/i);
+      for (const subcommand of ["status", "diff"]) {
+        await expectRejected("git", [subcommand], /workspace override/i);
+      }
     },
   );
 
   it("rejects restricted cwd without path operands through both adapters", async () => {
     vi.spyOn(process, "cwd").mockReturnValue(path.join(workspace, ".env"));
-    for (const subcommand of ["status", "log", "show"])
+    for (const subcommand of ["status", "log", "show", "diff"])
       await expectRejected("git", [subcommand], /restricted/i);
   });
 
@@ -331,7 +335,7 @@ describe("CLI and MCP proxy parity", () => {
         [secret, [], /unsupported command/i],
         ["/bin/ls", [], /unsupported command/i],
         ["ls; touch marker", [], /unsupported command/i],
-        ["git", ["diff"], /unsupported Git subcommand/i],
+        ["git", ["reset"], /unsupported Git subcommand/i],
         ["vitest", [], /unsupported command/i],
         ["jest", [], /unsupported command/i],
         ["pytest", [], /unsupported command/i],

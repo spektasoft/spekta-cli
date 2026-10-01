@@ -75,6 +75,33 @@ const realRequests: string[][] = [
   ["show", "--no-patch", "HEAD:space name"],
   ["show", "HEAD:-file"],
   ["show", "HEAD^:gone.txt"],
+  ["diff"],
+  ["diff", "--"],
+  ["diff", "-p"],
+  ["diff", "--patch"],
+  ["diff", "--no-patch"],
+  ["diff", "--stat"],
+  ["diff", "--name-only"],
+  ["diff", "--name-status"],
+  ["diff", "--cached"],
+  ["diff", "--staged"],
+  ["diff", "--cached", "HEAD"],
+  ["diff", "--staged", "--stat", "HEAD~1"],
+  ["diff", "HEAD"],
+  ["diff", "HEAD~1^0"],
+  ["diff", "feature/topic"],
+  ["diff", "refs/heads/main"],
+  ["diff", "HEAD~1", "HEAD"],
+  ["diff", "HEAD~1..HEAD"],
+  ["diff", "HEAD~1...HEAD"],
+  ["diff", "--", "space name", "-file"],
+  ["diff", "--cached", "--name-status", "--", "other.txt"],
+  ["diff", "--staged", "HEAD~1", "--", "other.txt"],
+  ["diff", "--stat", "HEAD", "--", "file.txt"],
+  ["diff", "HEAD~1", "HEAD", "--", "file.txt"],
+  ["diff", "HEAD~1..HEAD", "--", "gone.txt"],
+  ["diff", "HEAD~1...HEAD", "--", "file.txt"],
+  ["diff", "--", "missing.txt"],
 ];
 let fixture: string;
 let workspace: string;
@@ -123,6 +150,27 @@ function sentinel(name: string): { program: string; marker: string } {
   );
   fs.chmodSync(program, 0o755);
   return { program, marker };
+}
+function snapshotRepository(directory = workspace): Record<string, string> {
+  const entries: Record<string, string> = {};
+  function visit(relative: string): void {
+    const absolute = path.join(directory, relative);
+    const stat = fs.lstatSync(absolute);
+    const metadata = `${stat.mode}:${stat.mtimeMs}`;
+    if (stat.isSymbolicLink()) {
+      entries[relative] = `link:${metadata}:${fs.readlinkSync(absolute)}`;
+    } else if (stat.isDirectory()) {
+      entries[relative] = `directory:${metadata}`;
+      for (const name of fs.readdirSync(absolute).sort()) {
+        visit(relative ? path.join(relative, name) : name);
+      }
+    } else {
+      entries[relative] =
+        `file:${metadata}:${fs.readFileSync(absolute).toString("base64")}`;
+    }
+  }
+  visit("");
+  return entries;
 }
 async function both(args: string[]) {
   vi.mocked(console.log).mockClear();
@@ -187,7 +235,16 @@ describe.skipIf(missing.length > 0)(
       fs.removeSync(path.join(workspace, "gone.txt"));
       await fixtureGit(["add", "-A"]);
       await fixtureGit(["commit", "-m", "SECOND_COMMIT"]);
+      fs.writeFileSync(path.join(workspace, "other.txt"), "staged-copy\n");
+      await fixtureGit(["add", "--", "other.txt"]);
       fs.writeFileSync(path.join(workspace, "file.txt"), "working-copy\n");
+      fs.writeFileSync(path.join(workspace, "other.txt"), "unstaged-copy\n");
+      fs.writeFileSync(path.join(workspace, "space name"), "spaces-working\n");
+      fs.writeFileSync(path.join(workspace, "-file"), "dash-working\n");
+      fs.writeFileSync(
+        path.join(workspace, "nested/file.txt"),
+        "nested-working\n",
+      );
       fs.writeFileSync(path.join(workspace, "untracked.txt"), "untracked\n");
     }, 30000);
     afterEach(() => {
@@ -208,8 +265,10 @@ describe.skipIf(missing.length > 0)(
         const reference = await git([
           "--no-pager",
           "--literal-pathspecs",
+          ...(args[0] === "diff" ? ["-c", "diff.autoRefreshIndex=false"] : []),
           args[0],
           ...(history ? ["--no-ext-diff", "--no-textconv"] : []),
+          ...(args[0] === "diff" ? ["--submodule=short"] : []),
           ...args.slice(1),
           ...(history && !args.includes("--") ? ["--"] : []),
         ]);
@@ -219,7 +278,9 @@ describe.skipIf(missing.length > 0)(
           .join("\n");
         const expected = redactSecrets(truncateOutput(raw).content);
         const original = [...args];
+        const before = args[0] === "diff" ? snapshotRepository() : undefined;
         const { cli, mcp } = await both(args);
+        if (before !== undefined) expect(snapshotRepository()).toEqual(before);
         expect(mcp.isError).toBe(false);
         expect(mcp.content[0].text).toBe(expected);
         expect(cli).toContain(expected);
@@ -230,6 +291,149 @@ describe.skipIf(missing.length > 0)(
         expect(console.error).not.toHaveBeenCalled();
       },
     );
+
+    it("keeps working-tree, staged, and HEAD diff meanings distinct", async () => {
+      const before = snapshotRepository();
+      const working = await both(["diff", "--", "other.txt"]);
+      expect(working.mcp.isError).toBe(false);
+      expect(working.mcp.content[0].text).toContain("-staged-copy");
+      expect(working.mcp.content[0].text).toContain("+unstaged-copy");
+      const staged = await both(["diff", "--cached", "--", "other.txt"]);
+      expect(staged.mcp.isError).toBe(false);
+      expect(staged.mcp.content[0].text).toContain("-other-v2");
+      expect(staged.mcp.content[0].text).toContain("+staged-copy");
+      expect(staged.mcp.content[0].text).not.toContain("unstaged-copy");
+      const alias = await both(["diff", "--staged", "--", "other.txt"]);
+      expect(alias.mcp.content[0].text).toBe(staged.mcp.content[0].text);
+      const head = await both(["diff", "HEAD", "--", "other.txt"]);
+      expect(head.mcp.isError).toBe(false);
+      expect(head.mcp.content[0].text).toContain("-other-v2");
+      expect(head.mcp.content[0].text).toContain("+unstaged-copy");
+      expect(head.mcp.content[0].text).not.toContain("+staged-copy");
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("compares revisions and preserves hashes and historical missing paths", async () => {
+      const hash = await fixtureGit(["rev-parse", "HEAD"]);
+      const before = snapshotRepository();
+      const pair = await both(["diff", "HEAD~1", hash, "--", "file.txt"]);
+      expect(pair.mcp.isError).toBe(false);
+      expect(pair.mcp.content[0].text).toContain("-safe-v1");
+      expect(pair.mcp.content[0].text).toContain("+safe-v2");
+      expect(pair.mcp.content[0].text).not.toContain("working-copy");
+      const range = await both(["diff", `HEAD~1..${hash}`, "--", "file.txt"]);
+      expect(range.mcp.content[0].text).toBe(pair.mcp.content[0].text);
+      const deleted = await both(["diff", "HEAD~1", hash, "--", "gone.txt"]);
+      expect(deleted.mcp.isError).toBe(false);
+      expect(deleted.mcp.content[0].text).toContain("-historical-only");
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("distinguishes two-dot endpoints from three-dot merge-base comparison", async () => {
+      await fixtureGit([
+        "restore",
+        "--source=HEAD",
+        "--staged",
+        "--worktree",
+        "--",
+        ".",
+      ]);
+      await fixtureGit(["checkout", "-b", "left", "HEAD~1"]);
+      fs.writeFileSync(path.join(workspace, "left.txt"), "left-only\n");
+      await fixtureGit(["add", "--", "left.txt"]);
+      await fixtureGit(["commit", "-m", "LEFT_COMMIT", "--", "left.txt"]);
+      await fixtureGit(["checkout", "-b", "right", "main"]);
+      fs.writeFileSync(path.join(workspace, "right.txt"), "right-only\n");
+      await fixtureGit(["add", "--", "right.txt"]);
+      await fixtureGit(["commit", "-m", "RIGHT_COMMIT", "--", "right.txt"]);
+      const before = snapshotRepository();
+      const endpoints = await both(["diff", "--name-status", "left..right"]);
+      expect(endpoints.mcp.isError).toBe(false);
+      expect(endpoints.mcp.content[0].text).toContain("left.txt");
+      expect(endpoints.mcp.content[0].text).toContain("right.txt");
+      const mergeBase = await both(["diff", "--name-status", "left...right"]);
+      expect(mergeBase.mcp.isError).toBe(false);
+      expect(mergeBase.mcp.content[0].text).not.toContain("left.txt");
+      expect(mergeBase.mcp.content[0].text).toContain("right.txt");
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("uses cwd-relative paths in a nested workspace", async () => {
+      vi.spyOn(process, "cwd").mockReturnValue(path.join(workspace, "nested"));
+      const before = snapshotRepository();
+      const allowed = await both(["diff", "--", "file.txt"]);
+      expect(allowed.mcp.isError).toBe(false);
+      expect(allowed.mcp.content[0].text).toContain("-nested-blob");
+      expect(allowed.mcp.content[0].text).toContain("+nested-working");
+      expect(allowed.mcp.content[0].text).not.toContain("working-copy");
+      const rejected = await both(["diff", "--", "../file.txt"]);
+      expect(rejected.mcp.isError).toBe(true);
+      expect(rejected.mcp.content[0].text).toMatch(
+        /outside the project directory/i,
+      );
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("supports staged inspection before the first commit", async () => {
+      const unborn = path.join(fixture, "unborn");
+      fs.ensureDirSync(unborn);
+      const init = await execa("git", ["init", "--template=", "-b", "main"], {
+        cwd: unborn,
+      });
+      expect(init.exitCode).toBe(0);
+      fs.writeFileSync(path.join(unborn, "new.txt"), "first-staged\n");
+      await execa("git", ["add", "--", "new.txt"], { cwd: unborn });
+      vi.spyOn(process, "cwd").mockReturnValue(unborn);
+      const before = snapshotRepository(unborn);
+      for (const selector of ["--cached", "--staged"]) {
+        const result = await both(["diff", selector, "--", "new.txt"]);
+        expect(result.mcp.isError).toBe(false);
+        expect(result.mcp.content[0].text).toContain("+first-staged");
+      }
+      expect(snapshotRepository(unborn)).toEqual(before);
+    });
+
+    it("keeps index metadata unchanged for stat-only worktree changes", async () => {
+      await fixtureGit(["config", "diff.autoRefreshIndex", "true"]);
+      const unchanged = path.join(workspace, "filename-only");
+      const stat = fs.statSync(unchanged);
+      fs.utimesSync(unchanged, stat.atime, new Date(stat.mtimeMs + 10000));
+      const before = snapshotRepository();
+      const result = await both(["diff", "--", "filename-only"]);
+      expect(result.mcp.isError).toBe(false);
+      expect(result.mcp.content[0].text).toBe("");
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("condenses and redacts real working-tree and staged patch output", async () => {
+      for (const staged of [false, true]) {
+        const name = staged ? "large-staged.txt" : "large-working.txt";
+        fs.writeFileSync(path.join(workspace, name), "baseline\n");
+        await fixtureGit(["add", "--", name]);
+        await fixtureGit(["commit", "-m", "LARGE_BASE", "--", name]);
+        fs.writeFileSync(
+          path.join(workspace, name),
+          `${secret}\n${"large diff line\n".repeat(3000)}`,
+        );
+        if (staged) await fixtureGit(["add", "--", name]);
+        const before = snapshotRepository();
+        const result = await both([
+          "diff",
+          ...(staged ? ["--cached"] : []),
+          "--",
+          name,
+        ]);
+        expect(result.mcp.isError).toBe(false);
+        expect(result.cli).toContain("OUTPUT TRUNCATED");
+        expect(result.mcp.content[0].text).toContain("lines collapsed");
+        expect(result.cli).not.toContain(secret);
+        expect(result.mcp.content[0].text).not.toContain(secret);
+        expect(getTokenCount(result.mcp.content[0].text)).toBeLessThanOrEqual(
+          1000,
+        );
+        expect(snapshotRepository()).toEqual(before);
+      }
+    });
 
     it("selects requested commits and files rather than unrelated ones", async () => {
       const limited = await both(["log", "--oneline", "-n", "1"]);
@@ -291,6 +495,11 @@ describe.skipIf(missing.length > 0)(
       ["show", "HEAD:missing.txt"],
       ["show", "filename-only"],
       ["log", "filename-only"],
+      ["diff", "missing-revision"],
+      ["diff", "filename-only"],
+      ["diff", "--cached", "missing-revision"],
+      ["diff", "missing-revision..HEAD"],
+      ["diff", "HEAD~1...missing-revision"],
     ])("preserves Git failures for %j", async (...args) => {
       const { cli, mcp } = await both(args);
       expect(mcp.isError).toBe(true);
@@ -298,15 +507,18 @@ describe.skipIf(missing.length > 0)(
       expect(mcp.content[0].text).not.toContain("ambiguous-filename");
     });
 
-    it("preserves a non-repository execution failure", async () => {
-      const empty = path.join(fixture, "not-a-repository");
-      fs.ensureDirSync(empty);
-      vi.spyOn(process, "cwd").mockReturnValue(empty);
-      const { cli, mcp } = await both(["log"]);
-      expect(mcp.isError).toBe(true);
-      expect(cli).toContain("FAILED: Exit");
-      expect(mcp.content[0].text).toMatch(/not a git repository/i);
-    });
+    it.each(["log", "diff"])(
+      "preserves a non-repository failure for %s",
+      async (subcommand) => {
+        const empty = path.join(fixture, "not-a-repository");
+        fs.ensureDirSync(empty);
+        vi.spyOn(process, "cwd").mockReturnValue(empty);
+        const { cli, mcp } = await both([subcommand]);
+        expect(mcp.isError).toBe(true);
+        expect(cli).toContain("FAILED: Exit");
+        expect(mcp.content[0].text).toMatch(/not a git repository/i);
+      },
+    );
 
     it("does not invoke configured external diff or textconv programs", async () => {
       const diff = sentinel("diff");
@@ -368,6 +580,187 @@ describe.skipIf(missing.length > 0)(
       }
     });
 
+    it("forces short submodule output despite configured inline diff helpers", async () => {
+      const child = path.join(workspace, "child");
+      const helper = sentinel("submodule-diff");
+      fs.ensureDirSync(child);
+      async function childGit(args: string[]) {
+        const result = await execa("git", args, { cwd: child, reject: false });
+        if (result.exitCode !== 0) throw new Error(result.stderr);
+        return result.stdout;
+      }
+      await childGit(["init", "--template=", "-b", "main"]);
+      await childGit(["config", "user.name", "Proxy Fixture"]);
+      await childGit(["config", "user.email", "fixture@example.invalid"]);
+      await childGit(["config", "commit.gpgsign", "false"]);
+      fs.writeFileSync(path.join(child, "child.txt"), "child-v1\n");
+      await childGit(["add", "--", "child.txt"]);
+      await childGit(["commit", "-m", "CHILD_INITIAL"]);
+      const first = await childGit(["rev-parse", "HEAD"]);
+      fs.writeFileSync(
+        path.join(workspace, ".gitmodules"),
+        '[submodule "child"]\n\tpath = child\n\turl = ./child\n',
+      );
+      await fixtureGit(["add", "--", ".gitmodules"]);
+      await fixtureGit([
+        "update-index",
+        "--add",
+        "--cacheinfo",
+        `160000,${first},child`,
+      ]);
+      await fixtureGit([
+        "commit",
+        "-m",
+        "CHILD_LINK",
+        "--",
+        ".gitmodules",
+        "child",
+      ]);
+      fs.writeFileSync(path.join(child, "child.txt"), "child-v2\n");
+      await childGit(["add", "--", "child.txt"]);
+      await childGit(["commit", "-m", "CHILD_SECOND"]);
+      fs.writeFileSync(path.join(child, "child.txt"), "child-working\n");
+      await childGit(["config", "diff.external", shellQuote(helper.program)]);
+      await fixtureGit(["config", "diff.submodule", "diff"]);
+      const control = await git([
+        "--no-pager",
+        "diff",
+        "--submodule=diff",
+        "--ext-diff",
+        "--",
+        "child",
+      ]);
+      expect(control.exitCode).toBe(0);
+      expect(fs.existsSync(helper.marker)).toBe(true);
+      fs.removeSync(helper.marker);
+      const before = snapshotRepository();
+      const result = await both(["diff", "--", "child"]);
+      expect(result.mcp.isError).toBe(false);
+      expect(result.mcp.content[0].text).toContain("Subproject commit");
+      expect(result.mcp.content[0].text).not.toContain("child-working");
+      expect(result.cli).not.toContain("SENTINEL OUTPUT");
+      expect(fs.existsSync(helper.marker)).toBe(false);
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("suppresses every configured diff helper across supported diff forms", async () => {
+      const external = sentinel("diff-global");
+      const driver = sentinel("diff-driver");
+      const ambient = sentinel("diff-ambient");
+      const conversion = sentinel("diff-conversion");
+      fs.writeFileSync(path.join(workspace, "file.txt"), "sentinel-staged\n");
+      await fixtureGit(["add", "--", "file.txt"]);
+      fs.writeFileSync(path.join(workspace, "file.txt"), "sentinel-working\n");
+      await fixtureGit([
+        "config",
+        "diff.external",
+        shellQuote(external.program),
+      ]);
+      const globalControl = await git([
+        "--no-pager",
+        "diff",
+        "--ext-diff",
+        "--no-textconv",
+        "--",
+        "file.txt",
+      ]);
+      expect(globalControl.exitCode).toBe(0);
+      expect(fs.existsSync(external.marker)).toBe(true);
+      fs.removeSync(external.marker);
+      await fixtureGit(["config", "--unset", "diff.external"]);
+
+      fs.writeFileSync(
+        path.join(workspace, ".gitattributes"),
+        "file.txt diff=inspect\n",
+      );
+      await fixtureGit([
+        "config",
+        "diff.inspect.command",
+        shellQuote(driver.program),
+      ]);
+      const driverControl = await git([
+        "--no-pager",
+        "diff",
+        "--ext-diff",
+        "--no-textconv",
+        "--",
+        "file.txt",
+      ]);
+      expect(driverControl.exitCode).toBe(0);
+      expect(fs.existsSync(driver.marker)).toBe(true);
+      fs.removeSync(driver.marker);
+      await fixtureGit(["config", "--unset", "diff.inspect.command"]);
+
+      process.env.GIT_EXTERNAL_DIFF = shellQuote(ambient.program);
+      const ambientControl = await git([
+        "--no-pager",
+        "diff",
+        "--ext-diff",
+        "--no-textconv",
+        "--",
+        "file.txt",
+      ]);
+      expect(ambientControl.exitCode).toBe(0);
+      expect(fs.existsSync(ambient.marker)).toBe(true);
+      fs.removeSync(ambient.marker);
+      delete process.env.GIT_EXTERNAL_DIFF;
+
+      await fixtureGit([
+        "config",
+        "diff.inspect.textconv",
+        shellQuote(conversion.program),
+      ]);
+      const conversionControl = await git([
+        "--no-pager",
+        "diff",
+        "--no-ext-diff",
+        "--textconv",
+        "--",
+        "file.txt",
+      ]);
+      expect(conversionControl.exitCode).toBe(0);
+      expect(fs.existsSync(conversion.marker)).toBe(true);
+      fs.removeSync(conversion.marker);
+
+      await fixtureGit([
+        "config",
+        "diff.external",
+        shellQuote(external.program),
+      ]);
+      await fixtureGit([
+        "config",
+        "diff.inspect.command",
+        shellQuote(driver.program),
+      ]);
+      process.env.GIT_EXTERNAL_DIFF = shellQuote(ambient.program);
+      const before = snapshotRepository();
+      for (const args of [
+        ["diff"],
+        ["diff", "--cached"],
+        ["diff", "--staged", "HEAD"],
+        ["diff", "HEAD"],
+        ["diff", "HEAD~1", "HEAD"],
+        ["diff", "HEAD~1..HEAD"],
+        ["diff", "HEAD~1...HEAD"],
+        ["diff", "-p", "--", "file.txt"],
+        ["diff", "--patch", "--", "file.txt"],
+        ["diff", "--no-patch"],
+        ["diff", "--stat"],
+        ["diff", "--name-only"],
+        ["diff", "--name-status"],
+        ["diff", "--cached", "--stat", "--", "file.txt"],
+      ]) {
+        const result = await both(args);
+        expect(result.mcp.isError).toBe(false);
+        for (const helper of [external, driver, ambient, conversion]) {
+          expect(fs.existsSync(helper.marker)).toBe(false);
+        }
+        expect(result.cli).not.toContain("SENTINEL OUTPUT");
+        expect(result.mcp.content[0].text).not.toContain("SENTINEL OUTPUT");
+        expect(snapshotRepository()).toEqual(before);
+      }
+    });
+
     it("suppresses configured pagers even with a terminal", async () => {
       const pager = sentinel("pager");
       for (const key of [
@@ -375,6 +768,7 @@ describe.skipIf(missing.length > 0)(
         "pager.status",
         "pager.log",
         "pager.show",
+        "pager.diff",
       ]) {
         await fixtureGit(["config", key, shellQuote(pager.program)]);
       }
@@ -397,6 +791,11 @@ describe.skipIf(missing.length > 0)(
         ["log", "--oneline", "-n", "1"],
         ["show", "--stat"],
         ["show", "HEAD:file.txt"],
+        ["diff"],
+        ["diff", "--cached"],
+        ["diff", "--staged", "HEAD"],
+        ["diff", "HEAD~1", "HEAD"],
+        ["diff", "HEAD~1...HEAD"],
       ]) {
         const prepared = prepareRtkInvocation("git", args);
         // Exercise the exact argv/env used by the common executor with a PTY.
@@ -416,12 +815,29 @@ describe.skipIf(missing.length > 0)(
         expect(adapters.mcp.isError).toBe(false);
         expect(fs.existsSync(pager.marker)).toBe(false);
       }
+      const diffPagerEnv: NodeJS.ProcessEnv = { ...process.env, TERM: "xterm" };
+      delete diffPagerEnv.GIT_PAGER;
+      delete diffPagerEnv.PAGER;
+      const diffPagerControl = await execa(
+        "script",
+        [
+          "-q",
+          "-e",
+          "-c",
+          "git --paginate diff --cached -- other.txt",
+          "/dev/null",
+        ],
+        { cwd: workspace, reject: false, env: diffPagerEnv },
+      );
+      expect(diffPagerControl.exitCode).toBe(0);
+      expect(fs.existsSync(pager.marker)).toBe(true);
+      fs.removeSync(pager.marker);
       // Also prove --no-pager defeats config when environment suppression is absent.
       const prepared = prepareRtkInvocation("git", [
-        "log",
-        "--oneline",
-        "-n",
-        "1",
+        "diff",
+        "--cached",
+        "--",
+        "other.txt",
       ]);
       const configEnv: NodeJS.ProcessEnv = { ...prepared.env, TERM: "xterm" };
       delete configEnv.GIT_PAGER;

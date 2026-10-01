@@ -23,6 +23,14 @@ const HISTORY_FLAGS = new Set([
   "--name-only",
   "--name-status",
 ]);
+const DIFF_FLAGS = new Set([
+  "-p",
+  "--patch",
+  "--no-patch",
+  "--stat",
+  "--name-only",
+  "--name-status",
+]);
 const LOG_FLAGS = new Set([
   "--graph",
   "--all",
@@ -74,6 +82,27 @@ function validateLogRevision(operand: string): void {
     fail(`unsupported Git revision '${operand}'.`);
   if (match[1]) validateRevision(match[1]);
   if (match[2]) validateRevision(match[2]);
+}
+function validateDiffRevisions(revisions: string[], staged: boolean): void {
+  for (const revision of revisions) {
+    if (revision.startsWith("-")) fail(`unsupported option '${revision}'.`);
+  }
+  if (staged && revisions.length > 1)
+    fail("Git diff staged inspection supports at most one revision.");
+  if (!staged && revisions.length > 2)
+    fail("Git diff supports at most two revisions.");
+  const hasRange = revisions.some((revision) => revision.includes(".."));
+  if (hasRange) {
+    if (staged || revisions.length !== 1)
+      fail("Git diff range must be the sole operand in non-staged inspection.");
+    const operand = revisions[0];
+    const match = /^(.+?)\.{2,3}(.+)$/.exec(operand);
+    if (!match) fail(`unsupported Git revision '${operand}'.`);
+    validateRevision(match[1]);
+    validateRevision(match[2]);
+    return;
+  }
+  for (const revision of revisions) validateRevision(revision);
 }
 function findRepositoryRoot(): string {
   let directory = path.resolve(process.cwd());
@@ -133,22 +162,37 @@ function validateBlobSelector(selector: string): void {
 
 export function validateGitProxyRequest(args: string[]): void {
   const subcommand = args[0];
-  if (!["status", "log", "show"].includes(subcommand)) {
+  if (!["status", "log", "show", "diff"].includes(subcommand)) {
     fail(`unsupported Git subcommand '${subcommand ?? ""}'.`);
   }
   for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"]) {
     if (process.env[key] !== undefined)
       fail(`unsupported Git workspace override '${key}'.`);
   }
-  const allowed = subcommand === "status" ? STATUS_FLAGS : HISTORY_FLAGS;
+  const allowed =
+    subcommand === "status"
+      ? STATUS_FLAGS
+      : subcommand === "diff"
+        ? DIFF_FLAGS
+        : HISTORY_FLAGS;
   let index = 1;
   let countSeen = false;
+  let stagedSeen = false;
   while (
     index < args.length &&
     args[index] !== "--" &&
     args[index].startsWith("-")
   ) {
     const option = args[index];
+    if (
+      subcommand === "diff" &&
+      (option === "--cached" || option === "--staged")
+    ) {
+      if (stagedSeen) fail("repeated Git diff staged selector.");
+      stagedSeen = true;
+      index += 1;
+      continue;
+    }
     if (
       subcommand === "log" &&
       (option === "-n" || option.startsWith("--max-count="))
@@ -178,6 +222,7 @@ export function validateGitProxyRequest(args: string[]): void {
   const paths = separator === -1 ? [] : args.slice(separator + 1);
   if (paths.includes("--"))
     fail("multiple Git path separators are unsupported.");
+  if (subcommand === "diff") validateDiffRevisions(revisions, stagedSeen);
   if (subcommand === "status" && revisions.length > 0) {
     fail("Git status paths require '--'.");
   }
@@ -192,6 +237,7 @@ export function validateGitProxyRequest(args: string[]): void {
     fail("Git blob selector does not accept additional path operands.");
   for (const revision of revisions) {
     if (revision.startsWith("-")) fail(`unsupported option '${revision}'.`);
+    if (subcommand === "diff") continue;
     if (subcommand === "log") validateLogRevision(revision);
     else if (blob) validateBlobSelector(revision);
     else validateRevision(revision);

@@ -58,7 +58,7 @@ export const acceptedGitRequests: string[][] = [
 
 export const rejectedGitRequests: Array<[string[], RegExp]> = [
   [[], /unsupported Git subcommand/i],
-  [["diff"], /unsupported Git subcommand/i],
+  [["Diff"], /unsupported Git subcommand/i],
   [["help"], /unsupported Git subcommand/i],
   [["Status"], /unsupported Git subcommand/i],
   [["status", "file.txt"], /paths require/i],
@@ -132,7 +132,7 @@ for (const override of [
   ["--skip-env"],
   ["--ultra-compact"],
 ]) {
-  for (const subcommand of ["status", "log", "show"]) {
+  for (const subcommand of ["status", "log", "show", "diff"]) {
     rejectedGitRequests.push([[...override, subcommand], /unsupported/i]);
     rejectedGitRequests.push([[subcommand, ...override], /unsupported/i]);
   }
@@ -146,7 +146,7 @@ for (const operand of [
   "escape",
   "escape/missing/file",
 ]) {
-  for (const subcommand of ["status", "log", "show"]) {
+  for (const subcommand of ["status", "log", "show", "diff"]) {
     rejectedGitRequests.push([
       [subcommand, "--", operand],
       /outside the project directory/i,
@@ -161,12 +161,12 @@ for (const operand of [
   "restricted-alias",
   "restricted-alias/missing/file",
 ]) {
-  for (const subcommand of ["status", "log", "show"]) {
+  for (const subcommand of ["status", "log", "show", "diff"]) {
     rejectedGitRequests.push([[subcommand, "--", operand], /restricted/i]);
   }
   rejectedGitRequests.push([["show", `HEAD:${operand}`], /restricted/i]);
 }
-for (const subcommand of ["status", "log", "show"]) {
+for (const subcommand of ["status", "log", "show", "diff"]) {
   rejectedGitRequests.push([[subcommand, "--unknown"], /unsupported option/i]);
   rejectedGitRequests.push([
     [subcommand, "--spekta-force"],
@@ -190,3 +190,135 @@ rejectedGitRequests.push([
   /outside the project directory/i,
 ]);
 rejectedGitRequests.push([["show", "HEAD:dangling"], /ENOENT|no such file/i]);
+
+acceptedGitRequests.push(
+  ["diff"],
+  ["diff", "--"],
+  ["diff", "-p"],
+  ["diff", "--patch"],
+  ["diff", "--no-patch"],
+  ["diff", "--stat"],
+  ["diff", "--name-only"],
+  ["diff", "--name-status"],
+  ["diff", "--cached"],
+  ["diff", "--staged"],
+  ["diff", "--cached", "HEAD"],
+  ["diff", "--staged", "--stat", "HEAD~2^0"],
+  ["diff", "HEAD"],
+  ["diff", "feature/topic"],
+  ["diff", "refs/heads/main"],
+  ["diff", "a1b2c3d"],
+  ["diff", "HEAD~2^0"],
+  ["diff", "main", "HEAD"],
+  ["diff", "main..HEAD"],
+  ["diff", "main...HEAD"],
+  ["diff", "--", "deleted.txt", "space name", "-file"],
+  ["diff", "--stat", "HEAD", "--", "file.txt"],
+  ["diff", "--cached", "--name-status", "HEAD", "--", "file.txt"],
+  ["diff", "--staged", "--", "deleted.txt"],
+  ["diff", "HEAD~1", "HEAD", "--", "file.txt", "-file"],
+  ["diff", "HEAD~1..HEAD", "--", "deleted.txt"],
+  ["diff", "HEAD~1...HEAD", "--", "space name"],
+);
+
+rejectedGitRequests.push(
+  [["diff", "--cached", "--cached"], /repeated Git diff staged/i],
+  [["diff", "--staged", "--staged"], /repeated Git diff staged/i],
+  [["diff", "--cached", "--staged"], /repeated Git diff staged/i],
+  [["diff", "--staged", "--cached"], /repeated Git diff staged/i],
+  [["diff", "--cached", "main", "HEAD"], /at most one/i],
+  [["diff", "--staged", "main", "HEAD"], /at most one/i],
+  [["diff", "main", "HEAD", "other"], /at most two/i],
+  [["diff", "main..HEAD", "HEAD"], /range must be/i],
+  [["diff", "HEAD", "main...HEAD"], /range must be/i],
+  [["diff", "--cached", "main..HEAD"], /range must be/i],
+  [["diff", "--staged", "main...HEAD"], /range must be/i],
+  [["diff", "HEAD", "--stat"], /unsupported option/i],
+  [["diff", "HEAD", "--cached"], /unsupported option/i],
+  [["diff", "--", "--", "file.txt"], /multiple Git path separators/i],
+);
+for (const revision of [
+  "..",
+  "...",
+  "..HEAD",
+  "HEAD..",
+  "...HEAD",
+  "HEAD...",
+  "main....HEAD",
+  "main..HEAD..other",
+  "main...HEAD...other",
+  "main..HEAD@{1}",
+  "HEAD^{commit}",
+  "HEAD@{1}",
+  ":/message",
+  "^HEAD",
+  "HEAD:file.txt",
+  ":file.txt",
+  ":0:file.txt",
+  "../file",
+  "bad.lock",
+  "refs//heads/main",
+  "bad name",
+  "",
+  "bad\nname",
+  "HEAD~9007199254740992",
+]) {
+  rejectedGitRequests.push([["diff", revision], /unsupported Git revision/i]);
+}
+for (const option of [
+  "--no-index",
+  "--output=output.txt",
+  "--output",
+  "--ext-diff",
+  "--textconv",
+  "--no-ext-diff",
+  "--no-textconv",
+  "--submodule=diff",
+  "--submodule=short",
+  "--merge-base",
+  "--exit-code",
+  "--quiet",
+  "--oneline",
+  "--raw",
+  "--binary",
+  "--relative",
+  "--stat=10",
+  "--sta",
+  "-ps",
+  "-U3",
+  "--unknown",
+  "--cached=HEAD",
+  "--staged=HEAD",
+]) {
+  rejectedGitRequests.push([["diff", option], /unsupported option/i]);
+}
+for (const operand of [
+  "",
+  "bad\0name",
+  "bad\nname",
+  "bad\tname",
+  "bad\u007fname",
+]) {
+  rejectedGitRequests.push([["diff", "--", operand], /invalid Git path/i]);
+}
+for (const operand of [":(top)file", "*.ts", "file:part", "a\\b", "~/file"]) {
+  rejectedGitRequests.push([["diff", "--", operand], /unsupported Git path/i]);
+}
+for (const selector of ["--cached", "--staged"]) {
+  for (const operand of [
+    ".env",
+    "restricted-alias",
+    "restricted-alias/missing/file",
+  ]) {
+    rejectedGitRequests.push([
+      ["diff", selector, "--", operand],
+      /restricted/i,
+    ]);
+  }
+  for (const operand of ["../outside", "escape", "escape/missing/file"]) {
+    rejectedGitRequests.push([
+      ["diff", selector, "--", operand],
+      /outside the project directory/i,
+    ]);
+  }
+}

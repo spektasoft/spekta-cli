@@ -75,10 +75,13 @@ describe("shared Git classification", () => {
     expect(() =>
       validateProxyRequest("git", ["show", "feature/topic"]),
     ).not.toThrow();
+    expect(() =>
+      validateProxyRequest("git", ["diff", "feature/topic"]),
+    ).not.toThrow();
   });
   it("checks cwd even without explicit paths", () => {
     cwd.mockReturnValue(path.join(workspace, ".env"));
-    for (const name of ["status", "log", "show"]) {
+    for (const name of ["status", "log", "show", "diff"]) {
       expect(() => validateProxyRequest("git", [name])).toThrow(/restricted/i);
     }
   });
