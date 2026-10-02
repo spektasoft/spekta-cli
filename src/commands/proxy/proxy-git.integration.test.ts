@@ -6,10 +6,10 @@ import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runRtkProxy } from "./proxy";
 import { prepareRtkInvocation } from "./proxy-execution";
-import { TOOL_REGISTRY } from "../api/mcp-server/registry";
+import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 import { redactSecrets } from "./proxy-secret-redaction";
 import { truncateOutput } from "./proxy-output";
-import { getTokenCount } from "../utils/read-utils";
+import { getTokenCount } from "../../utils/read-utils";
 import {
   acceptedBranchRequests,
   rejectedBranchRequests,

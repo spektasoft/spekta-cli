@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { execa } from "execa";
 import { confirm } from "@inquirer/prompts";
 import { runRtkProxy } from "./proxy";
-import { TOOL_REGISTRY } from "../api/mcp-server/registry";
-import { getTokenCount } from "../utils/read-utils";
+import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
+import { getTokenCount } from "../../utils/read-utils";
 import {
   acceptedGitRequests,
   rejectedGitRequests,

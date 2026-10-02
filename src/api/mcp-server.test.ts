@@ -1,13 +1,13 @@
 import { beforeEach, describe, it, expectTypeOf, vi, expect } from "vitest";
 import { McpToolResponse, TOOL_REGISTRY } from "./mcp-server/registry";
 import { getGrepContent } from "../commands/grep-search";
-import { executeRtkCommand } from "../commands/proxy-execution";
+import { executeRtkCommand } from "../commands/proxy/proxy-execution";
 
 vi.mock("../commands/read", () => ({ getReadContent: vi.fn() }));
 vi.mock("../commands/replace", () => ({ executeSafeReplace: vi.fn() }));
 vi.mock("../commands/write", () => ({ getWriteContent: vi.fn() }));
 vi.mock("../commands/grep-search", () => ({ getGrepContent: vi.fn() }));
-vi.mock("../commands/proxy-execution", () => ({
+vi.mock("../commands/proxy/proxy-execution", () => ({
   executeRtkCommand: vi.fn(),
 }));
 vi.mock("../core/config", () => ({

@@ -1,7 +1,7 @@
 import fs from "fs-extra";
 import path from "path";
 
-import { RESTRICTED_FILES } from "../utils/security";
+import { RESTRICTED_FILES } from "../../utils/security";
 
 function isWindowsAbsolutePath(argument: string): boolean {
   return (

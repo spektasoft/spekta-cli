@@ -8,8 +8,8 @@ import { redactSecrets, truncateOutput } from "../../commands/proxy";
 import {
   formatProxyFailure,
   validateProxyRequest,
-} from "../../commands/proxy-policy";
-import { executeRtkCommand } from "../../commands/proxy-execution";
+} from "../../commands/proxy/proxy-policy";
+import { executeRtkCommand } from "../../commands/proxy/proxy-execution";
 import { ToolDefinition } from "../../core/config";
 import { parseFilePathWithRange } from "../../utils/read-utils";
 

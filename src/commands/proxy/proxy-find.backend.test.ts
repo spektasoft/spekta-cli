@@ -12,7 +12,7 @@ import {
   vi,
 } from "vitest";
 import { runRtkProxy } from "./proxy";
-import { TOOL_REGISTRY } from "../api/mcp-server/registry";
+import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 
 const backendTestsEnabled = process.env.SPEKTA_FIND_BACKEND_TESTS === "1";
 const describeBackend = backendTestsEnabled ? describe : describe.skip;

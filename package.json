@@ -9,7 +9,7 @@
         "build": "vite build",
         "deploy": "npm run build && chmod +x dist/index.js && npm link .",
         "test": "vitest",
-        "test:find-backend": "SPEKTA_FIND_BACKEND_TESTS=1 vitest run src/commands/proxy-find.backend.test.ts",
+        "test:find-backend": "SPEKTA_FIND_BACKEND_TESTS=1 vitest run src/commands/proxy/proxy-find.backend.test.ts",
         "test:json": "vitest --reporter=json --outputFile=./spekta/test-results.json",
         "update": "npx npm-check-updates --interactive --format group",
         "lint": "eslint .",

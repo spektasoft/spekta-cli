@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { execa } from "execa";
 import { confirm } from "@inquirer/prompts";
 import { runRtkProxy } from "./proxy";
-import { TOOL_REGISTRY } from "../api/mcp-server/registry";
+import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 
 vi.mock("execa", () => ({ execa: vi.fn() }));
 
