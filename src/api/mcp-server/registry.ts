@@ -131,7 +131,15 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
           content: [{ type: "text", text: formatProxyFailure(error) }],
         };
       }
-      const result = await executeRtkCommand(command, cleanArgs);
+      let result;
+      try {
+        result = await executeRtkCommand(command, cleanArgs);
+      } catch (error: unknown) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: formatProxyFailure(error) }],
+        };
+      }
 
       if (!result.available) {
         return {

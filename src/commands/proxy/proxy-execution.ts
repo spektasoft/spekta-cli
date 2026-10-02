@@ -78,6 +78,10 @@ export async function executeRtkCommand(
       ...(invocation.cwd === undefined ? {} : { cwd: invocation.cwd }),
     });
 
+    if (result.failed && result.exitCode === undefined) {
+      throw result;
+    }
+
     return {
       available: true,
       stdout: result.stdout,

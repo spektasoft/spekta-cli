@@ -101,14 +101,31 @@ describe("CLI and MCP proxy parity", () => {
   );
 
   it("propagates branch subprocess launch failures through both adapters", async () => {
-    const failure = Object.assign(new Error("permission denied"), {
-      code: "EACCES",
-    });
+    const failure = Object.assign(
+      new Error(
+        `permission denied ${secret}\n${"failure line\n".repeat(3000)}USEFUL_STDERR`,
+      ),
+      { code: "EACCES", failed: true },
+    );
     vi.mocked(execa).mockRejectedValue(failure);
-    await expect(runRtkProxy("git", ["branch"])).rejects.toBe(failure);
-    await expect(
-      TOOL_REGISTRY.spekta_shell.handler({ command: "git", args: ["branch"] }),
-    ).rejects.toBe(failure);
+    await runRtkProxy("git", ["branch"]);
+    const mcp = await TOOL_REGISTRY.spekta_shell.handler({
+      command: "git",
+      args: ["branch"],
+    });
+    expect(process.exitCode).toBe(1);
+    expect(console.log).not.toHaveBeenCalled();
+    expect(mcp.isError).toBe(true);
+    for (const output of [
+      vi.mocked(console.error).mock.calls[0][0] as string,
+      mcp.content[0].text,
+    ]) {
+      expect(output).toContain("permission denied");
+      expect(output).toContain("USEFUL_STDERR");
+      expect(output).toContain("lines collapsed");
+      expect(output).not.toContain(secret);
+      expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
+    }
     expect(confirm).not.toHaveBeenCalled();
   });
 

@@ -2,6 +2,7 @@ import { beforeEach, describe, it, expectTypeOf, vi, expect } from "vitest";
 import { McpToolResponse, TOOL_REGISTRY } from "./mcp-server/registry";
 import { getGrepContent } from "../commands/grep-search";
 import { executeRtkCommand } from "../commands/proxy/proxy-execution";
+import { getTokenCount } from "../utils/read-utils";
 
 vi.mock("../commands/read", () => ({ getReadContent: vi.fn() }));
 vi.mock("../commands/replace", () => ({ executeSafeReplace: vi.fn() }));
@@ -43,6 +44,59 @@ describe("McpToolResponse Compatibility", () => {
 });
 
 describe("TOOL_REGISTRY", () => {
+  it.each([false, true])(
+    "reports status 7 with empty output=%s",
+    async (empty) => {
+      const secret = "ghp_abcdefghijklmnopqrstuvwxyz";
+      vi.mocked(executeRtkCommand).mockResolvedValueOnce({
+        available: true,
+        stdout: empty
+          ? ""
+          : `USEFUL_START ${secret}\n${"listing line\n".repeat(3000)}USEFUL_END`,
+        stderr: empty ? "" : "USEFUL_STDERR",
+        exitCode: 7,
+      });
+      const result = await TOOL_REGISTRY.spekta_shell.handler({
+        command: "ls",
+      });
+      expect(result.isError).toBe(true);
+      const output = result.content[0].text;
+      expect(output).not.toContain(secret);
+      expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
+      if (empty) expect(output).toBe("");
+      else {
+        expect(output).toContain("USEFUL_START");
+        expect(output).toContain("USEFUL_END");
+        expect(output).toContain("USEFUL_STDERR");
+        expect(output).toContain("lines collapsed");
+      }
+    },
+  );
+
+  it("reports missing RTK as an error", async () => {
+    vi.mocked(executeRtkCommand).mockResolvedValueOnce({ available: false });
+    const result = await TOOL_REGISTRY.spekta_shell.handler({ command: "ls" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toMatch(/rtk[\s\S]*not found/i);
+  });
+
+  it("returns safe bounded diagnostics for thrown execution errors", async () => {
+    const secret = "ghp_abcdefghijklmnopqrstuvwxyz";
+    vi.mocked(executeRtkCommand).mockRejectedValueOnce(
+      new Error(
+        `USEFUL_START ${secret}\n${"failure line\n".repeat(3000)}USEFUL_STDERR`,
+      ),
+    );
+    const result = await TOOL_REGISTRY.spekta_shell.handler({ command: "ls" });
+    expect(result.isError).toBe(true);
+    const output = result.content[0].text;
+    expect(output).toContain("USEFUL_START");
+    expect(output).toContain("USEFUL_STDERR");
+    expect(output).toContain("lines collapsed");
+    expect(output).not.toContain(secret);
+    expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
+  });
+
   it("defines spekta_grep correctly", async () => {
     const tool = TOOL_REGISTRY.spekta_grep;
     expect(tool).toBeDefined();

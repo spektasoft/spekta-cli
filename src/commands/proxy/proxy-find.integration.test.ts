@@ -227,7 +227,7 @@ describe("restricted find CLI and MCP parity", () => {
     await expectRejected(["directory"], /\[REDACTED\]/);
   });
 
-  it("preserves the existing missing-RTK advisory behavior", async () => {
+  it("reports missing RTK on stderr with status 1", async () => {
     vi.mocked(execa).mockRejectedValue(
       Object.assign(new Error("rtk not found"), { code: "ENOENT" }),
     );
@@ -238,11 +238,11 @@ describe("restricted find CLI and MCP parity", () => {
       args: ["."],
     });
 
-    expect(console.log).toHaveBeenCalledWith(
-      expect.stringContaining("### spekta rtk unavailable"),
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringMatching(/rtk[\s\S]*not found/i),
     );
-    expect(console.error).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeUndefined();
+    expect(console.log).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
 
     expect(mcp).toEqual({
       isError: true,
@@ -256,11 +256,11 @@ describe("restricted find CLI and MCP parity", () => {
     expect(confirm).not.toHaveBeenCalled();
   });
 
-  it("preserves existing backend-failure reporting in both adapters", async () => {
+  it("propagates backend failure status and useful output in both adapters", async () => {
     vi.mocked(execa).mockResolvedValue({
       stdout: "",
       stderr: "native find failed",
-      exitCode: 1,
+      exitCode: 7,
     } as never);
 
     await runRtkProxy("find", ["."]);
@@ -272,8 +272,10 @@ describe("restricted find CLI and MCP parity", () => {
     expect(console.log).toHaveBeenCalledWith(
       expect.stringContaining("native find failed"),
     );
-    expect(console.error).not.toHaveBeenCalled();
-    expect(process.exitCode).toBeUndefined();
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringMatching(/status 7/i),
+    );
+    expect(process.exitCode).toBe(7);
     expect(mcp).toEqual({
       isError: true,
       content: [{ type: "text", text: "native find failed" }],

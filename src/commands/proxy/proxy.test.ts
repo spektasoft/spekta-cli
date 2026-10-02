@@ -6,16 +6,24 @@ vi.mock("execa", () => ({
 
 import { execa } from "execa";
 import { isRtkAvailable, runRtkProxy } from "./proxy";
+import { getTokenCount } from "../../utils/read-utils";
 
 describe("RTK execution", () => {
   const mockExeca = vi.mocked(execa);
+  let savedExitCode: typeof process.exitCode;
+  const secret = "ghp_abcdefghijklmnopqrstuvwxyz";
 
   beforeEach(() => {
     vi.clearAllMocks();
+    savedExitCode = process.exitCode;
+    process.exitCode = undefined;
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    process.exitCode = savedExitCode;
   });
 
   it("reports RTK availability", async () => {
@@ -35,61 +43,96 @@ describe("RTK execution", () => {
     await expect(isRtkAvailable()).resolves.toBe(false);
   });
 
-  it("executes RTK and formats successful output", async () => {
-    mockExeca.mockResolvedValueOnce({
-      stdout: "clean",
-      stderr: "",
-      exitCode: 0,
-      failed: false,
-    } as never);
+  it.each([undefined, 7])(
+    "formats success without clearing prior status %s",
+    async (previous) => {
+      process.exitCode = previous;
+      mockExeca.mockResolvedValueOnce({
+        stdout: `USEFUL_START ${secret}\n${"listing line\n".repeat(3000)}USEFUL_END`,
+        stderr: "",
+        exitCode: 0,
+        failed: false,
+      } as never);
 
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      await runRtkProxy("ls", []);
 
-    await runRtkProxy("ls", []);
+      const output = vi.mocked(console.log).mock.calls[0][0] as string;
+      expect(output).toContain("### spekta ls");
+      expect(output).toContain("USEFUL_START");
+      expect(output).toContain("USEFUL_END");
+      expect(output).toContain("lines collapsed");
+      expect(output).not.toContain(secret);
+      expect(console.error).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(previous);
+    },
+  );
 
-    expect(mockExeca).toHaveBeenCalledTimes(1);
-    expect(mockExeca).toHaveBeenCalledWith(
-      "rtk",
-      ["ls"],
-      expect.objectContaining({
-        reject: false,
-      }),
-    );
-    expect(log).toHaveBeenCalledWith(expect.stringContaining("### spekta ls"));
-  });
+  it.each([false, true])(
+    "reports status 7 with empty output=%s",
+    async (empty) => {
+      mockExeca.mockResolvedValueOnce({
+        stdout: empty
+          ? ""
+          : `USEFUL_START ${secret}\n${"listing line\n".repeat(3000)}USEFUL_END`,
+        stderr: empty ? "" : "USEFUL_STDERR",
+        exitCode: 7,
+        failed: true,
+      } as never);
 
-  it("does not throw on a non-zero RTK command exit", async () => {
-    mockExeca.mockResolvedValueOnce({
-      stdout: "",
-      stderr: "command failed",
-      exitCode: 2,
-      failed: true,
-    } as never);
+      await expect(runRtkProxy("ls", [])).resolves.toBeUndefined();
 
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      const output = vi.mocked(console.log).mock.calls[0][0] as string;
+      expect(output).toContain("[FAILED: Exit 7]");
+      expect(output).not.toContain(secret);
+      if (!empty) {
+        expect(output).toContain("USEFUL_START");
+        expect(output).toContain("USEFUL_END");
+        expect(output).toContain("USEFUL_STDERR");
+        expect(output).toContain("lines collapsed");
+      }
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringMatching(/status 7/i),
+      );
+      expect(process.exitCode).toBe(7);
+    },
+  );
 
-    await expect(runRtkProxy("ls", [])).resolves.toBeUndefined();
-
-    expect(log).toHaveBeenCalledWith(
-      expect.stringContaining("[FAILED: Exit 2]"),
-    );
-    expect(mockExeca).toHaveBeenCalledTimes(1);
-    expect(mockExeca).toHaveBeenCalledWith("rtk", ["ls"], expect.any(Object));
-  });
-
-  it("prints an advisory instead of executing missing RTK", async () => {
+  it("reports missing RTK on stderr with status 1", async () => {
     mockExeca.mockRejectedValueOnce(
       Object.assign(new Error("not found"), { code: "ENOENT" }),
     );
 
-    const log = vi.spyOn(console, "log").mockImplementation(() => {});
-
     await runRtkProxy("ls", []);
 
-    expect(log).toHaveBeenCalledWith(
-      expect.stringContaining("rtk unavailable"),
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringMatching(/rtk[\s\S]*not found/i),
     );
-    expect(mockExeca).toHaveBeenCalledTimes(1);
-    expect(mockExeca).toHaveBeenCalledWith("rtk", ["ls"], expect.any(Object));
+    expect(console.log).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
+
+  it.each(["launch", "signal"])(
+    "reports safe bounded %s diagnostics",
+    async (mode) => {
+      const failure = Object.assign(
+        new Error(
+          `USEFUL_START ${secret}\n${"failure line\n".repeat(3000)}USEFUL_STDERR`,
+        ),
+        {
+          failed: true,
+          ...(mode === "launch" ? { code: "EACCES" } : { signal: "SIGTERM" }),
+        },
+      );
+      mockExeca.mockResolvedValueOnce(failure as never);
+      await expect(runRtkProxy("ls", [])).resolves.toBeUndefined();
+      const diagnostic = vi.mocked(console.error).mock.calls[0][0] as string;
+      expect(diagnostic).toContain("USEFUL_START");
+      expect(diagnostic).toContain("USEFUL_STDERR");
+      expect(diagnostic).toContain("lines collapsed");
+      expect(diagnostic).not.toContain(secret);
+      expect(getTokenCount(diagnostic)).toBeLessThanOrEqual(1000);
+      expect(console.log).not.toHaveBeenCalled();
+      expect(process.exitCode).toBe(1);
+    },
+  );
 });

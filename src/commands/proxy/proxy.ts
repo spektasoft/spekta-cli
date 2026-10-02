@@ -19,10 +19,17 @@ export async function runRtkProxy(
     process.exitCode = 1;
     return;
   }
-  const result = await executeRtkCommand(command, rawArgs);
+  let result;
+  try {
+    result = await executeRtkCommand(command, rawArgs);
+  } catch (error: unknown) {
+    console.error(formatProxyFailure(error));
+    process.exitCode = 1;
+    return;
+  }
 
   if (!result.available) {
-    console.log(
+    console.error(
       [
         "### spekta rtk unavailable",
         "",
@@ -30,7 +37,13 @@ export async function runRtkProxy(
         "Install RTK with the `rtk-ai` package, then retry the command.",
       ].join("\n"),
     );
+    process.exitCode = 1;
     return;
+  }
+
+  if (result.exitCode !== 0) {
+    process.exitCode = result.exitCode;
+    console.error(`RTK command failed with exit status ${result.exitCode}.`);
   }
 
   const rawOutput = [result.stdout, result.stderr].filter(Boolean).join("\n");

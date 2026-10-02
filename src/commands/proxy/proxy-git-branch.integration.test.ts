@@ -134,7 +134,10 @@ describe.skipIf(missing.length > 0)(
       expect(result.mcp.isError).toBe(true);
       expect(result.mcp.content[0].text).toMatch(/not a git repository/i);
       expect(result.cli).toContain("FAILED: Exit");
-      expect(console.error).not.toHaveBeenCalled();
+      expect(console.error).toHaveBeenCalledExactlyOnceWith(
+        "RTK command failed with exit status 128.",
+      );
+      expect(process.exitCode).toBe(128);
       expect(snapshotRepository(outside)).toEqual(outsideBefore);
     });
   },

@@ -113,7 +113,7 @@ describe("Git CLI and MCP proxy output parity", () => {
   );
 
   it.each(["status", "log", "show", "diff", "branch"])(
-    "preserves nonzero/missing RTK behavior for %s",
+    "reports nonzero/missing RTK failures for %s",
     async (subcommand) => {
       vi.mocked(execa).mockResolvedValue({
         stdout: "",
@@ -129,6 +129,10 @@ describe("Git CLI and MCP proxy output parity", () => {
         "FAILED: Exit 2",
       );
       expect(vi.mocked(console.log).mock.calls[0][0]).not.toContain(secret);
+      expect(process.exitCode).toBe(2);
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringMatching(/status 2/i),
+      );
       expect(failed).toEqual({
         isError: true,
         content: [{ type: "text", text: "[REDACTED]" }],
@@ -137,9 +141,10 @@ describe("Git CLI and MCP proxy output parity", () => {
         Object.assign(new Error("missing"), { code: "ENOENT" }),
       );
       await runRtkProxy("git", [subcommand]);
-      expect(vi.mocked(console.log).mock.calls.at(-1)?.[0]).toContain(
+      expect(vi.mocked(console.error).mock.calls.at(-1)?.[0]).toContain(
         "not found",
       );
+      expect(process.exitCode).toBe(1);
       const missing = await TOOL_REGISTRY.spekta_shell.handler({
         command: "git",
         args: [subcommand],

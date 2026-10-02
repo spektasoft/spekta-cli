@@ -196,37 +196,67 @@ describe("executeRtkCommand", () => {
     });
   });
 
-  it("propagates unexpected subprocess launch failures", async () => {
-    const failure = Object.assign(new Error("permission denied"), {
-      code: "EACCES",
-    });
-    vi.mocked(execa).mockRejectedValueOnce(failure);
-    await expect(executeRtkCommand("git", ["show"])).rejects.toBe(failure);
-  });
+  it.each(["resolved", "rejected"])(
+    "preserves %s launch failures",
+    async (shape) => {
+      const failure = Object.assign(new Error("permission denied"), {
+        code: "EACCES",
+        failed: true,
+      });
+      if (shape === "resolved")
+        vi.mocked(execa).mockResolvedValueOnce(failure as never);
+      else vi.mocked(execa).mockRejectedValueOnce(failure);
+      await expect(executeRtkCommand("git", ["show"])).rejects.toBe(failure);
+    },
+  );
 
-  it("reports a missing RTK executable separately from command failure", async () => {
-    vi.mocked(execa).mockRejectedValueOnce(
-      Object.assign(new Error("not found"), { code: "ENOENT" }),
-    );
+  it.each([
+    { code: "ENOENT", shape: "resolved" },
+    { code: "ENOENT", shape: "rejected" },
+    { code: "ENOTFOUND", shape: "resolved" },
+    { code: "ENOTFOUND", shape: "rejected" },
+  ])("reports $shape $code as missing RTK", async ({ code, shape }) => {
+    const failure = Object.assign(new Error("not found"), {
+      code,
+      failed: true,
+    });
+    if (shape === "resolved")
+      vi.mocked(execa).mockResolvedValueOnce(failure as never);
+    else vi.mocked(execa).mockRejectedValueOnce(failure);
 
     await expect(executeRtkCommand("git", ["status"])).resolves.toEqual({
       available: false,
     });
   });
 
-  it("preserves non-zero RTK exits as available command results", async () => {
+  it.each([
+    { stdout: "useful output", stderr: "failed" },
+    { stdout: "", stderr: "" },
+  ])("preserves status 7 with $stdout/$stderr", async ({ stdout, stderr }) => {
     vi.mocked(execa).mockResolvedValueOnce({
-      stdout: "",
-      stderr: "failed",
-      exitCode: 2,
+      stdout,
+      stderr,
+      exitCode: 7,
+      failed: true,
     } as never);
 
     await expect(executeRtkCommand("git", ["test"])).resolves.toEqual({
       available: true,
-      stdout: "",
-      stderr: "failed",
-      exitCode: 2,
+      stdout,
+      stderr,
+      exitCode: 7,
     });
+  });
+
+  it("preserves a resolved signal failure and its useful output", async () => {
+    const failure = Object.assign(new Error("terminated: useful stderr"), {
+      failed: true,
+      signal: "SIGTERM",
+      stdout: "useful stdout",
+      stderr: "useful stderr",
+    });
+    vi.mocked(execa).mockResolvedValueOnce(failure as never);
+    await expect(executeRtkCommand("ls", [])).rejects.toBe(failure);
   });
 
   it("retains the compatibility availability check", async () => {
