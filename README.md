@@ -16,9 +16,70 @@ Run `spekta` and follow the prompts.
 
 ### RTK Proxy Inspection
 
-Commands without a native Spekta handler and MCP `spekta_shell` requests use one fail-closed policy before RTK starts. Supported forms are `ls` and the Git inspections below.
+Commands without a native Spekta handler and MCP `spekta_shell` requests use one fail-closed policy before RTK starts. Supported forms are `ls`, restricted `find` discovery, and the Git inspections below.
 
 `ls` accepts no options and zero or one existing relative workspace-directory operand. Files, missing directories, absolute paths, restricted targets, and escaping symlinks are rejected.
+
+#### Restricted Find Discovery
+
+`find` accepts zero or one existing relative workspace-directory root. Omitting the root uses `.`. CLI and MCP requests use the same classifier.
+
+| Component | Supported forms |
+| --------- | --------------- |
+| Root | `.`, ordinary relative directory names, nested directories, and an optional leading `./` |
+| Type predicate | At most one `-type f` or `-type d` |
+| Name predicate | At most one `-name PATTERN` |
+| Combination | Implicit conjunction; predicates may appear in either order |
+| Output | Default printing or one terminal `-print` |
+
+Patterns must be nonempty strings without control characters. Pass each pattern as one argument. Wildcards remain literal argument contents until native find interprets them. Name values such as `.env`, `../outside`, and `-exec` are filters, not filesystem roots or executable actions. The shared reserved `--spekta-force` option remains rejected wherever it appears.
+
+Roots must remain lexically and canonically inside the workspace and cannot target restricted paths or aliases to them. Files, missing roots, dangling roots, absolute POSIX/Windows/UNC paths, escaping symlink roots, and inaccessible roots are rejected. Root syntax excludes control characters, backslashes, colons, wildcard characters, tilde expansion, `..` segments, trailing slashes, repeated separators, and interior `.` segments. Names such as `..internal`, roots containing spaces, and `./-directory` are supported.
+
+Requests execute through `rtk proxy find -P` with an explicit workspace cwd. Physical traversal does not follow directory symlinks encountered beneath the root. A contained directory symlink supplied as the root is treated as the link itself; it is not traversed. Symlink roots with trailing slashes or dot suffixes are unsupported.
+
+Restricted-path checks protect cwd and explicit roots. Discovery output is not recursively filtered by restricted filename. For example, `-name '.env'` is a literal name filter when the root itself is permitted.
+
+Every unlisted predicate, expression operator, traversal option, and output action is rejected before RTK starts. This includes `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint`, `-fprint0`, `-fprintf`, `-fls`, `-printf`, `-print0`, `-prune`, `-quit`, `-follow`, `-H`, `-L`, and user-supplied `-P`. Multiple roots and duplicate predicates are unsupported.
+
+```bash
+spekta find . -type f -name '*.ts'
+spekta find -type f -name '*.ts'
+spekta find src -name '*.ts' -type f -print
+spekta find 'space name' -name 'file name.ts'
+```
+
+Equivalent MCP requests use `command: "find"` and argument arrays such as:
+
+```json
+{
+  "command": "find",
+  "args": [".", "-type", "f", "-name", "*.ts"]
+}
+```
+
+```json
+{
+  "command": "find",
+  "args": ["src", "-name", "*.ts", "-type", "f", "-print"]
+}
+```
+
+Omitted MCP args and `[]` use the default root and default printing.
+
+The supported backend environment is Linux or WSL with GNU Findutils available as `find`. Native Windows `find.exe` is incompatible. Spekta's direct `rtk find` route is not used because RTK may implement simple expressions through its own walker with different filtering semantics.
+
+RTK proxy argument handling was reviewed in versions 0.46.0, 0.49.0, and 0.50.0. The separately installed RTK version is not inferred from Spekta's dependencies. Review other releases and run the backend suite before extending the verified compatibility list.
+
+The real backend suite is opt-in. Its skipped suite name shows the command to enable it. Before completing a find change, run the backend suite on Linux or WSL with a reviewed RTK version and GNU Findutils:
+
+```bash
+npm run test:find-backend
+```
+
+`test:find-backend` sets `SPEKTA_FIND_BACKEND_TESTS=1` and runs Vitest once. Selecting the file with ordinary `npm test` alone still skips it.
+
+When selected, the suite fails if RTK is missing, its version has not been reviewed, or its proxy does not resolve GNU Findutils.
 
 | Git command | Supported flags                                                                                                                                                                                         | Operands                                                                                                      |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |

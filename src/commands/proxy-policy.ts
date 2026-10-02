@@ -4,6 +4,7 @@ import { validateCommandArguments } from "./proxy-path-security";
 import { redactSecrets } from "./proxy-secret-redaction";
 import { truncateOutput } from "./proxy-output";
 import { validateGitProxyRequest } from "./proxy-git-policy";
+import { validateFindProxyRequest } from "./proxy-find-policy";
 
 export function validateProxyRequest(command: string, args: string[]): void {
   if (
@@ -15,6 +16,10 @@ export function validateProxyRequest(command: string, args: string[]): void {
   }
   if (command === "git") {
     validateGitProxyRequest(args);
+    return;
+  }
+  if (command === "find") {
+    validateFindProxyRequest(args);
     return;
   }
   if (command !== "ls") {

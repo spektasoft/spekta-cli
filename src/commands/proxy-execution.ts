@@ -27,6 +27,21 @@ export function prepareRtkInvocation(
     NO_COLOR: "1",
     TERM: "dumb",
   };
+  if (command === "find") {
+    const hasExplicitRoot = args.length > 0 && !args[0].startsWith("-");
+
+    return {
+      args: [
+        "proxy",
+        "find",
+        "-P",
+        ...(hasExplicitRoot ? args : [".", ...args]),
+      ],
+      env,
+      cwd: process.cwd(),
+    };
+  }
+
   if (!controlledGit) return { args: [command, ...args], env };
 
   env.GIT_PAGER = "cat";
