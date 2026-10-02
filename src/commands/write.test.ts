@@ -13,7 +13,7 @@ vi.mock("../utils/logger");
 
 describe("write command logic", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     vi.mocked(formatUtils.formatFileInPlace).mockImplementation(async () => {});
     process.exitCode = 0;
   });
@@ -30,17 +30,19 @@ describe("write command logic", () => {
     await expect(getWriteContent(filePath, "data")).rejects.toThrow(errorMsg);
   });
 
-  it("should fail if the file already exists (after security passes)", async () => {
+  it("reports an exclusive-create collision without formatting the target", async () => {
     const filePath = "existing.ts";
     vi.mocked(security.validatePathAccessForWrite).mockResolvedValue(undefined);
     vi.mocked(security.validateParentDirForCreate).mockResolvedValue(undefined);
-    vi.mocked(fs.pathExists).mockResolvedValue(true as never);
+    vi.mocked(fs.writeFile).mockRejectedValue(
+      Object.assign(new Error("File exists"), { code: "EEXIST" }),
+    );
 
     const result = await getWriteContent(filePath, "new content");
 
     expect(result.success).toBe(false);
     expect(result.message).toContain("File already exists");
-    expect(fs.writeFile).not.toHaveBeenCalled();
+    expect(formatUtils.formatFileInPlace).not.toHaveBeenCalled();
   });
 
   it("should successfully write file when provided content via stdin", async () => {
@@ -54,16 +56,15 @@ describe("write command logic", () => {
 
     vi.mocked(security.validatePathAccessForWrite).mockResolvedValue(undefined);
     vi.mocked(security.validateParentDirForCreate).mockResolvedValue(undefined);
-    vi.mocked(fs.pathExists).mockResolvedValue(false as never);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
     await runWrite([filePath]);
 
     expect(fs.ensureDir).toHaveBeenCalled();
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.any(String),
-      content,
-      "utf-8",
-    );
+    expect(fs.writeFile).toHaveBeenCalledWith(expect.any(String), content, {
+      encoding: "utf-8",
+      flag: "wx",
+    });
     expect(Logger.info).toHaveBeenCalledWith(
       expect.stringContaining("Successfully created"),
     );
@@ -77,18 +78,46 @@ describe("write command logic", () => {
 
     vi.mocked(security.validatePathAccessForWrite).mockResolvedValue(undefined);
     vi.mocked(security.validateParentDirForCreate).mockResolvedValue(undefined);
-    vi.mocked(fs.pathExists).mockResolvedValue(false as never);
+    vi.mocked(fs.writeFile).mockResolvedValue(undefined);
 
     await runWrite([filePath, content]);
 
     expect(fs.ensureDir).toHaveBeenCalled();
-    expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.any(String),
-      content,
-      "utf-8",
-    );
+    expect(fs.writeFile).toHaveBeenCalledWith(expect.any(String), content, {
+      encoding: "utf-8",
+      flag: "wx",
+    });
     expect(Logger.info).toHaveBeenCalledWith(
       expect.stringContaining("Successfully created"),
     );
+  });
+
+  it("rethrows persistence errors other than EEXIST", async () => {
+    vi.mocked(security.validatePathAccessForWrite).mockResolvedValue(undefined);
+    vi.mocked(security.validateParentDirForCreate).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFile).mockRejectedValue(
+      Object.assign(new Error("Permission denied"), { code: "EACCES" }),
+    );
+
+    await expect(getWriteContent("new-file.ts", "content")).rejects.toThrow(
+      "Permission denied",
+    );
+    expect(formatUtils.formatFileInPlace).not.toHaveBeenCalled();
+  });
+
+  it("sets a nonzero exit code when exclusive creation finds an existing target", async () => {
+    vi.mocked(security.validatePathAccessForWrite).mockResolvedValue(undefined);
+    vi.mocked(security.validateParentDirForCreate).mockResolvedValue(undefined);
+    vi.mocked(fs.writeFile).mockRejectedValue(
+      Object.assign(new Error("File exists"), { code: "EEXIST" }),
+    );
+
+    await runWrite(["existing.ts", "new content"]);
+
+    expect(Logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("File already exists"),
+    );
+    expect(Logger.info).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
   });
 });

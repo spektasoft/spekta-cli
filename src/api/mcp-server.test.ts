@@ -1,6 +1,7 @@
 import { beforeEach, describe, it, expectTypeOf, vi, expect } from "vitest";
 import { McpToolResponse, TOOL_REGISTRY } from "./mcp-server/registry";
 import { getGrepContent } from "../commands/grep-search";
+import { getWriteContent } from "../commands/write";
 import { executeRtkCommand } from "../commands/proxy/proxy-execution";
 import { getTokenCount } from "../utils/read-utils";
 
@@ -44,6 +45,27 @@ describe("McpToolResponse Compatibility", () => {
 });
 
 describe("TOOL_REGISTRY", () => {
+  it("reports write no-overwrite failures as MCP errors", async () => {
+    vi.mocked(getWriteContent).mockResolvedValueOnce({
+      success: false,
+      message:
+        "Write failed: File already exists at existing.ts. Cannot overwrite with this tool.",
+    });
+
+    const result = await TOOL_REGISTRY.spekta_write.handler({
+      path: "existing.ts",
+      content: "new content",
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content).toEqual([
+      {
+        type: "text",
+        text: "Write failed: File already exists at existing.ts. Cannot overwrite with this tool.",
+      },
+    ]);
+  });
+
   it.each([false, true])(
     "reports status 7 with empty output=%s",
     async (empty) => {

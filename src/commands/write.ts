@@ -17,19 +17,31 @@ export async function getWriteContent(
   // 2. Validate parent directory ancestry (allows creation of nested dirs)
   await validateParentDirForCreate(filePath);
 
-  // 3. Cannot already exist (safe to check after security validation)
-  if (await fs.pathExists(absolutePath)) {
-    return {
-      success: false,
-      message: `Write failed: File already exists at ${filePath}. Cannot overwrite with this tool.`,
-    };
+  // 3. Create parent directories, then exclusively create the file
+  await fs.ensureDir(path.dirname(absolutePath));
+
+  try {
+    await fs.writeFile(absolutePath, content, {
+      encoding: "utf-8",
+      flag: "wx",
+    });
+  } catch (err: unknown) {
+    const code =
+      typeof err === "object" && err !== null && "code" in err
+        ? (err as { code?: unknown }).code
+        : undefined;
+
+    if (code === "EEXIST") {
+      return {
+        success: false,
+        message: `Write failed: File already exists at ${filePath}. Cannot overwrite with this tool.`,
+      };
+    }
+
+    throw err;
   }
 
-  // 4. Write unformatted content
-  await fs.ensureDir(path.dirname(absolutePath));
-  await fs.writeFile(absolutePath, content, "utf-8");
-
-  // 5. Format in-place
+  // 4. Format in-place
   try {
     await formatFileInPlace(filePath);
   } catch (err: unknown) {
