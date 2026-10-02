@@ -39,7 +39,6 @@ export const rejectedBranchRequests: Array<[string[], RegExp]> = [
   ]),
 ];
 
-
 for (const form of unsupportedBranchForms) {
   for (const args of [
     ["branch", ...form],

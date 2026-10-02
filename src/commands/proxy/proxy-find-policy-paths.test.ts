@@ -2,7 +2,11 @@ import fs from "fs-extra";
 import path from "path";
 import { describe, expect, it, vi } from "vitest";
 import { validateProxyRequest } from "./proxy-policy";
-import { fixture, workspace, useFindPolicyFixture } from "./proxy-find-policy.test-fixture";
+import {
+  fixture,
+  workspace,
+  useFindPolicyFixture,
+} from "./proxy-find-policy.test-fixture";
 
 describe("restricted find through validateProxyRequest", () => {
   useFindPolicyFixture();

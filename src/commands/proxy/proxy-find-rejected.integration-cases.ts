@@ -1,0 +1,60 @@
+export const rejectedFindRequests: Array<{ args: string[]; reason: RegExp }> = [
+  { args: [".", "-iname", "*.ts"], reason: /unsupported find token/i },
+  { args: [".", "-regex", ".*"], reason: /unsupported find token/i },
+  { args: [".", "-path", "./*"], reason: /unsupported find token/i },
+  {
+    args: [".", "-type", "f", "-o", "-type", "d"],
+    reason: /unsupported find token/i,
+  },
+  { args: [".", "-a", "-type", "f"], reason: /unsupported find token/i },
+  {
+    args: [".", "!", "-name", "*.ts"],
+    reason: /unsupported find token/i,
+  },
+  {
+    args: [".", "(", "-name", "*.ts", ")"],
+    reason: /unsupported find token/i,
+  },
+  { args: [".", "-L"], reason: /unsupported find token/i },
+  { args: ["-H", "."], reason: /unsupported find token/i },
+  { args: ["-P", "."], reason: /unsupported find token/i },
+  { args: [".", "-follow"], reason: /unsupported find token/i },
+  { args: [".", "-depth"], reason: /unsupported find token/i },
+  { args: [".", "-maxdepth", "1"], reason: /unsupported find token/i },
+  { args: [".", "-prune"], reason: /unsupported find token/i },
+  { args: [".", "-quit"], reason: /unsupported find token/i },
+  { args: [".", "-print0"], reason: /unsupported find token/i },
+  { args: [".", "-printf", "%p"], reason: /unsupported find token/i },
+  { args: [".", "-type"], reason: /find -type requires/i },
+  { args: [".", "-type", "l"], reason: /find -type requires/i },
+  { args: [".", "-name"], reason: /nonempty pattern/i },
+  { args: [".", "-name", ""], reason: /nonempty pattern/i },
+  {
+    args: [".", "-type", "f", "-type", "d"],
+    reason: /duplicate find -type/i,
+  },
+  {
+    args: [".", "-name", "*.ts", "-name", "*.js"],
+    reason: /duplicate find -name/i,
+  },
+  { args: [".", "-print", "-type", "f"], reason: /terminal -print/i },
+  { args: [".", "-print", "-print"], reason: /terminal -print/i },
+  { args: [".", "directory"], reason: /unsupported find token/i },
+  {
+    args: ["directory/../directory"],
+    reason: /unsupported find root syntax/i,
+  },
+  { args: ["directory/"], reason: /unsupported find root syntax/i },
+  {
+    args: [".", "-name", "bad\npattern"],
+    reason: /invalid find argument/i,
+  },
+  {
+    args: [".", "--spekta-force"],
+    reason: /unsupported option.*--spekta-force/i,
+  },
+  {
+    args: [".", "-name", "--spekta-force"],
+    reason: /unsupported option.*--spekta-force/i,
+  },
+];

@@ -1,12 +1,19 @@
 import fs from "fs-extra";
-import os from "os";
 import path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { execa } from "execa";
 import { confirm } from "@inquirer/prompts";
 import { runRtkProxy } from "./proxy";
+
 import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 
+import { createProxyFixture } from "./proxy-mocked.integration-fixture";
+import { acceptedFindRequests } from "./proxy-find-accepted.integration-cases";
+import { rejectedFindRequests } from "./proxy-find-rejected.integration-cases";
+import {
+  expectProxyRejected,
+  proxySecret as secret,
+} from "./proxy-rejection.integration-helper";
 vi.mock("execa", () => ({ execa: vi.fn() }));
 
 vi.mock("@inquirer/prompts", async (importOriginal) => ({
@@ -16,165 +23,30 @@ vi.mock("@inquirer/prompts", async (importOriginal) => ({
 
 let fixture: string;
 let workspace: string;
-let savedExitCode: typeof process.exitCode;
-let savedTtyDescriptor: PropertyDescriptor | undefined;
-
 const listing = "./one.ts\n./space name/two.ts";
-const secret = "ghp_abcdefghijklmnopqrstuvwxyz";
+const proxyFixture = createProxyFixture({
+  prefix: "spekta-find-integration-",
+  stdout: listing,
+});
 
 beforeEach(() => {
-  vi.resetAllMocks();
-
-  savedExitCode = process.exitCode;
-  savedTtyDescriptor = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
-  process.exitCode = undefined;
-
-  fixture = fs.mkdtempSync(path.join(os.tmpdir(), "spekta-find-integration-"));
-  workspace = path.join(fixture, "workspace");
-
-  fs.ensureDirSync(path.join(workspace, "directory"));
+  ({ fixture, workspace } = proxyFixture.setup());
   fs.ensureDirSync(path.join(workspace, "space name"));
   fs.ensureDirSync(path.join(workspace, "-directory"));
-  fs.ensureDirSync(path.join(workspace, ".env"));
-  fs.ensureDirSync(path.join(fixture, "outside"));
-
-  fs.writeFileSync(path.join(workspace, "file.txt"), "file");
   fs.writeFileSync(path.join(workspace, "sentinel.txt"), "preserve this file");
   fs.writeFileSync(
     path.join(fixture, "outside", "external-sentinel.txt"),
     "preserve external file",
   );
-
-  fs.symlinkSync(
-    path.join(fixture, "outside"),
-    path.join(workspace, "escape"),
-    "dir",
-  );
-  fs.symlinkSync(
-    path.join(workspace, ".env"),
-    path.join(workspace, "restricted-alias"),
-    "dir",
-  );
-  fs.symlinkSync(
-    path.join(workspace, "missing"),
-    path.join(workspace, "dangling"),
-    "dir",
-  );
-
-  vi.spyOn(process, "cwd").mockReturnValue(workspace);
-  vi.spyOn(console, "log").mockImplementation(() => undefined);
-  vi.spyOn(console, "error").mockImplementation(() => undefined);
-
-  vi.mocked(execa).mockResolvedValue({
-    stdout: listing,
-    stderr: "",
-    exitCode: 0,
-  } as never);
 });
 
-afterEach(() => {
-  vi.restoreAllMocks();
-  process.exitCode = savedExitCode;
+afterEach(() => proxyFixture.teardown());
 
-  if (savedTtyDescriptor) {
-    Object.defineProperty(process.stdin, "isTTY", savedTtyDescriptor);
-  } else {
-    Reflect.deleteProperty(process.stdin, "isTTY");
-  }
-
-  fs.removeSync(fixture);
-});
-
-async function expectRejected(args: string[], reason: RegExp): Promise<void> {
-  const original = [...args];
-
-  await runRtkProxy("find", args);
-
-  const cli: unknown = vi.mocked(console.error).mock.calls.at(-1)?.[0];
-  if (typeof cli !== "string") {
-    throw new Error("Expected a string CLI rejection diagnostic.");
-  }
-
-  const mcp = await TOOL_REGISTRY.spekta_shell.handler({
-    command: "find",
-    args,
-  });
-
-  expect(cli).toMatch(reason);
-  expect(cli).not.toContain(secret);
-  expect(process.exitCode).toBe(1);
-  expect(console.log).not.toHaveBeenCalled();
-
-  expect(mcp).toEqual({
-    isError: true,
-    content: [{ type: "text", text: cli }],
-  });
-
-  // These are external boundaries, not internal collaborators.
-  expect(execa).not.toHaveBeenCalled();
-  expect(confirm).not.toHaveBeenCalled();
-  expect(args).toEqual(original);
+function expectRejected(args: string[], reason: RegExp): Promise<void> {
+  return expectProxyRejected("find", args, reason);
 }
-
 describe("restricted find CLI and MCP parity", () => {
-  it.each([
-    {
-      args: [],
-      expectedArgs: ["proxy", "find", "-P", "."],
-    },
-    {
-      args: ["."],
-      expectedArgs: ["proxy", "find", "-P", "."],
-    },
-    {
-      args: ["-type", "f", "-name", "*.ts"],
-      expectedArgs: ["proxy", "find", "-P", ".", "-type", "f", "-name", "*.ts"],
-    },
-    {
-      args: [".", "-type", "f", "-name", "*.ts"],
-      expectedArgs: ["proxy", "find", "-P", ".", "-type", "f", "-name", "*.ts"],
-    },
-    {
-      args: [".", "-name", "*.ts", "-type", "f"],
-      expectedArgs: ["proxy", "find", "-P", ".", "-name", "*.ts", "-type", "f"],
-    },
-    {
-      args: ["directory", "-type", "d", "-print"],
-      expectedArgs: [
-        "proxy",
-        "find",
-        "-P",
-        "directory",
-        "-type",
-        "d",
-        "-print",
-      ],
-    },
-    {
-      args: ["space name", "-name", "file name.ts", "-print"],
-      expectedArgs: [
-        "proxy",
-        "find",
-        "-P",
-        "space name",
-        "-name",
-        "file name.ts",
-        "-print",
-      ],
-    },
-    {
-      args: ["./-directory", "-name", "-exec"],
-      expectedArgs: ["proxy", "find", "-P", "./-directory", "-name", "-exec"],
-    },
-    {
-      args: [".", "-name", "../outside/*.ts"],
-      expectedArgs: ["proxy", "find", "-P", ".", "-name", "../outside/*.ts"],
-    },
-    {
-      args: [".", "-name", ".env"],
-      expectedArgs: ["proxy", "find", "-P", ".", "-name", ".env"],
-    },
-  ])(
+  it.each(acceptedFindRequests)(
     "executes accepted request $args through equivalent public adapters",
     async ({ args, expectedArgs }) => {
       const original = [...args];
@@ -260,67 +132,7 @@ describe("restricted find CLI and MCP parity", () => {
         value: isTTY,
       });
 
-      const requests: Array<{ args: string[]; reason: RegExp }> = [
-        { args: [".", "-iname", "*.ts"], reason: /unsupported find token/i },
-        { args: [".", "-regex", ".*"], reason: /unsupported find token/i },
-        { args: [".", "-path", "./*"], reason: /unsupported find token/i },
-        {
-          args: [".", "-type", "f", "-o", "-type", "d"],
-          reason: /unsupported find token/i,
-        },
-        { args: [".", "-a", "-type", "f"], reason: /unsupported find token/i },
-        {
-          args: [".", "!", "-name", "*.ts"],
-          reason: /unsupported find token/i,
-        },
-        {
-          args: [".", "(", "-name", "*.ts", ")"],
-          reason: /unsupported find token/i,
-        },
-        { args: [".", "-L"], reason: /unsupported find token/i },
-        { args: ["-H", "."], reason: /unsupported find token/i },
-        { args: ["-P", "."], reason: /unsupported find token/i },
-        { args: [".", "-follow"], reason: /unsupported find token/i },
-        { args: [".", "-depth"], reason: /unsupported find token/i },
-        { args: [".", "-maxdepth", "1"], reason: /unsupported find token/i },
-        { args: [".", "-prune"], reason: /unsupported find token/i },
-        { args: [".", "-quit"], reason: /unsupported find token/i },
-        { args: [".", "-print0"], reason: /unsupported find token/i },
-        { args: [".", "-printf", "%p"], reason: /unsupported find token/i },
-        { args: [".", "-type"], reason: /find -type requires/i },
-        { args: [".", "-type", "l"], reason: /find -type requires/i },
-        { args: [".", "-name"], reason: /nonempty pattern/i },
-        { args: [".", "-name", ""], reason: /nonempty pattern/i },
-        {
-          args: [".", "-type", "f", "-type", "d"],
-          reason: /duplicate find -type/i,
-        },
-        {
-          args: [".", "-name", "*.ts", "-name", "*.js"],
-          reason: /duplicate find -name/i,
-        },
-        { args: [".", "-print", "-type", "f"], reason: /terminal -print/i },
-        { args: [".", "-print", "-print"], reason: /terminal -print/i },
-        { args: [".", "directory"], reason: /unsupported find token/i },
-        {
-          args: ["directory/../directory"],
-          reason: /unsupported find root syntax/i,
-        },
-        { args: ["directory/"], reason: /unsupported find root syntax/i },
-        {
-          args: [".", "-name", "bad\npattern"],
-          reason: /invalid find argument/i,
-        },
-        {
-          args: [".", "--spekta-force"],
-          reason: /unsupported option.*--spekta-force/i,
-        },
-        {
-          args: [".", "-name", "--spekta-force"],
-          reason: /unsupported option.*--spekta-force/i,
-        },
-      ];
-
+      const requests = rejectedFindRequests;
       for (const request of requests) {
         await expectRejected(request.args, request.reason);
       }
