@@ -236,12 +236,15 @@ describe("Security Validation", () => {
   });
 
   describe("validateEditAccess", () => {
-    it("should pass all checks for valid tracked file", async () => {
-      vi.mocked(execa)
-        .mockRejectedValueOnce({ exitCode: 1 }) // check-ignore
-        .mockResolvedValueOnce(createMockExecaResult("valid-file.ts")); // ls-files
-
+    it("should pass access checks for an eligible file without requiring tracking", async () => {
+      vi.mocked(execa).mockRejectedValueOnce({ exitCode: 1 }); // check-ignore
       await expect(validateEditAccess("valid-file.ts")).resolves.not.toThrow();
+      expect(execa).toHaveBeenCalledWith("git", [
+        "check-ignore",
+        "-q",
+        "--no-index",
+        "valid-file.ts",
+      ]);
     });
 
     it("should reject restricted files even if tracked", async () => {

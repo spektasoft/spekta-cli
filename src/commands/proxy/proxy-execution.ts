@@ -79,7 +79,12 @@ export async function executeRtkCommand(
     });
 
     if (result.failed && result.exitCode === undefined) {
-      throw result;
+      throw result instanceof Error
+        ? result
+        : Object.assign(
+            new Error(result.shortMessage ?? "Failed to execute RTK"),
+            result,
+          );
     }
 
     return {

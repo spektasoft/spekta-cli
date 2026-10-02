@@ -24,6 +24,7 @@ interface IgnoreCheckResult {
 async function checkIgnoreRule(
   relativePath: string,
   patternsOverride?: string[],
+  gitNoIndex = false,
 ): Promise<IgnoreCheckResult> {
   const spektaIgnores = patternsOverride ?? (await getIgnorePatterns());
 
@@ -36,7 +37,12 @@ async function checkIgnoreRule(
 
   let isGitIgnored = false;
   try {
-    await execa("git", ["check-ignore", "-q", relativePath]);
+    await execa("git", [
+      "check-ignore",
+      "-q",
+      ...(gitNoIndex ? ["--no-index"] : []),
+      relativePath,
+    ]);
     isGitIgnored = true;
   } catch {
     // Non-zero exit code indicates the path is not ignored by git, or git is not initialized.
@@ -71,16 +77,20 @@ export async function isPathIgnored(
  * @param displayPath - the already-resolved path to check against ignore
  *   rules (callers control root/".." handling before calling this).
  * @param targetPath - the original path used in the thrown error message.
- * @param verb - optional override for the verb used in the git-ignore
- *   error message (default "is"). Callers validating a not-yet-existing
- *   path may prefer "would be".
+ * @param verb - optional git-ignore message verb and index-independent
+ *   Git ignore checking for operations that must enforce ignore rules on
+ *   tracked paths. Defaults preserve existing caller behavior.
  */
 export async function assertPathNotIgnored(
   displayPath: string,
   targetPath: string,
-  verb: { git?: string } = {},
+  verb: { git?: string; gitNoIndex?: boolean } = {},
 ): Promise<void> {
-  const { match } = await checkIgnoreRule(displayPath);
+  const { match } = await checkIgnoreRule(
+    displayPath,
+    undefined,
+    verb.gitNoIndex,
+  );
 
   if (match === "spekta") {
     throw new Error(

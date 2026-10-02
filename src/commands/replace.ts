@@ -26,7 +26,7 @@ export async function getReplaceContent(
   totalLines: number;
 }> {
   try {
-    // Validate file access and git tracking
+    // Validate file access regardless of Git tracking
     await validateEditAccess(request.path);
 
     // Use provided blocks or parse from input

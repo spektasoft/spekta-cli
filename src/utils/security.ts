@@ -46,7 +46,10 @@ export const isWhitelisted = (path: string, patterns: string[]): boolean => {
   return ig.ignores(path);
 };
 
-export const validatePathAccess = async (targetPath: string): Promise<void> => {
+export const validatePathAccess = async (
+  targetPath: string,
+  options: { gitNoIndex?: boolean } = {},
+): Promise<void> => {
   const absolutePath = path.resolve(targetPath);
   const fileName = path.basename(absolutePath);
   const relativePath = path.relative(process.cwd(), absolutePath);
@@ -65,7 +68,9 @@ export const validatePathAccess = async (targetPath: string): Promise<void> => {
 
   // 3. Ignore Checks (Skip for project root '.')
   if (relativePath !== "") {
-    await assertPathNotIgnored(relativePath, targetPath);
+    await assertPathNotIgnored(relativePath, targetPath, {
+      gitNoIndex: options.gitNoIndex,
+    });
   }
 
   // 4. Existence and Type-Specific Checks
@@ -118,7 +123,7 @@ export const validatePathAccessForWrite = async (
 
 /**
  * Validates that a file is tracked by git.
- * Edit operations should only be performed on tracked files to ensure safety.
+ * Retained for callers that explicitly require Git tracking.
  */
 export const validateGitTracked = async (targetPath: string): Promise<void> => {
   const absolutePath = path.resolve(targetPath);
@@ -136,12 +141,10 @@ export const validateGitTracked = async (targetPath: string): Promise<void> => {
 };
 
 /**
- * Combined validation for edit operations.
- * Ensures file passes both access and git tracking checks.
+ * Validates access to an existing file for replacement, regardless of Git tracking.
  */
 export const validateEditAccess = async (targetPath: string): Promise<void> => {
-  await validatePathAccess(targetPath);
-  await validateGitTracked(targetPath);
+  await validatePathAccess(targetPath, { gitNoIndex: true });
 };
 
 /**
