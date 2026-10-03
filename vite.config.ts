@@ -5,9 +5,9 @@ import { viteStaticCopy } from "vite-plugin-static-copy";
 export default defineConfig({
   build: {
     lib: {
-      entry: "src/index.ts",
+      entry: { index: "src/index.ts", "codex-hook": "src/codex-hook.ts" },
       formats: ["es"],
-      fileName: "index",
+      fileName: (format, entryName) => `${entryName}.js`,
     },
     rollupOptions: {
       external: [...builtinModules, ...builtinModules.map((m) => `node:${m}`)],
