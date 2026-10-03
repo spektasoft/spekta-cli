@@ -3,6 +3,7 @@ import ignore from "ignore";
 import path from "node:path";
 import { getIgnorePatterns } from "../core/config";
 import { isWhitelisted } from "./security";
+import { isPathWithin } from "./workspace";
 
 /**
  * Evaluates whether a relative or absolute target path is ignored
@@ -25,8 +26,13 @@ async function checkIgnoreRule(
   relativePath: string,
   patternsOverride?: string[],
   gitNoIndex = false,
+  workspaceRoot?: string,
 ): Promise<IgnoreCheckResult> {
-  const spektaIgnores = patternsOverride ?? (await getIgnorePatterns());
+  const spektaIgnores =
+    patternsOverride ??
+    (await (workspaceRoot === undefined
+      ? getIgnorePatterns()
+      : getIgnorePatterns(workspaceRoot)));
 
   if (spektaIgnores.length > 0) {
     const ig = ignore().add(spektaIgnores);
@@ -37,12 +43,17 @@ async function checkIgnoreRule(
 
   let isGitIgnored = false;
   try {
-    await execa("git", [
+    const args = [
       "check-ignore",
       "-q",
       ...(gitNoIndex ? ["--no-index"] : []),
       relativePath,
-    ]);
+    ];
+    if (workspaceRoot === undefined) {
+      await execa("git", args);
+    } else {
+      await execa("git", args, { cwd: workspaceRoot });
+    }
     isGitIgnored = true;
   } catch {
     // Non-zero exit code indicates the path is not ignored by git, or git is not initialized.
@@ -58,15 +69,26 @@ async function checkIgnoreRule(
 export async function isPathIgnored(
   targetPath: string,
   patternsOverride?: string[],
+  workspaceRoot?: string,
 ): Promise<boolean> {
-  const absolutePath = path.resolve(targetPath);
-  const relativePath = path.relative(process.cwd(), absolutePath);
+  const root = workspaceRoot ?? process.cwd();
+  const absolutePath = path.resolve(root, targetPath);
+  const relativePath = path.relative(root, absolutePath);
+  const outside =
+    workspaceRoot === undefined
+      ? relativePath.startsWith("..")
+      : !isPathWithin(root, absolutePath);
 
-  if (relativePath === "" || relativePath.startsWith("..")) {
+  if (relativePath === "" || outside) {
     return false;
   }
 
-  const { match } = await checkIgnoreRule(relativePath, patternsOverride);
+  const { match } = await checkIgnoreRule(
+    relativePath,
+    patternsOverride,
+    false,
+    workspaceRoot,
+  );
   return match !== null;
 }
 
@@ -85,11 +107,13 @@ export async function assertPathNotIgnored(
   displayPath: string,
   targetPath: string,
   verb: { git?: string; gitNoIndex?: boolean } = {},
+  workspaceRoot?: string,
 ): Promise<void> {
   const { match } = await checkIgnoreRule(
     displayPath,
     undefined,
     verb.gitNoIndex,
+    workspaceRoot,
   );
 
   if (match === "spekta") {

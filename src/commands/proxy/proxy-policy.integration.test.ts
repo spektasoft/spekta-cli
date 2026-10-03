@@ -131,6 +131,16 @@ describe("CLI and MCP proxy parity", () => {
 
   it("rejects missing blob root through both adapters", async () => {
     fs.removeSync(path.join(workspace, ".git"));
+    const realLstat = fs.lstatSync.bind(fs);
+    vi.spyOn(fs, "lstatSync").mockImplementation(
+      (target: Parameters<typeof fs.lstatSync>[0]) => {
+        if (path.basename(String(target)) === ".git")
+          throw Object.assign(new Error("missing Git repository marker"), {
+            code: "ENOENT",
+          });
+        return realLstat(target);
+      },
+    );
     await expectRejected("git", ["show", "HEAD:file.txt"], /cannot establish/i);
   });
 

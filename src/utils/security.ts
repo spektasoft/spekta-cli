@@ -3,6 +3,11 @@ import fs from "fs-extra";
 import ignore from "ignore";
 import path from "path";
 import { assertPathNotIgnored } from "./path-ignore";
+import {
+  isPathWithin,
+  resolveWorkspaceTarget,
+  type ResolvedWorkspace,
+} from "./workspace";
 
 export const RESTRICTED_FILES = [".env", ".gitignore", ".spektaignore"];
 const MAX_FILE_SIZE_MB = 10;
@@ -48,36 +53,48 @@ export const isWhitelisted = (path: string, patterns: string[]): boolean => {
 
 export const validatePathAccess = async (
   targetPath: string,
-  options: { gitNoIndex?: boolean } = {},
+  options: {
+    gitNoIndex?: boolean;
+    workspaceRoot?: string;
+    displayPath?: string;
+  } = {},
 ): Promise<void> => {
-  const absolutePath = path.resolve(targetPath);
+  const root = options.workspaceRoot ?? process.cwd();
+  const displayPath = options.displayPath ?? targetPath;
+  const absolutePath = path.resolve(root, targetPath);
   const fileName = path.basename(absolutePath);
-  const relativePath = path.relative(process.cwd(), absolutePath);
+  const relativePath = path.relative(root, absolutePath);
 
-  // 1. System File Block
   if (RESTRICTED_FILES.includes(fileName)) {
     throw new Error(`Access Denied: ${fileName} is a restricted system file.`);
   }
 
-  // 2. Out-of-bounds Block: Prevent reading outside project root
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+  const outside =
+    options.workspaceRoot === undefined
+      ? relativePath.startsWith("..") || path.isAbsolute(relativePath)
+      : !isPathWithin(root, absolutePath);
+  if (outside) {
     throw new Error(
-      `Access Denied: ${targetPath} is outside the project directory.`,
+      `Access Denied: ${displayPath} is outside the project directory.`,
     );
   }
 
-  // 3. Ignore Checks (Skip for project root '.')
   if (relativePath !== "") {
-    await assertPathNotIgnored(relativePath, targetPath, {
-      gitNoIndex: options.gitNoIndex,
-    });
+    const ignoreOptions = { gitNoIndex: options.gitNoIndex };
+    if (options.workspaceRoot === undefined) {
+      await assertPathNotIgnored(relativePath, displayPath, ignoreOptions);
+    } else {
+      await assertPathNotIgnored(
+        relativePath,
+        displayPath,
+        ignoreOptions,
+        root,
+      );
+    }
   }
 
-  // 4. Existence and Type-Specific Checks
   try {
     const stats = await fs.stat(absolutePath);
-
-    // Only apply size limits to files, not directories
     if (stats.isFile() && stats.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
       throw new Error(
         `Access Denied: File exceeds size limit (${MAX_FILE_SIZE_MB}MB).`,
@@ -86,12 +103,45 @@ export const validatePathAccess = async (
   } catch (error: unknown) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new Error(
-        `Access Denied: The path '${targetPath}' does not exist.`,
+        `Access Denied: The path '${displayPath}' does not exist.`,
         { cause: error },
       );
     }
     throw error;
   }
+};
+
+export const validateReadPathAccess = async (
+  targetPath: string,
+  workspace: ResolvedWorkspace,
+): Promise<string> => {
+  const requestedName = path.basename(path.resolve(workspace.root, targetPath));
+  if (RESTRICTED_FILES.includes(requestedName)) {
+    throw new Error(
+      `Access Denied: ${requestedName} is a restricted system file.`,
+    );
+  }
+  const { absolutePath, canonicalPath } = await resolveWorkspaceTarget(
+    targetPath,
+    workspace,
+  );
+  const requestedRoot = isPathWithin(workspace.root, absolutePath)
+    ? workspace.root
+    : workspace.canonicalRoot;
+  await validatePathAccess(absolutePath, {
+    workspaceRoot: requestedRoot,
+    displayPath: targetPath,
+  });
+  if (
+    canonicalPath !== absolutePath ||
+    requestedRoot !== workspace.canonicalRoot
+  ) {
+    await validatePathAccess(canonicalPath, {
+      workspaceRoot: workspace.canonicalRoot,
+      displayPath: targetPath,
+    });
+  }
+  return canonicalPath;
 };
 
 export const validatePathAccessForWrite = async (

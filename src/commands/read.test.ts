@@ -34,7 +34,7 @@ describe("runRead", () => {
   const mockGetCompactThreshold = vi.mocked(config.getCompactThreshold);
   const mockGetFileLines = vi.mocked(readUtils.getFileLines);
   const mockGetTokenCount = vi.mocked(readUtils.getTokenCount);
-  const mockValidatePathAccess = vi.mocked(security.validatePathAccess);
+  const mockValidatePathAccess = vi.mocked(security.validateReadPathAccess);
   const mockCompactFile = vi.mocked(compactor.compactFile);
   const mockLogger = vi.mocked(Logger);
 
@@ -44,7 +44,9 @@ describe("runRead", () => {
     vi.clearAllMocks();
     mockGetReadTokenLimit.mockReturnValue(1000);
     mockGetCompactThreshold.mockReturnValue(2000);
-    mockValidatePathAccess.mockResolvedValue(undefined);
+    mockValidatePathAccess.mockImplementation((target) =>
+      Promise.resolve(target),
+    );
     stdoutSpy = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);

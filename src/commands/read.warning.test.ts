@@ -18,7 +18,9 @@ describe("compaction warning surfacing", () => {
   beforeEach(() => {
     vi.mocked(config.getReadTokenLimit).mockReturnValue(100000);
     vi.mocked(config.getCompactThreshold).mockReturnValue(10);
-    vi.mocked(security.validatePathAccess).mockResolvedValue(undefined);
+    vi.mocked(security.validateReadPathAccess).mockImplementation((target) =>
+      Promise.resolve(target),
+    );
     vi.mocked(readUtils.getFileLines).mockResolvedValue({
       lines: Array.from({ length: 200 }, (_, i) => `line ${i}`),
       total: 200,

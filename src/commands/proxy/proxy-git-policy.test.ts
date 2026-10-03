@@ -139,6 +139,17 @@ describe("shared Git classification", () => {
   });
   it("rejects blob lookup without a repository root but keeps ordinary forms syntactic", () => {
     fs.removeSync(path.join(workspace, ".git"));
+    const realLstat = fs.lstatSync.bind(fs);
+    vi.spyOn(fs, "lstatSync").mockImplementation(
+      (target: Parameters<typeof fs.lstatSync>[0]) => {
+        if (path.basename(String(target)) === ".git") {
+          throw Object.assign(new Error("missing Git repository marker"), {
+            code: "ENOENT",
+          });
+        }
+        return realLstat(target);
+      },
+    );
     expect(() =>
       validateProxyRequest("git", ["show", "HEAD:file.txt"]),
     ).toThrow(/cannot establish/i);

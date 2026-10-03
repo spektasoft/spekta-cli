@@ -34,7 +34,7 @@ describe("getReadContent non-interactive mode behavior preservation", () => {
   const mockGetEnv = vi.mocked(config.getEnv);
   const mockGetFileLines = vi.mocked(readUtils.getFileLines);
   const mockGetTokenCount = vi.mocked(readUtils.getTokenCount);
-  const mockValidatePathAccess = vi.mocked(security.validatePathAccess);
+  const mockValidatePathAccess = vi.mocked(security.validateReadPathAccess);
   const mockCompactFile = vi.mocked(compactor.compactFile);
   const mockLogger = vi.mocked(Logger);
 
@@ -43,7 +43,9 @@ describe("getReadContent non-interactive mode behavior preservation", () => {
     mockGetReadTokenLimit.mockReturnValue(1000);
     mockGetCompactThreshold.mockReturnValue(2000);
     mockGetEnv.mockResolvedValue({ SPEKTA_READ_TOKEN_LIMIT: "1000" });
-    mockValidatePathAccess.mockResolvedValue(undefined);
+    mockValidatePathAccess.mockImplementation((target) =>
+      Promise.resolve(target),
+    );
     mockCompactFile.mockReturnValue({
       content: "mocked compacted content",
       isCompacted: false,

@@ -1,12 +1,123 @@
 import { execa } from "execa";
-import { buildGrepArgs, GrepOptions } from "./grep-args-builder";
+import fs from "fs-extra";
+import path from "node:path";
+import { getIgnorePatterns } from "../core/config";
+import { isWhitelisted, validateReadPathAccess } from "../utils/security";
+import {
+  buildGrepArgs,
+  buildGrepFileListArgs,
+  GrepOptions,
+} from "./grep-args-builder";
 import { parseGrepOutput, MAX_MATCHES } from "./grep-output-parser";
-import { validatePathAccess } from "../utils/security";
+import {
+  resolveWorkspace,
+  type ResolvedWorkspace,
+  type WorkspaceContext,
+} from "../utils/workspace";
 
 export type { GrepOptions };
 export { MAX_MATCHES };
 
-export async function getGrepContent(options: GrepOptions): Promise<string> {
+async function findWhitelistedGitIgnoredFiles(
+  options: GrepOptions,
+  canonicalSearchPath: string,
+  workspace: ResolvedWorkspace,
+  spektaIgnorePatterns: string[],
+): Promise<string[]> {
+  if (!spektaIgnorePatterns.some((pattern) => pattern.startsWith("!"))) {
+    return [];
+  }
+
+  if (!(await fs.stat(canonicalSearchPath)).isDirectory()) {
+    return [];
+  }
+
+  const normalListArgs = await buildGrepFileListArgs(
+    options,
+    workspace.canonicalRoot,
+    canonicalSearchPath,
+    false,
+  );
+  const listFiles = async (args: string[]): Promise<string[]> => {
+    try {
+      const { stdout } = await execa("rg", args, {
+        cwd: workspace.canonicalRoot,
+      });
+      return stdout.split("\0").filter(Boolean);
+    } catch (error: unknown) {
+      if ((error as { exitCode?: number }).exitCode === 1) return [];
+      throw error;
+    }
+  };
+  const normalFiles = await listFiles(normalListArgs);
+  const normalFileSet = new Set(
+    normalFiles.map((file) => path.resolve(workspace.canonicalRoot, file)),
+  );
+
+  const ignoredListArgs = await buildGrepFileListArgs(
+    options,
+    workspace.canonicalRoot,
+    canonicalSearchPath,
+  );
+  const listing = await listFiles(ignoredListArgs);
+  const candidates = [
+    ...new Set(
+      listing
+        .map((candidate) => path.resolve(workspace.canonicalRoot, candidate))
+        .filter((candidate) => !normalFileSet.has(candidate)),
+    ),
+  ];
+  if (candidates.length === 0) return [];
+
+  const relativeCandidates = candidates.map((candidate) =>
+    path.relative(workspace.canonicalRoot, candidate),
+  );
+  let gitIgnored: Set<string>;
+  try {
+    // ripgrep applies Git ignore rules to tracked files too.
+    const { stdout } = await execa(
+      "git",
+      ["check-ignore", "--no-index", "-z", "--stdin"],
+      {
+        cwd: workspace.canonicalRoot,
+        input: `${relativeCandidates.join("\0")}\0`,
+      },
+    );
+    gitIgnored = new Set(stdout.split("\0").filter(Boolean));
+  } catch (error: unknown) {
+    // A non-git workspace, or a git check with no ignored paths, adds no targets.
+    if ([1, 128].includes((error as { exitCode?: number }).exitCode ?? -1)) {
+      return [];
+    }
+    throw error;
+  }
+
+  const whitelisted: string[] = [];
+  for (const [index, relativePath] of relativeCandidates.entries()) {
+    if (
+      !gitIgnored.has(relativePath) ||
+      !isWhitelisted(relativePath, spektaIgnorePatterns)
+    ) {
+      continue;
+    }
+    try {
+      const canonicalPath = await validateReadPathAccess(
+        candidates[index],
+        workspace,
+      );
+      whitelisted.push(canonicalPath);
+    } catch {
+      // Invalid, restricted, or otherwise denied candidates must not be searched.
+    }
+  }
+
+  return [...new Set(whitelisted)];
+}
+
+export async function getGrepContent(
+  options: GrepOptions,
+  workspace?: WorkspaceContext,
+): Promise<string> {
   const { pattern, path: searchPath = "." } = options;
 
   // SECURITY: Reject empty/whitespace patterns to prevent full-codebase scans
@@ -14,8 +125,11 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
     throw new Error("Pattern cannot be empty or whitespace-only.");
   }
 
-  // Security check
-  await validatePathAccess(searchPath);
+  const resolvedWorkspace = await resolveWorkspace(workspace);
+  const canonicalSearchPath = await validateReadPathAccess(
+    searchPath,
+    resolvedWorkspace,
+  );
 
   try {
     await execa("rg", ["--version"]);
@@ -25,10 +139,27 @@ export async function getGrepContent(options: GrepOptions): Promise<string> {
     );
   }
 
-  const args = await buildGrepArgs(options);
-  // Pin cwd explicitly so git-root and ignore-file resolution can never
-  // drift from the invoking shell's working directory.
-  const child = execa("rg", args, { cwd: process.cwd() });
+  const args = await buildGrepArgs(
+    { ...options, path: canonicalSearchPath },
+    resolvedWorkspace.canonicalRoot,
+  );
+  const ignorePatterns = await getIgnorePatterns(
+    resolvedWorkspace.canonicalRoot,
+  );
+  const additionalPaths = await findWhitelistedGitIgnoredFiles(
+    options,
+    canonicalSearchPath,
+    resolvedWorkspace,
+    ignorePatterns,
+  );
+  if (additionalPaths.length > 0) {
+    args.splice(args.length - 1, 0, ...additionalPaths);
+  }
+  const child = execa("rg", args, { cwd: resolvedWorkspace.canonicalRoot });
 
-  return parseGrepOutput(child);
+  return parseGrepOutput(child, {
+    workspace: resolvedWorkspace,
+    canonicalSearchPath,
+    requestedSearchPath: searchPath,
+  });
 }

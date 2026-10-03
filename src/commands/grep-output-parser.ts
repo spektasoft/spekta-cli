@@ -1,4 +1,6 @@
 import readline from "node:readline";
+import path from "node:path";
+import type { ResolvedWorkspace } from "../utils/workspace";
 import { getGrepTokenLimit } from "../core/config";
 import { getTokenCount } from "../utils/read-utils";
 import { isPathIgnored } from "../utils/path-ignore";
@@ -32,8 +34,27 @@ interface ProcessErrorLike {
   message?: string;
 }
 
+export interface GrepOutputContext {
+  workspace: ResolvedWorkspace;
+  canonicalSearchPath: string;
+  requestedSearchPath: string;
+}
+
+function displayGrepPath(filePath: string, context: GrepOutputContext): string {
+  const absolutePath = path.resolve(context.workspace.canonicalRoot, filePath);
+  const relative = path.relative(context.canonicalSearchPath, absolutePath);
+  const requested = context.requestedSearchPath;
+  if (relative === "") return requested;
+  if (requested === ".") return `.${path.sep}${relative}`;
+  const joined = path.join(requested, relative);
+  return requested.startsWith(`.${path.sep}`) && !path.isAbsolute(joined)
+    ? `.${path.sep}${joined}`
+    : joined;
+}
+
 export async function parseGrepOutput(
   child: GrepChildProcess,
+  context?: GrepOutputContext,
 ): Promise<string> {
   const resultsByFile: Record<string, string[]> = {};
   let totalMatches = 0;
@@ -65,7 +86,13 @@ export async function parseGrepOutput(
 
           let isIgnored = ignoreCache.get(filePath);
           if (isIgnored === undefined) {
-            isIgnored = await isPathIgnored(filePath);
+            isIgnored = context
+              ? await isPathIgnored(
+                  filePath,
+                  undefined,
+                  context.workspace.canonicalRoot,
+                )
+              : await isPathIgnored(filePath);
             ignoreCache.set(filePath, isIgnored);
           }
           if (isIgnored) {
@@ -79,8 +106,11 @@ export async function parseGrepOutput(
           const text = parsed.data.lines.text.trimEnd();
           const formattedLine = `${lineNum}:${colNums}:${text}`;
 
-          if (!resultsByFile[filePath]) resultsByFile[filePath] = [];
-          resultsByFile[filePath].push(formattedLine);
+          const displayPath = context
+            ? displayGrepPath(filePath, context)
+            : filePath;
+          if (!resultsByFile[displayPath]) resultsByFile[displayPath] = [];
+          resultsByFile[displayPath].push(formattedLine);
           totalMatches++;
           totalTokens += getTokenCount(formattedLine);
         }

@@ -1,8 +1,10 @@
 import { execa } from "execa";
 import fs from "fs-extra";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getGrepTokenLimit } from "../../core/config";
-import { validatePathAccess } from "../../utils/security";
+import { getGrepTokenLimit, getIgnorePatterns } from "../../core/config";
+import { validateReadPathAccess } from "../../utils/security";
+import { resolveWorkspace } from "../../utils/workspace";
+import path from "node:path";
 import { getGrepContent } from "../grep-search";
 import { createRgMatch, mockExecaStream } from "./grep-search.test.helpers";
 
@@ -12,20 +14,30 @@ vi.mock("../../utils/path-ignore", () => ({
   isPathIgnored: vi.fn().mockResolvedValue(false),
 }));
 vi.mock("../../utils/security", () => ({
-  validatePathAccess: vi.fn().mockResolvedValue(undefined),
+  validateReadPathAccess: vi.fn(),
+  RESTRICTED_FILES: [".env", ".gitignore", ".spektaignore"],
 }));
+vi.mock("../../utils/workspace", () => ({ resolveWorkspace: vi.fn() }));
 vi.mock("../../core/config", () => ({
   HOME_IGNORE: "/mock/home/.spektaignore",
   getAssetPaths: () => ({
     ASSET_DEFAULT_IGNORE: "/mock/assets/default.ignore",
   }),
   getGrepTokenLimit: vi.fn().mockReturnValue(2000),
+  getIgnorePatterns: vi.fn().mockResolvedValue([]),
 }));
 
 describe("getGrepContent - formatting", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.mocked(validatePathAccess).mockResolvedValue(undefined);
+    vi.mocked(getIgnorePatterns).mockResolvedValue([]);
+    vi.mocked(resolveWorkspace).mockImplementation((context) => {
+      const root = path.resolve(context?.root ?? process.cwd());
+      return Promise.resolve({ root, canonicalRoot: root });
+    });
+    vi.mocked(validateReadPathAccess).mockImplementation((target, workspace) =>
+      Promise.resolve(path.resolve(workspace.canonicalRoot, target)),
+    );
     vi.mocked(fs.pathExists).mockResolvedValue(false as never);
     vi.mocked(getGrepTokenLimit).mockReturnValue(2000);
   });
@@ -64,7 +76,7 @@ describe("getGrepContent - formatting", () => {
 
     const result = await getGrepContent({ pattern: "test" });
 
-    expect(result).toContain("#### file.ts");
+    expect(result).toContain("#### ./file.ts");
     expect(result).toContain("10:2:valid line");
   });
 
@@ -143,7 +155,7 @@ describe("getGrepContent - formatting", () => {
 
     const result = await getGrepContent({ pattern: "const" });
 
-    expect(result).toContain("#### src/multi.ts");
+    expect(result).toContain("#### ./src/multi.ts");
     expect(result).toContain("```ts\n5:10,25:const a = 1; const b = 2;\n```");
   });
 });
