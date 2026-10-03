@@ -1,6 +1,7 @@
 import fs from "fs-extra";
 import path from "path";
 import { validateProxyPathOperand } from "./proxy-path-security";
+import type { WorkspaceContext } from "../../utils/workspace";
 
 const STATUS_FLAGS = new Set([
   "-s",
@@ -104,8 +105,8 @@ function validateDiffRevisions(revisions: string[], staged: boolean): void {
   }
   for (const revision of revisions) validateRevision(revision);
 }
-function findRepositoryRoot(): string {
-  let directory = path.resolve(process.cwd());
+function findRepositoryRoot(context?: WorkspaceContext): string {
+  let directory = path.resolve(context?.root ?? process.cwd());
   while (true) {
     let marker: ReturnType<typeof fs.lstatSync> | undefined;
     try {
@@ -132,7 +133,10 @@ function findRepositoryRoot(): string {
     directory = parent;
   }
 }
-function validateBlobSelector(selector: string): void {
+function validateBlobSelector(
+  selector: string,
+  context?: WorkspaceContext,
+): void {
   const colon = selector.indexOf(":");
   const revision = selector.slice(0, colon);
   const blobPath = selector.slice(colon + 1);
@@ -156,8 +160,9 @@ function validateBlobSelector(selector: string): void {
   ) {
     fail("unsupported Git blob path syntax.");
   }
-  const target = path.resolve(findRepositoryRoot(), blobPath);
-  validateProxyPathOperand(path.relative(process.cwd(), target) || ".");
+  const root = path.resolve(context?.root ?? process.cwd());
+  const target = path.resolve(findRepositoryRoot(context), blobPath);
+  validateProxyPathOperand(path.relative(root, target) || ".", context);
 }
 
 const BRANCH_FLAGS = new Set([
@@ -209,7 +214,10 @@ function validateBranchListing(args: string[]): void {
   }
 }
 
-export function validateGitProxyRequest(args: string[]): void {
+export function validateGitProxyRequest(
+  args: string[],
+  context?: WorkspaceContext,
+): void {
   const subcommand = args[0];
   if (!["status", "log", "show", "diff", "branch"].includes(subcommand)) {
     fail(`unsupported Git subcommand '${subcommand ?? ""}'.`);
@@ -220,7 +228,7 @@ export function validateGitProxyRequest(args: string[]): void {
   }
   if (subcommand === "branch") {
     validateBranchListing(args);
-    validateProxyPathOperand(".");
+    validateProxyPathOperand(".", context);
     return;
   }
   const allowed =
@@ -293,9 +301,9 @@ export function validateGitProxyRequest(args: string[]): void {
     if (revision.startsWith("-")) fail(`unsupported option '${revision}'.`);
     if (subcommand === "diff") continue;
     if (subcommand === "log") validateLogRevision(revision);
-    else if (blob) validateBlobSelector(revision);
+    else if (blob) validateBlobSelector(revision, context);
     else validateRevision(revision);
   }
-  validateProxyPathOperand(".");
-  for (const operand of paths) validateProxyPathOperand(operand);
+  validateProxyPathOperand(".", context);
+  for (const operand of paths) validateProxyPathOperand(operand, context);
 }

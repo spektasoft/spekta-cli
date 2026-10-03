@@ -1,5 +1,19 @@
-import { beforeEach, describe, it, expectTypeOf, vi, expect } from "vitest";
-import { McpToolResponse, TOOL_REGISTRY } from "./mcp-server/registry";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  it,
+  expectTypeOf,
+  vi,
+  expect,
+} from "vitest";
+import {
+  createToolRegistry,
+  McpToolResponse,
+  TOOL_REGISTRY,
+} from "./mcp-server/registry";
+import { getReadContent } from "../commands/read";
+import { executeSafeReplace } from "../commands/replace";
 import { getGrepContent } from "../commands/grep-search";
 import { getWriteContent } from "../commands/write";
 import { executeRtkCommand } from "../commands/proxy/proxy-execution";
@@ -19,6 +33,10 @@ vi.mock("../core/config", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // Re-defining the structure expected by the SDK based on the error message
@@ -138,10 +156,91 @@ describe("TOOL_REGISTRY", () => {
     expect(result).toEqual({
       content: [{ type: "text", text: "grep result" }],
     });
-    expect(getGrepContent).toHaveBeenCalledWith({
-      pattern: "test",
-      path: "src",
+    expect(getGrepContent).toHaveBeenCalledWith(
+      {
+        pattern: "test",
+        path: "src",
+      },
+      undefined,
+    );
+  });
+
+  it("binds documented operations to the server workspace and ignores injected grep context", async () => {
+    const workspace = Object.freeze({ root: "/canonical/repo" });
+    const tools = createToolRegistry(workspace);
+    vi.mocked(getReadContent).mockResolvedValueOnce("read result");
+    vi.mocked(getGrepContent).mockResolvedValueOnce("grep result");
+    vi.mocked(getWriteContent).mockResolvedValueOnce({
+      success: true,
+      message: "written",
     });
+    vi.mocked(executeSafeReplace).mockResolvedValueOnce({
+      message: "replaced",
+      appliedCount: 1,
+    });
+
+    await tools.spekta_read.handler({ paths: ["src/file.ts"] });
+    await tools.spekta_grep.handler({
+      pattern: "needle",
+      path: "src",
+      globs: "*.ts",
+      case_insensitive: true,
+      cwd: "/attacker",
+      workspace: { root: "/attacker" },
+      root: "/attacker",
+    });
+    await tools.spekta_write.handler({ path: "new.ts", content: "body" });
+    await tools.spekta_replace.handler({
+      path: "old.ts",
+      blocks: "replacement blocks",
+    });
+
+    expect(getReadContent).toHaveBeenCalledWith(
+      [{ path: "src/file.ts" }],
+      false,
+      workspace,
+    );
+    expect(getGrepContent).toHaveBeenCalledWith(
+      {
+        pattern: "needle",
+        path: "src",
+        globs: "*.ts",
+        case_insensitive: true,
+      },
+      workspace,
+    );
+    expect(getWriteContent).toHaveBeenCalledWith("new.ts", "body", workspace);
+    expect(executeSafeReplace).toHaveBeenCalledWith(
+      { path: "old.ts", blocks: [] },
+      "replacement blocks",
+      workspace,
+    );
+  });
+
+  it("passes the bound workspace to shell validation and execution", async () => {
+    const workspace = Object.freeze({ root: "/canonical/repo" });
+    const shell = createToolRegistry(workspace).spekta_shell;
+    const proxyPolicy = await import("../commands/proxy/proxy-policy");
+    const validateSpy = vi
+      .spyOn(proxyPolicy, "validateProxyRequest")
+      .mockImplementation(() => undefined);
+    vi.mocked(executeRtkCommand).mockResolvedValueOnce({
+      available: true,
+      stdout: "clean",
+      stderr: "",
+      exitCode: 0,
+    });
+    await shell.handler({ command: "git", args: ["status", "--short"] });
+    expect(validateSpy).toHaveBeenCalledWith(
+      "git",
+      ["status", "--short"],
+      workspace,
+    );
+    expect(executeRtkCommand).toHaveBeenCalledWith(
+      "git",
+      ["status", "--short"],
+      workspace,
+    );
   });
 
   it("defines spekta_shell correctly and executes safe commands", async () => {
@@ -164,7 +263,7 @@ describe("TOOL_REGISTRY", () => {
 
     const result = await tool.handler({ command: "ls", args: [] });
 
-    expect(executeRtkCommand).toHaveBeenCalledWith("ls", []);
+    expect(executeRtkCommand).toHaveBeenCalledWith("ls", [], undefined);
     expect(result).toEqual({
       isError: false,
       content: [{ type: "text", text: "nothing to commit" }],

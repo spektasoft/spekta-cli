@@ -1,10 +1,11 @@
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { seedAssetFixtures } from "../config.test-fixtures";
 import { bootstrap } from "./bootstrap";
 import { getAssetPaths, HOME_DIR, refreshPaths } from "./paths";
+import { resetInternalState } from "./env";
 
 describe("Bootstrap Logic", () => {
   const tempTestDir = path.join(os.tmpdir(), "spekta-tests");
@@ -55,6 +56,46 @@ describe("Bootstrap Logic", () => {
     await bootstrap({ writeUserHome: false });
 
     expect(fs.existsSync(readOnlyHome)).toBe(false);
+  });
+
+  it("loads configuration from the explicit launch root while cwd points elsewhere", async () => {
+    const launchRoot = path.join(tempTestDir, "launch");
+    const changedRoot = path.join(tempTestDir, "changed");
+    const previousLimit = process.env.SPEKTA_READ_TOKEN_LIMIT;
+    const previousHome = process.env.SPEKTA_HOME_OVERRIDE;
+    const launchHome = path.join(tempTestDir, "launch-home");
+    await fs.ensureDir(launchRoot);
+    await fs.ensureDir(changedRoot);
+    await fs.writeFile(
+      path.join(launchRoot, ".env"),
+      `SPEKTA_READ_TOKEN_LIMIT=123\nSPEKTA_HOME_OVERRIDE=${launchHome}\n`,
+    );
+    await fs.writeFile(
+      path.join(changedRoot, ".env"),
+      `SPEKTA_READ_TOKEN_LIMIT=987\nSPEKTA_HOME_OVERRIDE=${path.join(tempTestDir, "wrong-home")}\n`,
+    );
+    delete process.env.SPEKTA_READ_TOKEN_LIMIT;
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+    resetInternalState();
+    const cwd = vi.spyOn(process, "cwd").mockReturnValue(changedRoot);
+    try {
+      await bootstrap({ workspaceRoot: launchRoot });
+      expect(process.env.SPEKTA_READ_TOKEN_LIMIT).toBe("123");
+      expect(HOME_DIR).toBe(launchHome);
+      expect(await fs.pathExists(path.join(launchHome, "prompts"))).toBe(true);
+      expect(await fs.pathExists(path.join(tempTestDir, "wrong-home"))).toBe(
+        false,
+      );
+    } finally {
+      cwd.mockRestore();
+      if (previousLimit === undefined)
+        delete process.env.SPEKTA_READ_TOKEN_LIMIT;
+      else process.env.SPEKTA_READ_TOKEN_LIMIT = previousLimit;
+      if (previousHome === undefined) delete process.env.SPEKTA_HOME_OVERRIDE;
+      else process.env.SPEKTA_HOME_OVERRIDE = previousHome;
+      resetInternalState();
+      refreshPaths();
+    }
   });
 });
 

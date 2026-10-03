@@ -2,6 +2,13 @@ import fs from "fs-extra";
 import path from "path";
 
 import { RESTRICTED_FILES } from "../../utils/security";
+import type { WorkspaceContext } from "../../utils/workspace";
+
+export type { WorkspaceContext } from "../../utils/workspace";
+
+function workspaceRoot(context?: WorkspaceContext): string {
+  return path.resolve(context?.root ?? process.cwd());
+}
 
 function isWindowsAbsolutePath(argument: string): boolean {
   return (
@@ -27,9 +34,9 @@ function isPathLikeArgument(argument: string): boolean {
   );
 }
 
-function isInsideProjectLexically(targetPath: string): boolean {
-  const absolutePath = path.resolve(process.cwd(), targetPath);
-  const relativePath = path.relative(process.cwd(), absolutePath);
+function isInsideProjectLexically(targetPath: string, root: string): boolean {
+  const absolutePath = path.resolve(root, targetPath);
+  const relativePath = path.relative(root, absolutePath);
 
   return (
     relativePath !== ".." &&
@@ -38,9 +45,9 @@ function isInsideProjectLexically(targetPath: string): boolean {
   );
 }
 
-function isInsideProjectCanonical(targetPath: string): boolean {
-  const projectRoot = fs.realpathSync(process.cwd());
-  const absolutePath = path.resolve(process.cwd(), targetPath);
+function isInsideProjectCanonical(targetPath: string, root: string): boolean {
+  const projectRoot = fs.realpathSync(root);
+  const absolutePath = path.resolve(root, targetPath);
 
   if (fs.existsSync(absolutePath)) {
     const realPath = fs.realpathSync(absolutePath);
@@ -72,8 +79,8 @@ function isInsideProjectCanonical(targetPath: string): boolean {
   );
 }
 
-function targetsRestrictedFile(targetPath: string): boolean {
-  const absolutePath = path.resolve(process.cwd(), targetPath);
+function targetsRestrictedFile(targetPath: string, root: string): boolean {
+  const absolutePath = path.resolve(root, targetPath);
   const segments = absolutePath.split(/[\\/]+/).filter(Boolean);
 
   return segments.some((segment) => RESTRICTED_FILES.includes(segment));
@@ -117,7 +124,11 @@ function getPathArguments(args: string[]): string[] {
   return [...new Set(pathArguments)];
 }
 
-export function validateProxyPathOperand(operand: string): void {
+export function validateProxyPathOperand(
+  operand: string,
+  context?: WorkspaceContext,
+): void {
+  const root = workspaceRoot(context);
   if (
     operand === "" ||
     Array.from(operand).some(
@@ -136,8 +147,8 @@ export function validateProxyPathOperand(operand: string): void {
     throw new Error("Execution refused: unsupported Git path syntax.");
   }
 
-  validateCommandArguments([`./${operand}`]);
-  let ancestor = path.resolve(process.cwd(), operand);
+  validateCommandArguments([`./${operand}`], context);
+  let ancestor = path.resolve(root, operand);
   while (true) {
     try {
       fs.lstatSync(ancestor);
@@ -155,16 +166,21 @@ export function validateProxyPathOperand(operand: string): void {
   }
   // lstat sees dangling links that existsSync deliberately hides.
   fs.realpathSync(ancestor);
-  validateCommandArguments([
-    `./${path.relative(process.cwd(), ancestor) || "."}`,
-  ]);
+  validateCommandArguments(
+    [`./${path.relative(root, ancestor) || "."}`],
+    context,
+  );
 }
 
-export function validateCommandArguments(args: string[]): void {
+export function validateCommandArguments(
+  args: string[],
+  context?: WorkspaceContext,
+): void {
+  const root = workspaceRoot(context);
   const pathArguments = getPathArguments(args);
 
   for (const argument of args) {
-    if (targetsRestrictedFile(argument)) {
+    if (targetsRestrictedFile(argument, root)) {
       throw new Error(
         `Access Denied: command argument '${argument}' targets a restricted file or path.`,
       );
@@ -178,22 +194,22 @@ export function validateCommandArguments(args: string[]): void {
       );
     }
 
-    if (!isInsideProjectLexically(argument)) {
+    if (!isInsideProjectLexically(argument, root)) {
       throw new Error(
         `Access Denied: command argument '${argument}' resolves outside the project directory.`,
       );
     }
 
-    if (!isInsideProjectCanonical(argument)) {
+    if (!isInsideProjectCanonical(argument, root)) {
       throw new Error(
         `Access Denied: command argument '${argument}' resolves outside the project directory.`,
       );
     }
 
-    const absolutePath = path.resolve(process.cwd(), argument);
+    const absolutePath = path.resolve(root, argument);
     if (
       fs.existsSync(absolutePath) &&
-      targetsRestrictedFile(fs.realpathSync(absolutePath))
+      targetsRestrictedFile(fs.realpathSync(absolutePath), root)
     ) {
       throw new Error(
         `Access Denied: command argument '${argument}' targets a restricted file or path.`,

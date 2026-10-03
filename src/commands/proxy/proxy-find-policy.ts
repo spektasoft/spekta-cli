@@ -1,6 +1,7 @@
 import fs from "fs-extra";
 import path from "path";
 import { validateCommandArguments } from "./proxy-path-security";
+import type { WorkspaceContext } from "../../utils/workspace";
 
 function containsControlCharacters(value: string): boolean {
   return Array.from(value).some((character) => {
@@ -9,14 +10,14 @@ function containsControlCharacters(value: string): boolean {
   });
 }
 
-function validateFindRoot(root: string): void {
+function validateFindRoot(root: string, context?: WorkspaceContext): void {
   if (root === "") {
     throw new Error("Execution refused: invalid find directory operand.");
   }
 
   // Only actual roots enter filesystem-path validation.
   // Preserve the existing lexical, canonical, cwd, and restricted-path checks.
-  validateCommandArguments([root]);
+  validateCommandArguments([root], context);
 
   const segments = root.split("/");
   const supportedSegments =
@@ -37,7 +38,9 @@ function validateFindRoot(root: string): void {
 
   let isDirectory = false;
   try {
-    isDirectory = fs.statSync(path.resolve(process.cwd(), root)).isDirectory();
+    isDirectory = fs
+      .statSync(path.resolve(context?.root ?? process.cwd(), root))
+      .isDirectory();
   } catch {
     // Missing, dangling, or inaccessible roots fail closed.
   }
@@ -49,7 +52,10 @@ function validateFindRoot(root: string): void {
   }
 }
 
-export function validateFindProxyRequest(args: string[]): void {
+export function validateFindProxyRequest(
+  args: string[],
+  context?: WorkspaceContext,
+): void {
   if (args.some(containsControlCharacters)) {
     throw new Error("Execution refused: invalid find argument.");
   }
@@ -59,7 +65,7 @@ export function validateFindProxyRequest(args: string[]): void {
   const hasExplicitRoot = args.length > 0 && !args[0].startsWith("-");
   const root = hasExplicitRoot ? args[0] : ".";
 
-  validateFindRoot(root);
+  validateFindRoot(root, context);
 
   let index = hasExplicitRoot ? 1 : 0;
   let seenType = false;

@@ -16,10 +16,10 @@ export const resetInternalState = (resetToolsCallback?: () => void) => {
   }
 };
 
-export const getEnv = async () => {
+export const getEnv = async (workspaceRoot: string = process.cwd()) => {
   if (envLoaded) return process.env;
 
-  const workspaceEnv = path.join(process.cwd(), ".env");
+  const workspaceEnv = path.resolve(workspaceRoot, ".env");
   const homeEnv = path.join(GET_HOME_DIR(), ".env");
 
   let globalConfig = {};

@@ -1,12 +1,17 @@
 import fs from "fs-extra";
 import path from "path";
 import { validateCommandArguments } from "./proxy-path-security";
+import type { WorkspaceContext } from "../../utils/workspace";
 import { redactSecrets } from "./proxy-secret-redaction";
 import { truncateOutput } from "./proxy-output";
 import { validateGitProxyRequest } from "./proxy-git-policy";
 import { validateFindProxyRequest } from "./proxy-find-policy";
 
-export function validateProxyRequest(command: string, args: string[]): void {
+export function validateProxyRequest(
+  command: string,
+  args: string[],
+  context?: WorkspaceContext,
+): void {
   if (
     args.some(
       (arg) => arg === "--spekta-force" || arg.startsWith("--spekta-force="),
@@ -15,11 +20,11 @@ export function validateProxyRequest(command: string, args: string[]): void {
     throw new Error("Execution refused: unsupported option '--spekta-force'.");
   }
   if (command === "git") {
-    validateGitProxyRequest(args);
+    validateGitProxyRequest(args, context);
     return;
   }
   if (command === "find") {
-    validateFindProxyRequest(args);
+    validateFindProxyRequest(args, context);
     return;
   }
   if (command !== "ls") {
@@ -38,11 +43,11 @@ export function validateProxyRequest(command: string, args: string[]): void {
   if (directory === "" || /[\0\r\n]/.test(directory)) {
     throw new Error("Execution refused: invalid directory operand.");
   }
-  validateCommandArguments([directory]);
+  validateCommandArguments([directory], context);
   let isDirectory = false;
   try {
     isDirectory = fs
-      .statSync(path.resolve(process.cwd(), directory))
+      .statSync(path.resolve(context?.root ?? process.cwd(), directory))
       .isDirectory();
   } catch {
     // Missing, broken, or inaccessible operands fail closed.

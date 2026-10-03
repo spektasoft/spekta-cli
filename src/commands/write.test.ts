@@ -160,6 +160,9 @@ describe("write command logic", () => {
       encoding: "utf-8",
       flag: "wx",
     });
-    expect(formatUtils.formatFileInPlace).toHaveBeenCalledWith(destination);
+    expect(formatUtils.formatFileInPlace).toHaveBeenCalledWith(
+      destination,
+      workspace,
+    );
   });
 });

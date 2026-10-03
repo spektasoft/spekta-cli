@@ -1,6 +1,9 @@
 import { executeRtkCommand } from "./proxy-execution";
 import { formatProxyFailure, validateProxyRequest } from "./proxy-policy";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
+import type { WorkspaceContext } from "../../utils/workspace";
+
+export type { WorkspaceContext } from "../../utils/workspace";
 
 export { isRtkAvailable } from "./proxy-execution";
 
@@ -11,9 +14,10 @@ export { redactSecrets, validateCommandArguments } from "./proxy-security";
 export async function runRtkProxy(
   command: string,
   rawArgs: string[],
+  context?: WorkspaceContext,
 ): Promise<void> {
   try {
-    validateProxyRequest(command, rawArgs);
+    validateProxyRequest(command, rawArgs, context);
   } catch (error: unknown) {
     console.error(formatProxyFailure(error));
     process.exitCode = 1;
@@ -21,7 +25,7 @@ export async function runRtkProxy(
   }
   let result;
   try {
-    result = await executeRtkCommand(command, rawArgs);
+    result = await executeRtkCommand(command, rawArgs, context);
   } catch (error: unknown) {
     console.error(formatProxyFailure(error));
     process.exitCode = 1;

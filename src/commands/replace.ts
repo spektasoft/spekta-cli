@@ -162,7 +162,8 @@ export async function executeSafeReplace(
 
     // 7. Formatting is best-effort after the content has been saved.
     try {
-      await formatFileInPlace(filePath);
+      if (workspace) await formatFileInPlace(filePath, workspace);
+      else await formatFileInPlace(filePath);
     } catch (error: unknown) {
       const reason = error instanceof Error ? error.message : String(error);
       return {

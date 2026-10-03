@@ -1,4 +1,5 @@
 import { z } from "zod";
+import path from "node:path";
 
 import { getGrepContent } from "../../commands/grep-search";
 import { getReadContent } from "../../commands/read";
@@ -12,6 +13,7 @@ import {
 import { executeRtkCommand } from "../../commands/proxy/proxy-execution";
 import { ToolDefinition } from "../../core/config";
 import { parseFilePathWithRange } from "../../utils/read-utils";
+import type { WorkspaceContext } from "../../utils/workspace";
 
 export interface McpToolResponse {
   content: Array<{
@@ -24,6 +26,7 @@ export interface McpToolResponse {
 
 export type McpToolHandler = (
   args: Record<string, unknown>,
+  context?: WorkspaceContext,
 ) => Promise<McpToolResponse>;
 
 export interface ToolRegistryEntry {
@@ -31,16 +34,16 @@ export interface ToolRegistryEntry {
   handler: McpToolHandler;
 }
 
-export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
+const registry: Record<string, ToolRegistryEntry> = {
   spekta_read: {
     schema: (params) =>
       z.object({
         paths: z.array(z.string()).describe(params.paths?.description || ""),
       }),
-    handler: async (rawArgs) => {
+    handler: async (rawArgs, context) => {
       const { paths } = rawArgs as { paths: string[] };
       const fileRequests = paths.map((p) => parseFilePathWithRange(p));
-      const content = await getReadContent(fileRequests);
+      const content = await getReadContent(fileRequests, false, context);
       return { content: [{ type: "text", text: content }] };
     },
   },
@@ -51,7 +54,7 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
         path: z.string().describe(params.path?.description || ""),
         blocks: z.string().describe(params.blocks?.description || ""),
       }),
-    handler: async (rawArgs) => {
+    handler: async (rawArgs, context) => {
       const { path: filePath, blocks } = rawArgs as {
         path: string;
         blocks: string;
@@ -60,6 +63,7 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
         const { message } = await executeSafeReplace(
           { path: filePath, blocks: [] },
           blocks,
+          context,
         );
         return { content: [{ type: "text", text: message }] };
       } catch (error: unknown) {
@@ -79,13 +83,13 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
         path: z.string().describe(params.path?.description || ""),
         content: z.string().describe(params.content?.description || ""),
       }),
-    handler: async (rawArgs) => {
+    handler: async (rawArgs, context) => {
       const { path: filePath, content } = rawArgs as {
         path: string;
         content: string;
       };
       try {
-        const result = await getWriteContent(filePath, content);
+        const result = await getWriteContent(filePath, content, context);
         return {
           isError: !result.success,
           content: [{ type: "text", text: result.message }],
@@ -118,9 +122,16 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
           .optional()
           .describe(params.case_insensitive?.description || ""),
       }),
-    handler: async (rawArgs) => {
-      const args = rawArgs as unknown as Parameters<typeof getGrepContent>[0];
-      const result = await getGrepContent(args);
+    handler: async (rawArgs, context) => {
+      const args = {
+        pattern: rawArgs.pattern as string,
+        ...(typeof rawArgs.path === "string" ? { path: rawArgs.path } : {}),
+        ...(typeof rawArgs.globs === "string" ? { globs: rawArgs.globs } : {}),
+        ...(typeof rawArgs.case_insensitive === "boolean"
+          ? { case_insensitive: rawArgs.case_insensitive }
+          : {}),
+      };
+      const result = await getGrepContent(args, context);
       return { content: [{ type: "text", text: result }] };
     },
   },
@@ -134,7 +145,7 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
           .optional()
           .describe(params?.args?.description || ""),
       }),
-    handler: async (rawArgs) => {
+    handler: async (rawArgs, context) => {
       const { command, args } = rawArgs as {
         command: string;
         args?: string[];
@@ -142,7 +153,7 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
       const cleanArgs = args ?? [];
 
       try {
-        validateProxyRequest(command, cleanArgs);
+        validateProxyRequest(command, cleanArgs, context);
       } catch (error: unknown) {
         return {
           isError: true,
@@ -151,7 +162,7 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
       }
       let result;
       try {
-        result = await executeRtkCommand(command, cleanArgs);
+        result = await executeRtkCommand(command, cleanArgs, context);
       } catch (error: unknown) {
         return {
           isError: true,
@@ -184,3 +195,26 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
     },
   },
 };
+
+/**
+ * Create handlers whose filesystem and shell operations stay inside one MCP
+ * server's launch workspace.
+ */
+export function createToolRegistry(
+  context: WorkspaceContext,
+): Record<string, ToolRegistryEntry> {
+  const boundContext = Object.freeze({ root: path.resolve(context.root) });
+  return Object.fromEntries(
+    Object.entries(registry).map(([name, implementation]) => [
+      name,
+      {
+        schema: implementation.schema,
+        handler: (args: Record<string, unknown>) =>
+          implementation.handler(args, boundContext),
+      },
+    ]),
+  );
+}
+
+/** Unbound registry retained for callers that use MCP handlers directly. */
+export const TOOL_REGISTRY = registry;

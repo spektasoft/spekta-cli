@@ -1,4 +1,6 @@
 import { execa } from "execa";
+import path from "path";
+import type { WorkspaceContext } from "../../utils/workspace";
 
 export type RtkExecutionResult =
   | {
@@ -14,6 +16,7 @@ export type RtkExecutionResult =
 export function prepareRtkInvocation(
   command: string,
   args: string[],
+  context?: WorkspaceContext,
 ): {
   args: string[];
   env: NodeJS.ProcessEnv;
@@ -27,6 +30,8 @@ export function prepareRtkInvocation(
     NO_COLOR: "1",
     TERM: "dumb",
   };
+  const workspaceCwd =
+    context?.root === undefined ? undefined : path.resolve(context.root);
   if (command === "find") {
     const hasExplicitRoot = args.length > 0 && !args[0].startsWith("-");
 
@@ -38,11 +43,17 @@ export function prepareRtkInvocation(
         ...(hasExplicitRoot ? args : [".", ...args]),
       ],
       env,
-      cwd: process.cwd(),
+      cwd: workspaceCwd ?? process.cwd(),
     };
   }
 
-  if (!controlledGit) return { args: [command, ...args], env };
+  if (!controlledGit) {
+    return {
+      args: [command, ...args],
+      env,
+      ...(workspaceCwd === undefined ? {} : { cwd: workspaceCwd }),
+    };
+  }
 
   env.GIT_PAGER = "cat";
   env.PAGER = "cat";
@@ -62,15 +73,16 @@ export function prepareRtkInvocation(
       ...(history && !args.includes("--") ? ["--"] : []),
     ],
     env,
-    cwd: process.cwd(),
+    cwd: workspaceCwd ?? process.cwd(),
   };
 }
 
 export async function executeRtkCommand(
   command: string,
   args: string[],
+  context?: WorkspaceContext,
 ): Promise<RtkExecutionResult> {
-  const invocation = prepareRtkInvocation(command, args);
+  const invocation = prepareRtkInvocation(command, args, context);
   try {
     const result = await execa("rtk", invocation.args, {
       reject: false,

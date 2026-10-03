@@ -48,7 +48,8 @@ export async function getWriteContent(
 
   // 4. Format in-place
   try {
-    await formatFileInPlace(absolutePath);
+    if (workspace) await formatFileInPlace(absolutePath, workspace);
+    else await formatFileInPlace(absolutePath);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return {

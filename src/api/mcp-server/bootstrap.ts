@@ -4,11 +4,18 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { bootstrap as initializeProject } from "../../core/config";
 import { loadToolDefinitions } from "../../core/config";
 import { Logger } from "../../utils/logger";
-import { TOOL_REGISTRY } from "./registry";
+import { createToolRegistry } from "./registry";
 import { validateToolDefinitions } from "./validate";
+import { resolveWorkspace } from "../../utils/workspace";
 
 export async function runMcpServer() {
-  await initializeProject();
+  // Capture the launch directory before any await; other servers or callers
+  // may change process.cwd() while this server is initializing.
+  const startupCwd = process.cwd();
+  const resolvedWorkspace = await resolveWorkspace({ root: startupCwd });
+  const workspace = Object.freeze({ root: resolvedWorkspace.canonicalRoot });
+
+  await initializeProject({ workspaceRoot: startupCwd });
 
   const server = new McpServer({
     name: "spekta-mcp-server",
@@ -17,6 +24,7 @@ export async function runMcpServer() {
 
   const tools = await loadToolDefinitions();
   validateToolDefinitions(tools);
+  const registry = createToolRegistry(workspace);
 
   const registeredNames = new Set<string>();
 
@@ -26,7 +34,7 @@ export async function runMcpServer() {
       continue;
     }
 
-    const implementation = TOOL_REGISTRY[tool.name];
+    const implementation = registry[tool.name];
 
     if (!implementation) {
       Logger.warn(`No implementation found for tool: ${tool.name}`);
