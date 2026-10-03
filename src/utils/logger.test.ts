@@ -2,95 +2,52 @@ import { vi, it, expect, describe, afterEach } from "vitest";
 import { Logger } from "./logger";
 
 describe("Logger", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  afterEach(() => vi.restoreAllMocks());
 
-  it("writes info to stdout", () => {
-    const spy = vi
+  it("keeps info and log on stdout", () => {
+    const stdout = vi
       .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    const stderr = vi
+      .spyOn(process.stderr, "write")
       .mockImplementation(() => true);
     Logger.info("test info");
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("[INFO] test info\n"),
-    );
-  });
-
-  it("writes warn to stdout", () => {
-    const spy = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    Logger.warn("test warn");
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("[WARN] test warn\n"),
-    );
-  });
-
-  it("writes error to stdout", () => {
-    const spy = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    Logger.error("test error");
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("[ERROR] test error\n"),
-    );
-  });
-
-  it("writes log to stdout", () => {
-    const spy = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
     Logger.log("test log");
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("test log\n"));
+    expect(stdout).toHaveBeenCalledWith("[INFO] test info\n");
+    expect(stdout).toHaveBeenCalledWith("test log\n");
+    expect(stderr).not.toHaveBeenCalled();
   });
 
-  it("should log error with stack trace", () => {
-    const error = new Error("Stack Trace Test");
-    const spy = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    Logger.error("Test Error", error);
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("[ERROR] Test Error"),
-    );
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("Stack Trace Test"),
-    );
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("at"));
-  });
-
-  it("should log object with inspection", () => {
-    const spy = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    Logger.info("Object Test", { foo: "bar" });
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("[INFO] Object Test"),
-    );
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("bar"));
-  });
-
-  it("should handle multiple arguments", () => {
-    const spy = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    Logger.warn("Multiple Args", "string", 123, { nested: { value: true } });
-    expect(spy).toHaveBeenCalledWith(
-      expect.stringContaining("[WARN] Multiple Args"),
-    );
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("string"));
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("123"));
-    expect(spy).toHaveBeenCalledWith(expect.stringContaining("nested"));
-  });
-
-  it("should not include ANSI color codes in output", () => {
-    const error = new Error("Test Error");
-    const spy = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    Logger.error("Test Message", error, { foo: "bar" });
-    const output = spy.mock.calls[0][0];
-    expect(output).not.toContain("\x1B[");
-    expect(output).not.toContain("\x1b[");
-  });
+  it.each([
+    ["warn", "[WARN]"],
+    ["error", "[ERROR]"],
+  ] as const)(
+    "writes %s and its formatted arguments to stderr only",
+    (level, prefix) => {
+      const stdout = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation(() => true);
+      const stderr = vi
+        .spyOn(process.stderr, "write")
+        .mockImplementation(() => true);
+      const failure = new Error("stack detail");
+      Logger[level](
+        "diagnostic",
+        "text",
+        123,
+        { nested: { value: true } },
+        failure,
+      );
+      expect(stdout).not.toHaveBeenCalled();
+      expect(stderr).toHaveBeenCalledOnce();
+      const output = String(stderr.mock.calls[0][0]);
+      expect(output).toContain(`${prefix} diagnostic`);
+      expect(output).toContain("text");
+      expect(output).toContain("123");
+      expect(output).toContain("nested");
+      expect(output).toContain("stack detail");
+      expect(output).toContain("at ");
+      expect(output).not.toContain(`${String.fromCharCode(27)}[`);
+    },
+  );
 });

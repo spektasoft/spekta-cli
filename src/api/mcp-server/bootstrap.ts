@@ -15,7 +15,7 @@ export async function runMcpServer() {
   const resolvedWorkspace = await resolveWorkspace({ root: startupCwd });
   const workspace = Object.freeze({ root: resolvedWorkspace.canonicalRoot });
 
-  await initializeProject({ workspaceRoot: startupCwd });
+  await initializeProject({ writeUserHome: false, workspaceRoot: startupCwd });
 
   const server = new McpServer({
     name: "spekta-mcp-server",

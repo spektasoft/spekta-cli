@@ -106,6 +106,10 @@ describe("runMcpServer", () => {
     await runMcpServer();
 
     expect(initializeProject).toHaveBeenCalledOnce();
+    expect(initializeProject).toHaveBeenCalledWith({
+      writeUserHome: false,
+      workspaceRoot: process.cwd(),
+    });
     expect(validateToolDefinitions).toHaveBeenCalledWith([
       {
         name: "spekta_grep",
@@ -149,6 +153,7 @@ describe("runMcpServer", () => {
       root: "/launch-before-await",
     });
     expect(initializeProject).toHaveBeenCalledWith({
+      writeUserHome: false,
       workspaceRoot: "/launch-before-await",
     });
     cwd.mockRestore();
@@ -223,5 +228,35 @@ describe("runMcpServer", () => {
       isError: true,
       content: [{ type: "text", text: "Execution failed: Error: boom" }],
     });
+    toolHandler.mockResolvedValueOnce({
+      content: [{ type: "text", text: "ok" }],
+    });
+    await expect(handler({})).resolves.toEqual({
+      content: [{ type: "text", text: "ok" }],
+    });
+  });
+
+  it("continues registering tools after a registration exception", async () => {
+    const grep = {
+      name: "spekta_grep",
+      description: "Search",
+      params: {},
+      xml_example: "<spekta_grep></spekta_grep>",
+    };
+    const read = { ...grep, name: "spekta_read" };
+    vi.mocked(loadToolDefinitions).mockResolvedValue([grep, read]);
+    vi.mocked(createToolRegistry).mockReturnValue({
+      spekta_grep: registryEntry,
+      spekta_read: registryEntry,
+    });
+    registerTool.mockImplementationOnce(() => {
+      throw new Error("registration failed");
+    });
+
+    await runMcpServer();
+
+    expect(registerTool).toHaveBeenCalledTimes(2);
+    expect(registerTool.mock.calls[1][0]).toBe("spekta_read");
+    expect(connect).toHaveBeenCalledOnce();
   });
 });
