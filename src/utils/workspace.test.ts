@@ -8,6 +8,7 @@ import {
 import {
   isPathWithin,
   resolveWorkspace,
+  resolveWorkspaceMutationTarget,
   resolveWorkspaceTarget,
 } from "./workspace";
 
@@ -128,5 +129,135 @@ describe("workspace containment", () => {
     await expect(resolveWorkspaceTarget("missing.txt", workspace)).rejects.toBe(
       ancestor,
     );
+  });
+});
+
+describe("workspace mutation containment", () => {
+  it.each(["real.txt", "internal-file.txt", "internal-dir/child.txt", "."])(
+    "accepts existing internal target %s",
+    async (target) => {
+      const workspace = await resolveWorkspace({ root: fixture.root });
+      const resolved = await resolveWorkspaceMutationTarget(target, workspace);
+      expect(resolved.absolutePath).toBe(path.resolve(fixture.root, target));
+      expect(resolved.canonicalPath).toBe(
+        await fs.realpath(path.resolve(fixture.root, target)),
+      );
+    },
+  );
+
+  it("accepts existing and missing targets through a symlinked workspace root", async () => {
+    const workspace = await resolveWorkspace({ root: fixture.alias });
+    const canonicalFile = path.join(fixture.root, "real.txt");
+    expect(
+      (
+        await resolveWorkspaceMutationTarget(
+          path.join(fixture.root, "real.txt"),
+          workspace,
+        )
+      ).canonicalPath,
+    ).toBe(canonicalFile);
+    expect(
+      (await resolveWorkspaceMutationTarget("nested/new.txt", workspace, true))
+        .canonicalPath,
+    ).toBe(path.join(fixture.root, "nested/new.txt"));
+  });
+
+  it("accepts supported nested creation from an existing internal directory", async () => {
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    expect(
+      (
+        await resolveWorkspaceMutationTarget(
+          "safe/new/deeper.txt",
+          workspace,
+          true,
+        )
+      ).canonicalPath,
+    ).toBe(path.join(fixture.root, "safe/new/deeper.txt"));
+  });
+
+  it.each([
+    "../sibling.txt",
+    "external-file.txt",
+    "external-dir/secret.txt",
+    "hop/secret.txt",
+    "hop/missing/deeper.txt",
+    "external-dir/reenter/real.txt",
+    "external-dir/reenter/new/deeper.txt",
+  ])("rejects mutation target with escaping ancestry: %s", async (target) => {
+    await fs.symlink(
+      fixture.root,
+      path.join(fixture.outside, "reenter"),
+      "dir",
+    );
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    await expect(
+      resolveWorkspaceMutationTarget(target, workspace, true),
+    ).rejects.toThrow("outside the project directory");
+  });
+
+  it("rejects an absolute repository sibling outside the effective workspace", async () => {
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    await expect(
+      resolveWorkspaceMutationTarget(
+        path.join(fixture.repo, "sibling.txt"),
+        workspace,
+        true,
+      ),
+    ).rejects.toThrow("outside the project directory");
+  });
+
+  it.each([
+    "dangling.txt",
+    "cycle-a",
+    "cycle-b",
+    "real.txt/child",
+    "external-file.txt/child",
+  ])(
+    "fails closed for unresolved or non-directory target %s",
+    async (target) => {
+      await expect(
+        resolveWorkspaceMutationTarget(
+          target,
+          await resolveWorkspace({ root: fixture.root }),
+          true,
+        ),
+      ).rejects.toThrow();
+    },
+  );
+
+  it("rejects missing paths unless allowMissing is enabled", async () => {
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    await expect(
+      resolveWorkspaceMutationTarget("new/deep/file.txt", workspace),
+    ).rejects.toThrow("does not exist");
+    await expect(
+      resolveWorkspaceMutationTarget("new/deep/file.txt", workspace, true),
+    ).resolves.toMatchObject({
+      canonicalPath: path.join(fixture.root, "new/deep/file.txt"),
+    });
+  });
+
+  it("rejects absolute sibling paths before filesystem lookup", async () => {
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    const lookup = vi.spyOn(fs, "lstat");
+    await expect(
+      resolveWorkspaceMutationTarget(
+        path.join(fixture.outside, "secret.txt"),
+        workspace,
+        true,
+      ),
+    ).rejects.toThrow("outside");
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("propagates ancestor lookup failures instead of treating them as missing", async () => {
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    const denied = Object.assign(new Error("ancestor lookup denied"), {
+      code: "EACCES",
+    });
+    vi.spyOn(fs, "lstat").mockRejectedValueOnce(denied);
+    await expect(
+      resolveWorkspaceMutationTarget("missing.txt", workspace, true),
+    ).rejects.toBe(denied);
   });
 });

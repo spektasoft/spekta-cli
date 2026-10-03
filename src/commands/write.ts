@@ -5,17 +5,22 @@ import { Logger } from "../utils/logger";
 import { validateParentDirForCreate } from "../utils/security";
 import { formatFileInPlace } from "../utils/format-utils";
 import { validatePathAccessForWrite } from "../utils/security";
+import { resolveWorkspace, type WorkspaceContext } from "../utils/workspace";
 
 export async function getWriteContent(
   filePath: string,
   content: string,
+  workspace?: WorkspaceContext,
 ): Promise<{ success: boolean; message: string }> {
-  const absolutePath = path.resolve(filePath);
+  const resolvedWorkspace = await resolveWorkspace(workspace);
 
   // 1. Security checks FIRST (prevent information leakage)
-  await validatePathAccessForWrite(filePath);
+  const absolutePath = await validatePathAccessForWrite(
+    filePath,
+    resolvedWorkspace,
+  );
   // 2. Validate parent directory ancestry (allows creation of nested dirs)
-  await validateParentDirForCreate(filePath);
+  await validateParentDirForCreate(filePath, resolvedWorkspace);
 
   // 3. Create parent directories, then exclusively create the file
   await fs.ensureDir(path.dirname(absolutePath));
@@ -43,7 +48,7 @@ export async function getWriteContent(
 
   // 4. Format in-place
   try {
-    await formatFileInPlace(filePath);
+    await formatFileInPlace(absolutePath);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return {

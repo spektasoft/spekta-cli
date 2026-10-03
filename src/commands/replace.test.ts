@@ -1,7 +1,15 @@
 import fs from "fs-extra";
 import path from "path";
 import { Readable } from "stream";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
 import { executeSafeReplace, getReplaceContent, runReplace } from "./replace";
 import * as security from "../utils/security";
 import { ReplaceRequest } from "../utils/replace-utils";
@@ -9,7 +17,9 @@ import { Logger } from "../utils/logger";
 
 // Mock security validation to isolate logic from Git environment
 vi.mock("../utils/security", () => ({
-  validateEditAccess: vi.fn().mockResolvedValue(undefined),
+  validateEditAccess: vi.fn((target: string) =>
+    Promise.resolve(path.resolve(target)),
+  ),
 }));
 
 describe("getReplaceContent", () => {
@@ -218,5 +228,31 @@ const value = "from-stdin";
     ).rejects.toThrow(
       `Replacement failed for "${testFile}": Security Violation`,
     );
+  });
+
+  it("rejects a stale canonical file before writing replacement content", async () => {
+    const testFile = path.join(sandboxDir, "stale.md");
+    await fs.writeFile(testFile, "old value\n");
+    const reads = vi.spyOn(fs, "readFile") as unknown as MockInstance<
+      (filePath: string, encoding: "utf-8") => Promise<string>
+    >;
+    reads.mockResolvedValueOnce("old value\n");
+    reads.mockResolvedValueOnce("old value\n");
+    reads.mockResolvedValueOnce("changed by another process\n");
+    const writes = vi.spyOn(fs, "writeFile");
+
+    try {
+      await expect(
+        executeSafeReplace({
+          path: testFile,
+          blocks: [{ search: "old value", replace: "new value" }],
+        }),
+      ).rejects.toThrow("File was modified by another process");
+      expect(writes).not.toHaveBeenCalled();
+    } finally {
+      reads.mockRestore();
+      writes.mockRestore();
+    }
+    expect(await fs.readFile(testFile, "utf-8")).toBe("old value\n");
   });
 });

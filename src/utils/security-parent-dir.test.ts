@@ -8,6 +8,7 @@ import {
   validateParentDirForCreate,
   validatePathAccessForWrite,
 } from "./security";
+import { resolveWorkspaceMutationTarget } from "./workspace";
 
 vi.mock("fs-extra", () => ({
   default: {
@@ -51,6 +52,31 @@ vi.mock("../core/config", () => ({
   getIgnorePatterns: vi.fn(),
 }));
 
+vi.mock("./workspace", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./workspace")>();
+  return {
+    ...actual,
+    resolveWorkspace: vi.fn(() => ({
+      root: process.cwd(),
+      canonicalRoot: process.cwd(),
+    })),
+    resolveWorkspaceMutationTarget: vi.fn(
+      (target: string, workspace: { root: string; canonicalRoot: string }) => {
+        const absolutePath = path.resolve(workspace.root, target);
+        if (
+          !actual.isPathWithin(workspace.root, absolutePath) &&
+          !actual.isPathWithin(workspace.canonicalRoot, absolutePath)
+        ) {
+          throw new Error(
+            `Access Denied: ${target} is outside the project directory.`,
+          );
+        }
+        return { absolutePath, canonicalPath: absolutePath };
+      },
+    ),
+  };
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getIgnorePatterns).mockResolvedValue([]);
@@ -78,6 +104,37 @@ describe("validatePathAccessForWrite", () => {
       validatePathAccessForWrite("ignored-new-file.txt"),
     ).rejects.toThrow(
       "Access Denied: ignored-new-file.txt would be ignored by git.",
+    );
+  });
+
+  it("checks ignore policy on the canonical destination as well as its requested alias", async () => {
+    vi.mocked(resolveWorkspaceMutationTarget).mockResolvedValueOnce({
+      absolutePath: path.join(process.cwd(), "alias", "new.txt"),
+      canonicalPath: path.join(process.cwd(), "ignored-new-file.txt"),
+    });
+    vi.mocked(execa)
+      .mockRejectedValueOnce({ exitCode: 1 })
+      .mockResolvedValueOnce(createMockExecaResult("ignored-new-file.txt"));
+
+    await expect(validatePathAccessForWrite("alias/new.txt")).rejects.toThrow(
+      "would be ignored by git",
+    );
+    expect(execa).toHaveBeenNthCalledWith(
+      2,
+      "git",
+      ["check-ignore", "-q", "ignored-new-file.txt"],
+      { cwd: process.cwd() },
+    );
+  });
+
+  it("checks restricted path segments on the canonical destination", async () => {
+    vi.mocked(resolveWorkspaceMutationTarget).mockResolvedValueOnce({
+      absolutePath: path.join(process.cwd(), "alias", "new.txt"),
+      canonicalPath: path.join(process.cwd(), ".env", "new.txt"),
+    });
+
+    await expect(validatePathAccessForWrite("alias/new.txt")).rejects.toThrow(
+      /restricted path segment/,
     );
   });
 });
