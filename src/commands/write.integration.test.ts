@@ -27,6 +27,19 @@ describe("write command integration", () => {
     expect(writtenContent).toContain("test");
   });
 
+  it("reports a saved file when Prettier cannot parse its contents", async () => {
+    const targetFile = path.join(testDir, "invalid.ts");
+    const content = "const value = ;\n";
+
+    const result = await getWriteContent(targetFile, content);
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain(`Content was saved to "${targetFile}"`);
+    expect(result.message).toContain("formatting failed:");
+    expect(result.message).toContain("Retrying the mutation is unnecessary.");
+    expect(await fs.readFile(targetFile, "utf-8")).toBe(content);
+  });
+
   it("rejects an existing file without changing its bytes", async () => {
     const targetFile = path.join(testDir, "existing.ts");
     await fs.writeFile(targetFile, "original content");

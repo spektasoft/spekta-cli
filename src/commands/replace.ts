@@ -144,8 +144,18 @@ export async function executeSafeReplace(
     // 6. Write unformatted content
     await fs.writeFile(request.path, replacedContent, "utf-8");
 
-    // 7. Format in-place
-    await formatFileInPlace(request.path);
+    // 7. Formatting is best-effort after the content has been saved.
+    try {
+      await formatFileInPlace(request.path);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return {
+        message:
+          `${message}\n` +
+          `Warning: Content was saved to "${request.path}", but formatting failed: ${reason}. Retrying the mutation is unnecessary.`,
+        appliedCount,
+      };
+    }
 
     return { message, appliedCount };
   } catch (error: unknown) {

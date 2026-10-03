@@ -47,8 +47,9 @@ export async function formatFileInPlace(filePath: string): Promise<void> {
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    console.warn(
-      `Prettier formatting failed for ${filePath}: ${errorMessage}.`,
+    throw new Error(
+      `Prettier formatting failed for ${filePath}: ${errorMessage}`,
+      { cause: err },
     );
   }
 }

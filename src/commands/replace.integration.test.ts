@@ -130,6 +130,42 @@ describe("replace handler integration", { concurrent: false }, () => {
     ).toContain("nested/mcp.md");
   });
 
+  it("reports a saved MCP replacement when Prettier cannot parse the result", async () => {
+    const initial = "const value = 1;\n";
+    await fs.writeFile("invalid.ts", initial);
+
+    const result = await TOOL_REGISTRY.spekta_replace.handler({
+      path: "invalid.ts",
+      blocks: block(initial.trimEnd(), "const value = ;"),
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain(
+      "Replaced 1 block(s) in invalid.ts",
+    );
+    expect(result.content[0].text).toContain(
+      'Content was saved to "invalid.ts"',
+    );
+    expect(result.content[0].text).toContain(
+      "Retrying the mutation is unnecessary.",
+    );
+    expect(await fs.readFile("invalid.ts", "utf-8")).toBe("const value = ;\n");
+  });
+
+  it("returns MCP error envelopes for replacement failures before saving", async () => {
+    await fs.writeFile(".env", "secret=fixture\n");
+
+    const result = await TOOL_REGISTRY.spekta_replace.handler({
+      path: ".env",
+      blocks: block("secret=fixture", "changed"),
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("Execution failed:");
+    expect(result.content[0].text).not.toContain("Content was saved");
+    expect(await fs.readFile(".env", "utf-8")).toBe("secret=fixture\n");
+  });
+
   it("replaces an eligible tracked file without changing staged index state", async () => {
     await fs.writeFile("tracked.md", "old tracked value\n");
     await execa("git", ["add", "tracked.md"]);
@@ -150,12 +186,13 @@ describe("replace handler integration", { concurrent: false }, () => {
     await execa("git", ["add", ".gitignore"]);
     await execa("git", ["add", "-f", "ignored.md"]);
     const beforeIndex = await indexSnapshot();
-    await expect(
-      TOOL_REGISTRY.spekta_replace.handler({
-        path: "ignored.md",
-        blocks: block("preserve this", "changed"),
-      }),
-    ).rejects.toThrow(/ignored by git/);
+    const result = await TOOL_REGISTRY.spekta_replace.handler({
+      path: "ignored.md",
+      blocks: block("preserve this", "changed"),
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("ignored by git");
+    expect(result.content[0].text).not.toContain("Content was saved");
     expect(await fs.readFile("ignored.md", "utf-8")).toBe("preserve this\n");
     expect(await indexSnapshot()).toEqual(beforeIndex);
   });
@@ -163,12 +200,13 @@ describe("replace handler integration", { concurrent: false }, () => {
   it("rejects restricted files and preserves content", async () => {
     await fs.writeFile(".env", "secret=fixture\n");
     const beforeIndex = await indexSnapshot();
-    await expect(
-      TOOL_REGISTRY.spekta_replace.handler({
-        path: ".env",
-        blocks: block("secret=fixture", "changed"),
-      }),
-    ).rejects.toThrow(/restricted system file/);
+    const result = await TOOL_REGISTRY.spekta_replace.handler({
+      path: ".env",
+      blocks: block("secret=fixture", "changed"),
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("restricted system file");
+    expect(result.content[0].text).not.toContain("Content was saved");
     expect(await fs.readFile(".env", "utf-8")).toBe("secret=fixture\n");
     expect(await indexSnapshot()).toEqual(beforeIndex);
   });
@@ -176,12 +214,13 @@ describe("replace handler integration", { concurrent: false }, () => {
   it("preserves the whole file when a later search block is missing", async () => {
     const initial = "first target\nsecond target\n";
     await fs.writeFile("multi.md", initial);
-    await expect(
-      TOOL_REGISTRY.spekta_replace.handler({
-        path: "multi.md",
-        blocks: `${block("first target", "changed first")}\n${block("absent", "changed absent")}`,
-      }),
-    ).rejects.toThrow(/could not be found/);
+    const result = await TOOL_REGISTRY.spekta_replace.handler({
+      path: "multi.md",
+      blocks: `${block("first target", "changed first")}\n${block("absent", "changed absent")}`,
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("could not be found");
+    expect(result.content[0].text).not.toContain("Content was saved");
     expect(await fs.readFile("multi.md", "utf-8")).toBe(initial);
   });
 });

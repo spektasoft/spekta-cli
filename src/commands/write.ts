@@ -46,7 +46,12 @@ export async function getWriteContent(
     await formatFileInPlace(filePath);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    Logger.warn(`Formatting failed: ${message}.`);
+    return {
+      success: true,
+      message:
+        `Successfully created and wrote ${filePath}\n` +
+        `Warning: Content was saved to "${filePath}", but formatting failed: ${message}. Retrying the mutation is unnecessary.`,
+    };
   }
 
   return {

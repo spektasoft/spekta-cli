@@ -56,11 +56,20 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
         path: string;
         blocks: string;
       };
-      const { message } = await executeSafeReplace(
-        { path: filePath, blocks: [] },
-        blocks,
-      );
-      return { content: [{ type: "text", text: message }] };
+      try {
+        const { message } = await executeSafeReplace(
+          { path: filePath, blocks: [] },
+          blocks,
+        );
+        return { content: [{ type: "text", text: message }] };
+      } catch (error: unknown) {
+        return {
+          isError: true,
+          content: [
+            { type: "text", text: `Execution failed: ${String(error)}` },
+          ],
+        };
+      }
     },
   },
 
@@ -75,11 +84,20 @@ export const TOOL_REGISTRY: Record<string, ToolRegistryEntry> = {
         path: string;
         content: string;
       };
-      const result = await getWriteContent(filePath, content);
-      return {
-        isError: !result.success,
-        content: [{ type: "text", text: result.message }],
-      };
+      try {
+        const result = await getWriteContent(filePath, content);
+        return {
+          isError: !result.success,
+          content: [{ type: "text", text: result.message }],
+        };
+      } catch (error: unknown) {
+        return {
+          isError: true,
+          content: [
+            { type: "text", text: `Execution failed: ${String(error)}` },
+          ],
+        };
+      }
     },
   },
 
