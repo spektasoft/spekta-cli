@@ -133,6 +133,30 @@ describe("runMcpServer", () => {
     expect(Object.isFrozen(boundContext)).toBe(true);
   });
 
+  it("passes the JSON-RPC request ID to the tool handler", async () => {
+    vi.mocked(loadToolDefinitions).mockResolvedValue([
+      {
+        name: "spekta_grep",
+        description: "Search",
+        params: {},
+        xml_example: "<spekta_grep></spekta_grep>",
+      },
+    ]);
+    await runMcpServer();
+
+    const callback = registerTool.mock.calls[0][2] as (
+      args: Record<string, unknown>,
+      extra: { requestId: string | number },
+    ) => Promise<unknown>;
+    const requestId = `request-${"x".repeat(128)}`;
+    await callback({ pattern: "needle" }, { requestId });
+    expect(toolHandler).toHaveBeenCalledWith(
+      { pattern: "needle" },
+      undefined,
+      requestId,
+    );
+  });
+
   it("anchors configuration to launch cwd when cwd changes during workspace validation", async () => {
     const cwd = vi.spyOn(process, "cwd");
     cwd.mockReturnValue("/launch-before-await");

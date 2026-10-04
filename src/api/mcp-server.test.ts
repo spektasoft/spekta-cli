@@ -14,15 +14,17 @@ import {
 } from "./mcp-server/registry";
 import { getReadContent } from "../commands/read";
 import { executeSafeReplace } from "../commands/replace";
-import { getGrepContent } from "../commands/grep-search";
+import { getGrepOutcome } from "../commands/grep-search";
 import { getWriteContent } from "../commands/write";
 import { executeRtkCommand } from "../commands/proxy/proxy-execution";
 import { getTokenCount } from "../utils/read-utils";
+import { getGrepResponseTokenCount } from "../commands/grep-output-parser";
+import { runGrep } from "../commands/grep";
 
 vi.mock("../commands/read", () => ({ getReadContent: vi.fn() }));
 vi.mock("../commands/replace", () => ({ executeSafeReplace: vi.fn() }));
 vi.mock("../commands/write", () => ({ getWriteContent: vi.fn() }));
-vi.mock("../commands/grep-search", () => ({ getGrepContent: vi.fn() }));
+vi.mock("../commands/grep-search", () => ({ getGrepOutcome: vi.fn() }));
 vi.mock("../commands/proxy/proxy-execution", () => ({
   executeRtkCommand: vi.fn(),
 }));
@@ -150,18 +152,101 @@ describe("TOOL_REGISTRY", () => {
     expect(parsed).toEqual({ pattern: "test", path: "src" });
 
     // Verify handler
-    vi.mocked(getGrepContent).mockResolvedValue("grep result");
+    vi.mocked(getGrepOutcome).mockResolvedValue({
+      status: "success",
+      value: "grep result",
+    });
     const result = await tool.handler({ pattern: "test", path: "src" });
 
     expect(result).toEqual({
       content: [{ type: "text", text: "grep result" }],
     });
-    expect(getGrepContent).toHaveBeenCalledWith(
+    expect(getGrepOutcome).toHaveBeenCalledWith(
       {
         pattern: "test",
         path: "src",
       },
       undefined,
+      undefined,
+    );
+  });
+
+  it("renders bounded grep outcomes with MCP status metadata", async () => {
+    const tool = TOOL_REGISTRY.spekta_grep;
+    vi.mocked(getGrepOutcome).mockResolvedValueOnce({
+      status: "output_limit_exceeded",
+      message:
+        "Search results exceed the response budget; all matches were withheld. Narrow the path or pattern.",
+    });
+    const limited = await tool.handler({ pattern: "needle" });
+    expect(limited.isError).toBeUndefined();
+    expect(limited.content[0].text).toContain("all matches were withheld");
+    expect(
+      getGrepResponseTokenCount(limited.content[0].text, "request-42"),
+    ).toBeLessThanOrEqual(2000);
+
+    vi.mocked(getGrepOutcome).mockResolvedValueOnce({
+      status: "engine_failure",
+      message: "Search failed.",
+    });
+    const failure = await tool.handler({ pattern: "needle" });
+    expect(failure.isError).toBe(true);
+    expect(
+      getGrepResponseTokenCount(failure.content[0].text, "request-42", true),
+    ).toBeLessThanOrEqual(2000);
+  });
+
+  it.each([
+    {
+      status: "success" as const,
+      value: "#### src/file.ts\n```ts\n1:0:needle\n```",
+    },
+    {
+      status: "output_limit_exceeded" as const,
+      message:
+        "Search results exceed the response budget; all matches were withheld. Narrow the path or pattern.",
+    },
+  ])("keeps CLI and MCP grep rendering in parity", async (outcome) => {
+    vi.mocked(getGrepOutcome).mockResolvedValueOnce(outcome);
+    const writeSpy = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation(() => true);
+    await runGrep(["needle"]);
+    const cliOutput = writeSpy.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    writeSpy.mockRestore();
+
+    vi.mocked(getGrepOutcome).mockResolvedValueOnce(outcome);
+    const mcp = await TOOL_REGISTRY.spekta_grep.handler({ pattern: "needle" });
+    expect(cliOutput).toBe(`${mcp.content[0].text}\n`);
+    expect(
+      getGrepResponseTokenCount(mcp.content[0].text, "request-42"),
+    ).toBeLessThanOrEqual(2000);
+  });
+
+  it("budgets MCP results against the actual request ID", async () => {
+    const requestId = `mcp-request-${"x".repeat(300)}`;
+    vi.mocked(getGrepOutcome).mockResolvedValueOnce({
+      status: "success",
+      value: "matches",
+    });
+    const response = await TOOL_REGISTRY.spekta_grep.handler(
+      { pattern: "needle" },
+      undefined,
+      requestId,
+    );
+    const text = response.content[0].text;
+    expect(getGrepResponseTokenCount(text, requestId)).toBeLessThanOrEqual(
+      2000,
+    );
+    expect(getGrepResponseTokenCount(text, requestId)).toBeGreaterThan(
+      getGrepResponseTokenCount(text, "mcp-request-1"),
+    );
+    expect(getGrepOutcome).toHaveBeenCalledWith(
+      { pattern: "needle" },
+      undefined,
+      requestId,
     );
   });
 
@@ -169,7 +254,10 @@ describe("TOOL_REGISTRY", () => {
     const workspace = Object.freeze({ root: "/canonical/repo" });
     const tools = createToolRegistry(workspace);
     vi.mocked(getReadContent).mockResolvedValueOnce("read result");
-    vi.mocked(getGrepContent).mockResolvedValueOnce("grep result");
+    vi.mocked(getGrepOutcome).mockResolvedValueOnce({
+      status: "success",
+      value: "grep result",
+    });
     vi.mocked(getWriteContent).mockResolvedValueOnce({
       success: true,
       message: "written",
@@ -200,7 +288,7 @@ describe("TOOL_REGISTRY", () => {
       false,
       workspace,
     );
-    expect(getGrepContent).toHaveBeenCalledWith(
+    expect(getGrepOutcome).toHaveBeenCalledWith(
       {
         pattern: "needle",
         path: "src",
@@ -208,6 +296,7 @@ describe("TOOL_REGISTRY", () => {
         case_insensitive: true,
       },
       workspace,
+      undefined,
     );
     expect(getWriteContent).toHaveBeenCalledWith("new.ts", "body", workspace);
     expect(executeSafeReplace).toHaveBeenCalledWith(

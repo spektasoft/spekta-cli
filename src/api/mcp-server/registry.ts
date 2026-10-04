@@ -1,7 +1,7 @@
 import { z } from "zod";
 import path from "node:path";
 
-import { getGrepContent } from "../../commands/grep-search";
+import { getGrepOutcome } from "../../commands/grep-search";
 import { getReadContent } from "../../commands/read";
 import { executeSafeReplace } from "../../commands/replace";
 import { getWriteContent } from "../../commands/write";
@@ -27,6 +27,7 @@ export interface McpToolResponse {
 export type McpToolHandler = (
   args: Record<string, unknown>,
   context?: WorkspaceContext,
+  requestId?: string | number,
 ) => Promise<McpToolResponse>;
 
 export interface ToolRegistryEntry {
@@ -122,7 +123,7 @@ const registry: Record<string, ToolRegistryEntry> = {
           .optional()
           .describe(params.case_insensitive?.description || ""),
       }),
-    handler: async (rawArgs, context) => {
+    handler: async (rawArgs, context, requestId) => {
       const args = {
         pattern: rawArgs.pattern as string,
         ...(typeof rawArgs.path === "string" ? { path: rawArgs.path } : {}),
@@ -131,8 +132,13 @@ const registry: Record<string, ToolRegistryEntry> = {
           ? { case_insensitive: rawArgs.case_insensitive }
           : {}),
       };
-      const result = await getGrepContent(args, context);
-      return { content: [{ type: "text", text: result }] };
+      const outcome = await getGrepOutcome(args, context, requestId);
+      const text =
+        outcome.status === "success" ? outcome.value : outcome.message;
+      return {
+        ...(outcome.status === "engine_failure" ? { isError: true } : {}),
+        content: [{ type: "text", text }],
+      };
     },
   },
 
@@ -209,8 +215,11 @@ export function createToolRegistry(
       name,
       {
         schema: implementation.schema,
-        handler: (args: Record<string, unknown>) =>
-          implementation.handler(args, boundContext),
+        handler: (
+          args: Record<string, unknown>,
+          _context?: WorkspaceContext,
+          requestId?: string | number,
+        ) => implementation.handler(args, boundContext, requestId),
       },
     ]),
   );

@@ -1,5 +1,5 @@
 import { Logger } from "../utils/logger";
-import { getGrepContent } from "./grep-search";
+import { getGrepOutcome } from "./grep-search";
 
 export async function runGrep(args?: string[]) {
   try {
@@ -23,11 +23,18 @@ export async function runGrep(args?: string[]) {
       process.exit(1);
     }
 
-    const content = await getGrepContent({
+    const outcome = await getGrepOutcome({
       pattern,
       path,
       globs: globs.length > 0 ? globs.join(",") : undefined,
     });
+    if (outcome.status === "engine_failure") {
+      if (outcome.message) Logger.error(outcome.message);
+      process.exitCode = 1;
+      return;
+    }
+    const content =
+      outcome.status === "success" ? outcome.value : outcome.message;
     process.stdout.write(content + "\n");
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

@@ -14,6 +14,7 @@ import {
   type ResolvedWorkspace,
   type WorkspaceContext,
 } from "../utils/workspace";
+import type { OperationOutcome } from "../core/operation-outcome";
 
 export type { GrepOptions };
 export { MAX_MATCHES };
@@ -114,10 +115,11 @@ async function findWhitelistedGitIgnoredFiles(
   return [...new Set(whitelisted)];
 }
 
-export async function getGrepContent(
+export async function getGrepOutcome(
   options: GrepOptions,
   workspace?: WorkspaceContext,
-): Promise<string> {
+  responseId?: string | number,
+): Promise<OperationOutcome<string>> {
   const { pattern, path: searchPath = "." } = options;
 
   // SECURITY: Reject empty/whitespace patterns to prevent full-codebase scans
@@ -161,5 +163,17 @@ export async function getGrepContent(
     workspace: resolvedWorkspace,
     canonicalSearchPath,
     requestedSearchPath: searchPath,
+    responseId,
   });
+}
+
+/** Compatibility renderer for existing internal string consumers. */
+export async function getGrepContent(
+  options: GrepOptions,
+  workspace?: WorkspaceContext,
+): Promise<string> {
+  const outcome = await getGrepOutcome(options, workspace);
+  if (outcome.status === "success") return outcome.value;
+  if (outcome.status === "engine_failure") throw new Error(outcome.message);
+  return outcome.message;
 }

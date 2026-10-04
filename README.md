@@ -14,6 +14,26 @@ AI-powered CLI tools.
 
 Run `spekta` and follow the prompts.
 
+### Codex inspection routing (experimental)
+
+`npm run deploy` also installs the standalone `spekta-codex-hook` binary. To enable it, add this synchronous hook manually to your Codex `config.toml`:
+
+```toml
+[features]
+hooks = true
+
+[hooks]
+
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+command = "spekta-codex-hook"
+timeout = 3
+```
+
+Review the hook in `/hooks` and trust the project before enabling project hooks. The hook reads one event (at most 64 KiB, with a two-second stdin deadline) and rewrites only literal standalone `ls` requests. Its response uses `hookSpecificOutput` with `hookEventName: "PreToolUse"`, `permissionDecision: "allow"`, and `updatedInput.command`. Codex then performs its usual approval and sandbox handling; the hook does not grant a `PermissionRequest` decision. Filesystem policy checks happen in Spekta during execution.
+
+The intended target is Codex 0.160.0 on local Linux/WSL with Bash or Zsh. Hook events do not identify the effective shell, so the hook cannot safely infer support for other shells. The versioned unified-exec handler is expected to replace `cmd` while retaining execution settings, but shell and unified-execution behavior still needs real-runtime verification before integration support can be claimed. Untrusted project hooks are skipped by Codex. No configuration or project trust is installed automatically.
+
 ### RTK Proxy Inspection
 
 Commands without a native Spekta handler and MCP `spekta_shell` requests use one fail-closed policy before RTK starts. Supported forms are `ls`, restricted `find` discovery, and the Git inspections below.
@@ -24,13 +44,13 @@ Commands without a native Spekta handler and MCP `spekta_shell` requests use one
 
 `find` accepts zero or one existing relative workspace-directory root. Omitting the root uses `.`. CLI and MCP requests use the same classifier.
 
-| Component | Supported forms |
-| --------- | --------------- |
-| Root | `.`, ordinary relative directory names, nested directories, and an optional leading `./` |
-| Type predicate | At most one `-type f` or `-type d` |
-| Name predicate | At most one `-name PATTERN` |
-| Combination | Implicit conjunction; predicates may appear in either order |
-| Output | Default printing or one terminal `-print` |
+| Component      | Supported forms                                                                          |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| Root           | `.`, ordinary relative directory names, nested directories, and an optional leading `./` |
+| Type predicate | At most one `-type f` or `-type d`                                                       |
+| Name predicate | At most one `-name PATTERN`                                                              |
+| Combination    | Implicit conjunction; predicates may appear in either order                              |
+| Output         | Default printing or one terminal `-print`                                                |
 
 Patterns must be nonempty strings without control characters. Pass each pattern as one argument. Wildcards remain literal argument contents until native find interprets them. Name values such as `.env`, `../outside`, and `-exec` are filters, not filesystem roots or executable actions. The shared reserved `--spekta-force` option remains rejected wherever it appears.
 
