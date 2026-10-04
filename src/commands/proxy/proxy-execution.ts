@@ -47,6 +47,16 @@ export function prepareRtkInvocation(
     };
   }
 
+  if (command === "ls") {
+    // Raw one-entry-per-line output with -b escapes lets Spekta attribute and
+    // filter each entry; decorated RTK listings are never parsed.
+    return {
+      args: ["proxy", "ls", "-1Ab", "--", args[0] ?? "."],
+      env: { ...env, LC_ALL: "C" },
+      cwd: workspaceCwd ?? process.cwd(),
+    };
+  }
+
   if (!controlledGit) {
     return {
       args: [command, ...args],

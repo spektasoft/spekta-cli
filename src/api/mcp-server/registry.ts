@@ -11,6 +11,7 @@ import {
   validateProxyRequest,
 } from "../../commands/proxy/proxy-policy";
 import { executeRtkCommand } from "../../commands/proxy/proxy-execution";
+import { renderLsOutcome } from "../../commands/proxy/proxy-ls-render";
 import { ToolDefinition } from "../../core/config";
 import { getOutcomeText } from "../../core/operation-outcome";
 import { parseFilePathWithRange } from "../../utils/read-utils";
@@ -193,7 +194,15 @@ const registry: Record<string, ToolRegistryEntry> = {
       } catch (error: unknown) {
         return {
           isError: true,
-          content: [{ type: "text", text: formatProxyFailure(error) }],
+          content: [
+            {
+              type: "text",
+              text:
+                command === "ls"
+                  ? "RTK listing failed before output could be checked."
+                  : formatProxyFailure(error),
+            },
+          ],
         };
       }
 
@@ -207,6 +216,19 @@ const registry: Record<string, ToolRegistryEntry> = {
             },
           ],
         };
+      }
+
+      if (command === "ls") {
+        const outcome = await renderLsOutcome(result, cleanArgs[0], context);
+        return outcome.status === "failure"
+          ? {
+              isError: true,
+              content: [{ type: "text", text: outcome.message }],
+            }
+          : {
+              isError: false,
+              content: [{ type: "text", text: outcome.content }],
+            };
       }
 
       const rawOutput = [result.stdout, result.stderr]

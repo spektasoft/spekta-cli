@@ -122,7 +122,7 @@ describe("validatePathAccessForWrite", () => {
     expect(execa).toHaveBeenNthCalledWith(
       2,
       "git",
-      ["check-ignore", "-q", "ignored-new-file.txt"],
+      ["check-ignore", "-q", "--", "ignored-new-file.txt"],
       { cwd: process.cwd() },
     );
   });

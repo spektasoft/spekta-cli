@@ -38,7 +38,7 @@ The intended target is Codex 0.160.0 on local Linux/WSL with Bash or Zsh. Hook e
 
 Commands without a native Spekta handler and MCP `spekta_shell` requests use one fail-closed policy before RTK starts. Supported forms are `ls`, restricted `find` discovery, and the Git inspections below.
 
-`ls` accepts no options and zero or one existing relative workspace-directory operand. Files, missing directories, absolute paths, restricted targets, and escaping symlinks are rejected.
+`ls` accepts no options and zero or one existing relative workspace-directory operand. Files, missing directories, absolute paths, restricted targets, and escaping symlinks are rejected. The listing contains only eligible entries: names denied by ignore rules, restricted-file rules, or workspace containment are omitted without any count or notice. Spekta reads the directory itself and rejects a listing it cannot attribute to real entries. A failing child is reported by exit status only, and the complete rendered response fits the proxy output budget.
 
 #### Restricted Find Discovery
 

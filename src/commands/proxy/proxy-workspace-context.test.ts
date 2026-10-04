@@ -49,7 +49,7 @@ describe("explicit proxy workspace context", () => {
     await executeRtkCommand("ls", ["folder"], workspaceContext);
     expect(execa).toHaveBeenCalledWith(
       "rtk",
-      ["ls", "folder"],
+      ["proxy", "ls", "-1Ab", "--", "folder"],
       expect.objectContaining({ cwd: workspace }),
     );
   });
@@ -114,7 +114,7 @@ describe("explicit proxy workspace context", () => {
     await runRtkProxy("ls", ["folder"], context());
     expect(execa).toHaveBeenCalledWith(
       "rtk",
-      ["ls", "folder"],
+      ["proxy", "ls", "-1Ab", "--", "folder"],
       expect.objectContaining({ cwd: workspace }),
     );
   });
@@ -128,7 +128,7 @@ describe("explicit proxy workspace context", () => {
     await runRtkProxy("ls", [], context());
     expect(execa).toHaveBeenLastCalledWith(
       "rtk",
-      ["ls"],
+      ["proxy", "ls", "-1Ab", "--", "."],
       expect.objectContaining({ cwd: workspace }),
     );
 
@@ -140,7 +140,7 @@ describe("explicit proxy workspace context", () => {
     await runRtkProxy("ls", [], context());
     expect(execa).toHaveBeenLastCalledWith(
       "rtk",
-      ["ls"],
+      ["proxy", "ls", "-1Ab", "--", "."],
       expect.objectContaining({ cwd: workspace }),
     );
     expect(process.exitCode).toBe(7);
@@ -152,11 +152,11 @@ describe("explicit proxy workspace context", () => {
     await runRtkProxy("ls", [], context());
     expect(execa).toHaveBeenLastCalledWith(
       "rtk",
-      ["ls"],
+      ["proxy", "ls", "-1Ab", "--", "."],
       expect.objectContaining({ cwd: workspace }),
     );
     expect(errors).toHaveBeenCalled();
-    expect(logs).toHaveBeenCalled();
+    expect(logs).not.toHaveBeenCalled();
   });
 
   it("does not launch a command rejected by context validation", async () => {

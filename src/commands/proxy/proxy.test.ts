@@ -3,10 +3,42 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 vi.mock("execa", () => ({
   execa: vi.fn(),
 }));
+vi.mock("../../core/config", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../core/config")>()),
+  getIgnorePatterns: vi.fn().mockResolvedValue([]),
+}));
 
+import fs from "fs-extra";
+import os from "os";
+import path from "path";
 import { execa } from "execa";
 import { isRtkAvailable, runRtkProxy } from "./proxy";
 import { getTokenCount } from "../../utils/read-utils";
+
+const workspaces: string[] = [];
+
+function makeWorkspace(names: string[]): { root: string } {
+  const root = fs.realpathSync(
+    fs.mkdtempSync(path.join(os.tmpdir(), "spekta-proxy-ls-")),
+  );
+  workspaces.push(root);
+  for (const name of names) fs.writeFileSync(path.join(root, name), "x");
+  return { root };
+}
+
+function mockRtkResult(result: {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  failed: boolean;
+}): void {
+  vi.mocked(execa).mockImplementation(((file: string) => {
+    if (file === "git") {
+      throw Object.assign(new Error("not ignored"), { exitCode: 1 });
+    }
+    return result;
+  }) as never);
+}
 
 describe("RTK execution", () => {
   const mockExeca = vi.mocked(execa);
@@ -24,6 +56,7 @@ describe("RTK execution", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     process.exitCode = savedExitCode;
+    for (const root of workspaces.splice(0)) fs.removeSync(root);
   });
 
   it("reports RTK availability", async () => {
@@ -47,52 +80,74 @@ describe("RTK execution", () => {
     "formats success without clearing prior status %s",
     async (previous) => {
       process.exitCode = previous;
-      mockExeca.mockResolvedValueOnce({
-        stdout: `USEFUL_START ${secret}\n${"listing line\n".repeat(3000)}USEFUL_END`,
+      const names = [
+        "a-first.txt",
+        ...Array.from(
+          { length: 600 },
+          (_, index) => `entry-${String(index).padStart(4, "0")}.txt`,
+        ),
+        `${secret}.txt`,
+        "z-last.txt",
+      ];
+      const workspace = makeWorkspace(names);
+      mockRtkResult({
+        stdout: `${names.join("\n")}\n`,
         stderr: "",
         exitCode: 0,
         failed: false,
-      } as never);
+      });
 
-      await runRtkProxy("ls", []);
+      await runRtkProxy("ls", [], workspace);
 
       const output = vi.mocked(console.log).mock.calls[0][0] as string;
       expect(output).toContain("### spekta ls");
-      expect(output).toContain("USEFUL_START");
-      expect(output).toContain("USEFUL_END");
+      expect(output).toContain("a-first.txt");
+      expect(output).toContain("z-last.txt");
       expect(output).toContain("lines collapsed");
       expect(output).not.toContain(secret);
+      expect(getTokenCount(`${output}\n`)).toBeLessThanOrEqual(1000);
       expect(console.error).not.toHaveBeenCalled();
       expect(process.exitCode).toBe(previous);
     },
   );
 
+  it("omits denied entries from the listing", async () => {
+    const workspace = makeWorkspace([".env", "visible.txt"]);
+    mockRtkResult({
+      stdout: ".env\nvisible.txt\n",
+      stderr: "",
+      exitCode: 0,
+      failed: false,
+    });
+
+    await runRtkProxy("ls", [], workspace);
+
+    const output = vi.mocked(console.log).mock.calls[0][0] as string;
+    expect(output).toContain("visible.txt");
+    expect(output).not.toContain(".env");
+    expect(console.error).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])(
     "reports status 7 with empty output=%s",
     async (empty) => {
-      mockExeca.mockResolvedValueOnce({
-        stdout: empty
-          ? ""
-          : `USEFUL_START ${secret}\n${"listing line\n".repeat(3000)}USEFUL_END`,
+      const workspace = makeWorkspace([".env"]);
+      mockRtkResult({
+        stdout: empty ? "" : `.env\n${secret}\n`,
         stderr: empty ? "" : "USEFUL_STDERR",
         exitCode: 7,
         failed: true,
-      } as never);
+      });
 
-      await expect(runRtkProxy("ls", [])).resolves.toBeUndefined();
+      await expect(runRtkProxy("ls", [], workspace)).resolves.toBeUndefined();
 
-      const output = vi.mocked(console.log).mock.calls[0][0] as string;
-      expect(output).toContain("[FAILED: Exit 7]");
-      expect(output).not.toContain(secret);
-      if (!empty) {
-        expect(output).toContain("USEFUL_START");
-        expect(output).toContain("USEFUL_END");
-        expect(output).toContain("USEFUL_STDERR");
-        expect(output).toContain("lines collapsed");
-      }
-      expect(console.error).toHaveBeenCalledWith(
-        expect.stringMatching(/status 7/i),
-      );
+      expect(console.log).not.toHaveBeenCalled();
+      expect(console.error).toHaveBeenCalledTimes(1);
+      const diagnostic = vi.mocked(console.error).mock.calls[0][0] as string;
+      expect(diagnostic).toMatch(/status 7/i);
+      expect(diagnostic).not.toContain(secret);
+      expect(diagnostic).not.toContain("USEFUL_STDERR");
+      expect(diagnostic).not.toContain(".env");
       expect(process.exitCode).toBe(7);
     },
   );
@@ -126,13 +181,35 @@ describe("RTK execution", () => {
       mockExeca.mockResolvedValueOnce(failure as never);
       await expect(runRtkProxy("ls", [])).resolves.toBeUndefined();
       const diagnostic = vi.mocked(console.error).mock.calls[0][0] as string;
-      expect(diagnostic).toContain("USEFUL_START");
-      expect(diagnostic).toContain("USEFUL_STDERR");
-      expect(diagnostic).toContain("lines collapsed");
+      expect(diagnostic).toContain("RTK listing failed");
+      expect(diagnostic).not.toContain("USEFUL_START");
+      expect(diagnostic).not.toContain("USEFUL_STDERR");
+      expect(diagnostic).not.toContain("failure line");
       expect(diagnostic).not.toContain(secret);
       expect(getTokenCount(diagnostic)).toBeLessThanOrEqual(1000);
       expect(console.log).not.toHaveBeenCalled();
       expect(process.exitCode).toBe(1);
     },
   );
+
+  it("renders unusual names as one escaped entry each", async () => {
+    const names = ["line\nbreak.txt", "tick```fence.txt", "tab\tname.txt"];
+    const workspace = makeWorkspace(names);
+    mockRtkResult({
+      stdout:
+        ["line\\nbreak.txt", "tick```fence.txt", "tab\\tname.txt"].join("\n") +
+        "\n",
+      stderr: "",
+      exitCode: 0,
+      failed: false,
+    });
+
+    await runRtkProxy("ls", [], workspace);
+
+    const output = vi.mocked(console.log).mock.calls[0][0] as string;
+    expect(output).toContain('"line\\nbreak.txt"');
+    expect(output).toContain('"tick\\u0060\\u0060\\u0060fence.txt"');
+    expect(output).toContain('"tab\\tname.txt"');
+    expect(output).not.toContain("line\nbreak.txt");
+  });
 });

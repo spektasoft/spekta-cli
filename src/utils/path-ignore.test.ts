@@ -32,6 +32,7 @@ describe("isPathIgnored", () => {
     expect(execa).toHaveBeenCalledWith("git", [
       "check-ignore",
       "-q",
+      "--",
       "spekta/test-results.json",
     ]);
   });

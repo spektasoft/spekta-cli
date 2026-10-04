@@ -175,25 +175,46 @@ describe("executeRtkCommand", () => {
     }
   });
 
-  it("preserves the existing non-Git RTK route", async () => {
+  it("routes ls through the raw RTK proxy listing", async () => {
     vi.mocked(execa).mockResolvedValueOnce({
       stdout: "listing",
       stderr: "",
       exitCode: 0,
     } as never);
     await executeRtkCommand("ls", ["src"]);
+    expect(execa).toHaveBeenCalledTimes(1);
     expect(execa).toHaveBeenCalledWith(
       "rtk",
-      ["ls", "src"],
-      expect.objectContaining({ reject: false }),
+      ["proxy", "ls", "-1Ab", "--", "src"],
+      {
+        reject: false,
+        env: expect.objectContaining({
+          NO_COLOR: "1",
+          TERM: "dumb",
+          LC_ALL: "C",
+        }) as Record<string, unknown>,
+        cwd: process.cwd(),
+      },
     );
-    expect(execa).toHaveBeenCalledWith("rtk", ["ls", "src"], {
-      reject: false,
-      env: expect.objectContaining({ NO_COLOR: "1", TERM: "dumb" }) as Record<
-        string,
-        unknown
-      >,
+  });
+
+  it("lists the current directory when ls has no operand", () => {
+    expect(prepareRtkInvocation("ls", []).args).toEqual([
+      "proxy",
+      "ls",
+      "-1Ab",
+      "--",
+      ".",
+    ]);
+  });
+
+  it("runs ls from the supplied workspace root", () => {
+    const invocation = prepareRtkInvocation("ls", ["folder"], {
+      root: "/workspace/root",
     });
+    expect(invocation.args).toEqual(["proxy", "ls", "-1Ab", "--", "folder"]);
+    expect(invocation.cwd).toBe("/workspace/root");
+    expect(invocation.env.LC_ALL).toBe("C");
   });
 
   it.each(["resolved", "rejected"])(

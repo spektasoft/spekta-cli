@@ -112,9 +112,12 @@ beforeEach(async () => {
   vi.mocked(initializeProject).mockClear();
   vi.mocked(loadToolDefinitions).mockClear();
   executeRtkCommand.mockImplementation(
-    (_command: string, _args: string[], context: { root: string }) => ({
+    (command: string, _args: string[], context: { root: string }) => ({
       available: true,
-      stdout: context.root,
+      stdout:
+        command === "ls"
+          ? `${fs.readdirSync(context.root).sort().join("\n")}\n`
+          : context.root,
       stderr: "",
       exitCode: 0,
     }),
@@ -255,8 +258,8 @@ describe("MCP server workspace binding", () => {
     expect(JSON.stringify(firstSearch)).not.toContain("updated SECOND");
     expect(JSON.stringify(secondSearch)).toContain("updated SECOND");
     expect(JSON.stringify(secondSearch)).not.toContain("updated FIRST");
-    expect(JSON.stringify(firstShell)).toContain(fixture.root);
-    expect(JSON.stringify(secondShell)).toContain(secondRoot);
+    expect(firstShell).toMatchObject({ isError: false });
+    expect(secondShell).toMatchObject({ isError: false });
     expect(JSON.stringify(firstGit)).toContain(fixture.root);
     expect(JSON.stringify(secondGit)).toContain(secondRoot);
     expect(executeRtkCommand).toHaveBeenNthCalledWith(1, "ls", ["."], {

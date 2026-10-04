@@ -71,7 +71,17 @@ afterAll(() => {
 
 function installRtk(mode: string): void {
   if (mode === "missing") return;
-  const output = `USEFUL_START ${secret}\n${"listing line\n".repeat(3000)}USEFUL_END ${secret}\n`;
+  const names = [
+    "USEFUL_START.txt",
+    ...Array.from(
+      { length: 250 },
+      (_, index) => `entry-${String(index).padStart(4, "0")}.txt`,
+    ),
+    `${secret}.txt`,
+    "USEFUL_END.txt",
+  ];
+  for (const name of names) fs.writeFileSync(path.join(workspace, name), "x");
+  const output = `${names.join("\n")}\n`;
   const source = `#!${process.execPath}
 const fs = require("node:fs");
 fs.writeFileSync(${JSON.stringify(path.join(fixture, "rtk.marker"))}, "started");
@@ -120,28 +130,36 @@ async function both(args: string[] = []) {
 }
 
 describe.sequential("real subprocess proxy failure reporting", () => {
-  it.each([
-    { mode: "success", status: 0 },
-    { mode: "failure", status: 7 },
-  ])(
-    "preserves $mode status and safe condensed output",
-    async ({ mode, status }) => {
-      installRtk(mode);
-      const { cli, mcp } = await both();
-      expect(cli.exitCode).toBe(status);
-      expect(mcp.isError).toBe(status !== 0);
-      for (const output of [cli.stdout, mcp.content[0].text]) {
-        expect(output).toContain("USEFUL_START");
-        expect(output).toContain("USEFUL_END");
-        expect(output).toContain("USEFUL_STDERR");
-        expect(output).toMatch(/lines collapsed/);
-        expect(output).not.toContain(secret);
-      }
-      expect(getTokenCount(mcp.content[0].text)).toBeLessThanOrEqual(1000);
-      if (status === 0) expect(cli.stderr).toBe("");
-      else expect(cli.stderr).toMatch(/7/);
-    },
-  );
+  it("preserves success status and safe condensed eligible output", async () => {
+    installRtk("success");
+    const { cli, mcp } = await both();
+    expect(cli.exitCode).toBe(0);
+    expect(mcp.isError).toBe(false);
+    for (const output of [cli.stdout, mcp.content[0].text]) {
+      expect(output).toContain("USEFUL_START");
+      expect(output).toContain("USEFUL_END");
+      expect(output).toMatch(/lines collapsed/);
+      expect(output).not.toContain(secret);
+      expect(output).not.toContain("USEFUL_STDERR");
+    }
+    expect(getTokenCount(mcp.content[0].text)).toBeLessThanOrEqual(1000);
+    expect(getTokenCount(`${cli.stdout}\n`)).toBeLessThanOrEqual(1000);
+    expect(cli.stderr).toBe("");
+  }, 30000);
+
+  it("reports a failing child by status only", async () => {
+    installRtk("failure");
+    const { cli, mcp } = await both();
+    expect(cli.exitCode).toBe(7);
+    expect(cli.stdout).toBe("");
+    expect(cli.stderr).toMatch(/status 7/);
+    expect(mcp.isError).toBe(true);
+    for (const output of [cli.stderr, mcp.content[0].text]) {
+      expect(output).toMatch(/status 7/);
+      expect(output).not.toContain("USEFUL");
+      expect(output).not.toContain(secret);
+    }
+  });
 
   it.each(["missing", "permission", "signal"])(
     "reports %s as failure without fallback",
@@ -160,7 +178,10 @@ describe.sequential("real subprocess proxy failure reporting", () => {
           expect(output).toMatch(/rtk/i);
           expect(output).toMatch(/not found|missing/i);
         }
-        if (mode === "signal") expect(output).toContain("USEFUL_STDERR");
+        if (mode === "signal") {
+          expect(output).toContain("RTK listing failed");
+          expect(output).not.toContain("USEFUL_STDERR");
+        }
       }
     },
   );

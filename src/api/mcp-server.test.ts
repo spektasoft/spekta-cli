@@ -20,6 +20,9 @@ import { executeRtkCommand } from "../commands/proxy/proxy-execution";
 import { getTokenCount } from "../utils/read-utils";
 import { getGrepResponseTokenCount } from "../commands/grep-output-parser";
 import { runGrep } from "../commands/grep";
+import fs from "fs-extra";
+import os from "node:os";
+import path from "node:path";
 
 vi.mock("../commands/read", () => ({ getReadOutcome: vi.fn() }));
 vi.mock("../commands/replace", () => ({ executeSafeReplace: vi.fn() }));
@@ -31,6 +34,7 @@ vi.mock("../commands/proxy/proxy-execution", () => ({
 vi.mock("../core/config", () => ({
   bootstrap: vi.fn(),
   loadToolDefinitions: vi.fn().mockResolvedValue([]),
+  getIgnorePatterns: () => Promise.resolve([]),
 }));
 
 beforeEach(() => {
@@ -92,26 +96,19 @@ describe("TOOL_REGISTRY", () => {
       const secret = "ghp_abcdefghijklmnopqrstuvwxyz";
       vi.mocked(executeRtkCommand).mockResolvedValueOnce({
         available: true,
-        stdout: empty
-          ? ""
-          : `USEFUL_START ${secret}\n${"listing line\n".repeat(3000)}USEFUL_END`,
+        stdout: empty ? "" : `.env\n${secret}\n`,
         stderr: empty ? "" : "USEFUL_STDERR",
         exitCode: 7,
       });
       const result = await TOOL_REGISTRY.spekta_shell.handler({
         command: "ls",
       });
-      expect(result.isError).toBe(true);
-      const output = result.content[0].text;
-      expect(output).not.toContain(secret);
-      expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
-      if (empty) expect(output).toBe("");
-      else {
-        expect(output).toContain("USEFUL_START");
-        expect(output).toContain("USEFUL_END");
-        expect(output).toContain("USEFUL_STDERR");
-        expect(output).toContain("lines collapsed");
-      }
+      expect(result).toEqual({
+        isError: true,
+        content: [
+          { type: "text", text: "RTK command failed with exit status 7." },
+        ],
+      });
     },
   );
 
@@ -132,9 +129,10 @@ describe("TOOL_REGISTRY", () => {
     const result = await TOOL_REGISTRY.spekta_shell.handler({ command: "ls" });
     expect(result.isError).toBe(true);
     const output = result.content[0].text;
-    expect(output).toContain("USEFUL_START");
-    expect(output).toContain("USEFUL_STDERR");
-    expect(output).toContain("lines collapsed");
+    expect(output).toContain("RTK listing failed");
+    expect(output).not.toContain("USEFUL_START");
+    expect(output).not.toContain("USEFUL_STDERR");
+    expect(output).not.toContain("failure line");
     expect(output).not.toContain(secret);
     expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
   });
@@ -369,20 +367,32 @@ describe("TOOL_REGISTRY", () => {
     const parsed = schema.parse({ command: "ls", args: [] });
     expect(parsed).toEqual({ command: "ls", args: [] });
 
-    vi.mocked(executeRtkCommand).mockResolvedValueOnce({
-      available: true,
-      stdout: "nothing to commit",
-      stderr: "",
-      exitCode: 0,
-    });
+    const root = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "spekta-mcp-ls-")),
+    );
+    try {
+      fs.writeFileSync(path.join(root, "visible.txt"), "x");
+      fs.writeFileSync(path.join(root, ".env"), "SECRET=1");
+      vi.mocked(executeRtkCommand).mockResolvedValueOnce({
+        available: true,
+        stdout: ".env\nvisible.txt\n",
+        stderr: "",
+        exitCode: 0,
+      });
 
-    const result = await tool.handler({ command: "ls", args: [] });
+      const result = await createToolRegistry({ root }).spekta_shell.handler({
+        command: "ls",
+        args: [],
+      });
 
-    expect(executeRtkCommand).toHaveBeenCalledWith("ls", [], undefined);
-    expect(result).toEqual({
-      isError: false,
-      content: [{ type: "text", text: "nothing to commit" }],
-    });
+      expect(executeRtkCommand).toHaveBeenCalledWith("ls", [], { root });
+      expect(result).toEqual({
+        isError: false,
+        content: [{ type: "text", text: '"visible.txt"' }],
+      });
+    } finally {
+      fs.removeSync(root);
+    }
   });
 
   it("refuses spekta_shell commands not on the allow-list", async () => {

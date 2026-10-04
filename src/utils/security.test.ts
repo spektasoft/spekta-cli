@@ -267,7 +267,7 @@ describe("Security Validation", () => {
       await expect(validateEditAccess("valid-file.ts")).resolves.not.toThrow();
       expect(execa).toHaveBeenCalledWith(
         "git",
-        ["check-ignore", "-q", "--no-index", "valid-file.ts"],
+        ["check-ignore", "-q", "--no-index", "--", "valid-file.ts"],
         { cwd: process.cwd() },
       );
     });

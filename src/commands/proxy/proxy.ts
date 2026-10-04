@@ -1,6 +1,7 @@
 import { executeRtkCommand } from "./proxy-execution";
 import { formatProxyFailure, validateProxyRequest } from "./proxy-policy";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
+import { renderLsOutcome } from "./proxy-ls-render";
 import type { WorkspaceContext } from "../../utils/workspace";
 
 export type { WorkspaceContext } from "../../utils/workspace";
@@ -27,7 +28,11 @@ export async function runRtkProxy(
   try {
     result = await executeRtkCommand(command, rawArgs, context);
   } catch (error: unknown) {
-    console.error(formatProxyFailure(error));
+    console.error(
+      command === "ls"
+        ? "RTK listing failed before output could be checked."
+        : formatProxyFailure(error),
+    );
     process.exitCode = 1;
     return;
   }
@@ -42,6 +47,21 @@ export async function runRtkProxy(
       ].join("\n"),
     );
     process.exitCode = 1;
+    return;
+  }
+
+  if (command === "ls") {
+    const outcome = await renderLsOutcome(result, rawArgs[0], context);
+    if (outcome.status === "failure") {
+      process.exitCode = outcome.exitCode;
+      console.error(outcome.message);
+      return;
+    }
+    console.log(
+      formatProxyOutput(command, outcome.content, {
+        truncated: outcome.truncated,
+      }),
+    );
     return;
   }
 

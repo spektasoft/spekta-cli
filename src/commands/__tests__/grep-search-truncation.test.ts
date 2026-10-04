@@ -109,7 +109,9 @@ describe("getGrepContent - truncation", () => {
       createRgMatch(`file-${index}.ts`, 1, 0, `needle ${index}`),
     ).join("\n");
     vi.mocked(execa).mockImplementation(() => mockExecaStream(atBoundary));
-    const exact = await TOOL_REGISTRY.spekta_grep.handler({ pattern: "needle" });
+    const exact = await TOOL_REGISTRY.spekta_grep.handler({
+      pattern: "needle",
+    });
     expect(exact.content[0].text).toContain("file-99.ts");
     expect(exact.content[0].text).not.toContain("withheld");
 
@@ -120,7 +122,9 @@ describe("getGrepContent - truncation", () => {
       "overflow needle",
     )}`;
     vi.mocked(execa).mockImplementation(() => mockExecaStream(overBoundary));
-    const withheld = await TOOL_REGISTRY.spekta_grep.handler({ pattern: "needle" });
+    const withheld = await TOOL_REGISTRY.spekta_grep.handler({
+      pattern: "needle",
+    });
     expect(withheld.content[0].text).toContain("withheld");
     expect(withheld.content[0].text).not.toContain("file-0.ts");
     expect(withheld.content[0].text).not.toContain("file-overflow.ts");
@@ -158,9 +162,13 @@ describe("getGrepContent - truncation", () => {
     expect(mcp.content[0].text).not.toContain("needle 0");
 
     configureFailingRipgrep();
-    const cliError = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const cliError = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
     await runGrep(["needle"]);
-    const cliText = cliError.mock.calls.map(([chunk]) => String(chunk)).join("");
+    const cliText = cliError.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
     cliError.mockRestore();
     expect(cliText).toContain("exit code 2");
     expect(cliText).not.toContain("WITHHELD_SECRET");

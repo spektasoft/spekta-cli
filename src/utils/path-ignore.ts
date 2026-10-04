@@ -47,6 +47,7 @@ async function checkIgnoreRule(
       "check-ignore",
       "-q",
       ...(gitNoIndex ? ["--no-index"] : []),
+      "--",
       relativePath,
     ];
     if (workspaceRoot === undefined) {
