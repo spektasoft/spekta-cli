@@ -5,11 +5,13 @@ import { getGrepTokenLimit, getIgnorePatterns } from "../../core/config";
 import { validateReadPathAccess } from "../../utils/security";
 import { resolveWorkspace } from "../../utils/workspace";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { getGrepContent, MAX_MATCHES } from "../grep-search";
 import { getGrepResponseTokenCount } from "../grep-output-parser";
 import { runGrep } from "../grep";
 import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 import { createRgMatch, mockExecaStream } from "./grep-search.test.helpers";
+import { isPathIgnored } from "../../utils/path-ignore";
 
 vi.mock("execa");
 vi.mock("fs-extra");
@@ -43,6 +45,7 @@ describe("getGrepContent - truncation", () => {
     );
     vi.mocked(fs.pathExists).mockResolvedValue(false as never);
     vi.mocked(getGrepTokenLimit).mockReturnValue(2000);
+    vi.mocked(isPathIgnored).mockResolvedValue(false);
   });
 
   it("withholds all results when match limit is reached", async () => {
@@ -58,6 +61,110 @@ describe("getGrepContent - truncation", () => {
     const result = await getGrepContent({ pattern: "test" });
     expect(result).toContain("all matches were withheld");
     expect(result).not.toContain("match 0");
+  });
+
+  it("accepts a final-boundary match and withholds on the next eligible match", async () => {
+    vi.mocked(getGrepTokenLimit).mockReturnValue(1_000_000);
+    const atBoundary = Array.from({ length: MAX_MATCHES }, (_, i) =>
+      createRgMatch("boundary.ts", i + 1, 0, `needle ${i}`),
+    ).join("\n");
+    vi.mocked(execa).mockImplementation(() => mockExecaStream(atBoundary));
+    const complete = await TOOL_REGISTRY.spekta_grep.handler({
+      pattern: "needle",
+    });
+    expect(complete.content[0].text).toContain("needle 499");
+    expect(complete.content[0].text).not.toContain("withheld");
+
+    const overBoundary = `${atBoundary}\n${createRgMatch(
+      "boundary.ts",
+      MAX_MATCHES + 1,
+      0,
+      "extra needle",
+    )}`;
+    vi.mocked(execa).mockImplementation(() => mockExecaStream(overBoundary));
+    const withheld = await TOOL_REGISTRY.spekta_grep.handler({
+      pattern: "needle",
+    });
+    expect(withheld.content[0].text).toContain("withheld");
+    expect(withheld.content[0].text).not.toContain("needle 0");
+    expect(withheld.content[0].text).not.toContain("extra needle");
+  });
+
+  it("reports no eligible matches through MCP when all candidates are ignored", async () => {
+    vi.mocked(isPathIgnored).mockResolvedValue(true);
+    vi.mocked(execa).mockImplementation(() =>
+      mockExecaStream(createRgMatch("ignored.ts", 1, 0, "needle")),
+    );
+
+    const outcome = await TOOL_REGISTRY.spekta_grep.handler({
+      pattern: "needle",
+    });
+
+    expect(outcome.content[0].text).toBe("No matches found.");
+  });
+
+  it("accepts exactly the file ceiling and withholds every file on overflow", async () => {
+    vi.mocked(getGrepTokenLimit).mockReturnValue(1_000_000);
+    const atBoundary = Array.from({ length: 100 }, (_, index) =>
+      createRgMatch(`file-${index}.ts`, 1, 0, `needle ${index}`),
+    ).join("\n");
+    vi.mocked(execa).mockImplementation(() => mockExecaStream(atBoundary));
+    const exact = await TOOL_REGISTRY.spekta_grep.handler({ pattern: "needle" });
+    expect(exact.content[0].text).toContain("file-99.ts");
+    expect(exact.content[0].text).not.toContain("withheld");
+
+    const overBoundary = `${atBoundary}\n${createRgMatch(
+      "file-overflow.ts",
+      1,
+      0,
+      "overflow needle",
+    )}`;
+    vi.mocked(execa).mockImplementation(() => mockExecaStream(overBoundary));
+    const withheld = await TOOL_REGISTRY.spekta_grep.handler({ pattern: "needle" });
+    expect(withheld.content[0].text).toContain("withheld");
+    expect(withheld.content[0].text).not.toContain("file-0.ts");
+    expect(withheld.content[0].text).not.toContain("file-overflow.ts");
+    expect(withheld.content[0].text).not.toContain("overflow needle");
+  });
+
+  it("reports independent post-output failures through CLI and MCP without leaking matches", async () => {
+    vi.mocked(getGrepTokenLimit).mockReturnValue(1_000_000);
+    const firstMatch = createRgMatch("private.ts", 1, 0, "WITHHELD_SECRET");
+    const independentFailure = Object.assign(
+      new Error("Command failed with output: WITHHELD_SECRET"),
+      { exitCode: 2, stdout: firstMatch },
+    );
+    const configureFailingRipgrep = () => {
+      vi.mocked(execa).mockImplementation((_command, args) => {
+        if (Array.isArray(args) && args.includes("--version")) {
+          return Promise.resolve({ stdout: "ripgrep 1" }) as never;
+        }
+        return Object.assign(Promise.reject(independentFailure), {
+          stdout: Readable.from(
+            Array.from({ length: 101 }, (_, index) =>
+              createRgMatch(`private-${index}.ts`, 1, 0, `needle ${index}`),
+            ).join("\n"),
+          ),
+          kill: vi.fn(),
+        }) as never;
+      });
+    };
+
+    configureFailingRipgrep();
+    const mcp = await TOOL_REGISTRY.spekta_grep.handler({ pattern: "needle" });
+    expect(mcp.isError).toBe(true);
+    expect(mcp.content[0].text).toContain("exit code 2");
+    expect(mcp.content[0].text).not.toContain("WITHHELD_SECRET");
+    expect(mcp.content[0].text).not.toContain("needle 0");
+
+    configureFailingRipgrep();
+    const cliError = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await runGrep(["needle"]);
+    const cliText = cliError.mock.calls.map(([chunk]) => String(chunk)).join("");
+    cliError.mockRestore();
+    expect(cliText).toContain("exit code 2");
+    expect(cliText).not.toContain("WITHHELD_SECRET");
+    expect(cliText).not.toContain("needle 0");
   });
 
   it("withholds all results when complete formatted output exceeds the token limit", async () => {

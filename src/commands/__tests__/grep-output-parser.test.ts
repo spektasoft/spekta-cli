@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Readable } from "node:stream";
 import {
   getGrepResponseTokenCount,
   parseGrepOutput,
@@ -30,16 +31,84 @@ describe("parseGrepOutput", () => {
     expect(getGrepResponseTokenCount(result.value)).toBeLessThanOrEqual(2000);
   });
 
-  it("preserves error cause when child process fails with non-1 exit code", async () => {
+  it("reports safe process metadata when child process fails", async () => {
     const child = mockExecaStream("", 2);
 
     const outcome = await parseGrepOutput(child);
     expect(outcome.status).toBe("engine_failure");
     if (outcome.status !== "engine_failure") return;
-    expect(outcome.message).toContain("Ripgrep error: Command failed");
+    expect(outcome.message).toBe(
+      "Ripgrep error: Search process failed (exit code 2).",
+    );
     expect(getGrepResponseTokenCount(outcome.message)).toBeLessThanOrEqual(
       2000,
     );
+  });
+
+  it("keeps independent child failures distinct after a ceiling cancels the search", async () => {
+    const stdout = Array.from({ length: 501 }, (_, index) =>
+      createRgMatch("many.ts", index + 1, 0, `needle ${index}`),
+    ).join("\n");
+    const failure = Object.assign(new Error("independent process failure"), {
+      exitCode: 2,
+    });
+    const child = Object.assign(Promise.reject(failure), {
+      stdout: Readable.from(stdout),
+      kill: vi.fn(),
+    });
+
+    const outcome = await parseGrepOutput(child);
+
+    expect(child.kill).toHaveBeenCalledOnce();
+    expect(outcome).toEqual({
+      status: "engine_failure",
+      message: "Ripgrep error: Search process failed (exit code 2).",
+    });
+  });
+
+  it("does not expose Execa buffered output in an independent failure diagnostic", async () => {
+    const secretMatch = createRgMatch("private.ts", 1, 0, "WITHHELD_SECRET");
+    const streamedMatches = Array.from({ length: 101 }, (_, index) =>
+      createRgMatch(`private-${index}.ts`, 1, 0, `needle ${index}`),
+    ).join("\n");
+    const failure = Object.assign(
+      new Error("Command failed with output: WITHHELD_SECRET"),
+      {
+        exitCode: 2,
+        stdout: secretMatch,
+        stderr: "diagnostic stderr",
+      },
+    );
+    const child = Object.assign(Promise.reject(failure), {
+      stdout: Readable.from(streamedMatches),
+      kill: vi.fn(),
+    });
+
+    const outcome = await parseGrepOutput(child);
+
+    expect(outcome.status).toBe("engine_failure");
+    if (outcome.status !== "engine_failure") return;
+    expect(outcome.message).not.toContain("WITHHELD_SECRET");
+    expect(outcome.message).not.toContain("private.ts");
+    expect(outcome.message).toContain("exit code 2");
+  });
+
+  it("treats the expected termination signal as intentional ceiling cancellation", async () => {
+    const stdout = Array.from({ length: 501 }, (_, index) =>
+      createRgMatch("many.ts", index + 1, 0, `needle ${index}`),
+    ).join("\n");
+    const cancellation = Object.assign(new Error("Command was killed"), {
+      exitCode: null,
+      signal: "SIGTERM",
+    });
+    const child = Object.assign(Promise.reject(cancellation), {
+      stdout: Readable.from(stdout),
+      kill: vi.fn(),
+    });
+
+    await expect(parseGrepOutput(child)).resolves.toMatchObject({
+      status: "output_limit_exceeded",
+    });
   });
 
   it("bounds no-match and narrowing guidance, including the MCP envelope", async () => {

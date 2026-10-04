@@ -31,7 +31,8 @@ export interface GrepChildProcess extends PromiseLike<unknown> {
 }
 
 interface ProcessErrorLike {
-  exitCode?: number;
+  exitCode?: number | null;
+  signal?: string | null;
   message?: string;
 }
 
@@ -109,7 +110,13 @@ export async function parseGrepOutput(
   let totalMatches = 0;
   const MAX_GREP_TOKENS = getGrepTokenLimit();
   let exceeded = false;
+  let cancellationRequested = false;
   const ignoreCache = new Map<string, boolean>();
+  const stopForLimit = () => {
+    exceeded = true;
+    cancellationRequested = true;
+    child.kill?.();
+  };
 
   if (child.stdout) {
     const rl = readline.createInterface({
@@ -153,8 +160,7 @@ export async function parseGrepOutput(
             (!resultsByFile[displayPath] &&
               Object.keys(resultsByFile).length >= MAX_FILES)
           ) {
-            exceeded = true;
-            child.kill?.();
+            stopForLimit();
             break;
           }
           if (!resultsByFile[displayPath]) resultsByFile[displayPath] = [];
@@ -169,8 +175,7 @@ export async function parseGrepOutput(
             if (resultsByFile[displayPath].length === 0)
               delete resultsByFile[displayPath];
             totalMatches--;
-            exceeded = true;
-            child.kill?.();
+            stopForLimit();
             break;
           }
         }
@@ -184,15 +189,23 @@ export async function parseGrepOutput(
     await child;
   } catch (error: unknown) {
     const procError = error as ProcessErrorLike;
-    if (procError?.exitCode !== 1 && !exceeded) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : String(procError?.message ?? error);
+    const expectedCancellation =
+      cancellationRequested &&
+      procError?.exitCode == null &&
+      procError.signal === "SIGTERM";
+    if (procError?.exitCode !== 1 && !expectedCancellation) {
+      // Execa's message may embed buffered stdout, including matches that this
+      // parser deliberately withheld. Report only process metadata.
+      const failureDetail =
+        typeof procError?.exitCode === "number"
+          ? `exit code ${procError.exitCode}`
+          : procError?.signal
+            ? `signal ${procError.signal}`
+            : "unknown process error";
       return {
         status: "engine_failure",
         message: boundedMessage(
-          `Ripgrep error: ${message}`,
+          `Ripgrep error: Search process failed (${failureDetail}).`,
           MAX_GREP_TOKENS,
           context?.responseId,
         ),
