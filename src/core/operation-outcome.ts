@@ -4,3 +4,7 @@ export type OperationOutcome<T> =
   | { status: "no_matches"; message: string }
   | { status: "output_limit_exceeded"; message: string }
   | { status: "engine_failure"; message: string };
+
+export function getOutcomeText(outcome: OperationOutcome<string>): string {
+  return outcome.status === "success" ? outcome.value : outcome.message;
+}

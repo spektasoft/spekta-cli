@@ -2,7 +2,7 @@ import { z } from "zod";
 import path from "node:path";
 
 import { getGrepOutcome } from "../../commands/grep-search";
-import { getReadContent } from "../../commands/read";
+import { getReadOutcome } from "../../commands/read";
 import { executeSafeReplace } from "../../commands/replace";
 import { getWriteContent } from "../../commands/write";
 import { redactSecrets, truncateOutput } from "../../commands/proxy";
@@ -12,6 +12,7 @@ import {
 } from "../../commands/proxy/proxy-policy";
 import { executeRtkCommand } from "../../commands/proxy/proxy-execution";
 import { ToolDefinition } from "../../core/config";
+import { getOutcomeText } from "../../core/operation-outcome";
 import { parseFilePathWithRange } from "../../utils/read-utils";
 import type { WorkspaceContext } from "../../utils/workspace";
 
@@ -41,11 +42,26 @@ const registry: Record<string, ToolRegistryEntry> = {
       z.object({
         paths: z.array(z.string()).describe(params.paths?.description || ""),
       }),
-    handler: async (rawArgs, context) => {
+    handler: async (rawArgs, context, requestId) => {
       const { paths } = rawArgs as { paths: string[] };
       const fileRequests = paths.map((p) => parseFilePathWithRange(p));
-      const content = await getReadContent(fileRequests, false, context);
-      return { content: [{ type: "text", text: content }] };
+      const outcome = await getReadOutcome(
+        fileRequests,
+        false,
+        context,
+        requestId,
+      );
+      return {
+        ...(outcome.status === "output_limit_exceeded"
+          ? { isError: true }
+          : {}),
+        content: [
+          {
+            type: "text",
+            text: getOutcomeText(outcome),
+          },
+        ],
+      };
     },
   },
 

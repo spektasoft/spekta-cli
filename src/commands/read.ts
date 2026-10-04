@@ -6,20 +6,95 @@ import { validateReadPathAccess } from "../utils/security";
 import { resolveWorkspace, type WorkspaceContext } from "../utils/workspace";
 import { analyzeFile } from "../utils/file-analyzer";
 import {
+  getOutcomeText,
+  type OperationOutcome,
+} from "../core/operation-outcome";
+import {
   formatReadOutput,
   formatReadError,
   prependCompactionAdvisory,
 } from "./read-formatter";
 
+function responseTokens(
+  text: string,
+  requestId?: string | number,
+  isError = false,
+): number {
+  const cli = getTokenCount(`${text}\n`);
+  if (requestId === undefined) return cli;
+  const mcp = JSON.stringify({
+    jsonrpc: "2.0",
+    id: requestId,
+    result: {
+      ...(isError ? { isError: true } : {}),
+      content: [{ type: "text", text }],
+    },
+  });
+  return Math.max(cli, getTokenCount(`${mcp}\n`));
+}
+
+const READ_LIMIT_GUIDANCE =
+  "Read result exceeds the response budget; content is incomplete. Request a narrower path or line range.";
+
+export function getMinimumMcpReadResponseBudget(
+  requestId: string | number,
+): number {
+  return responseTokens("", requestId, true);
+}
+
+function fitIncomplete(
+  content: string,
+  budget: number,
+  requestId?: string | number,
+): string {
+  const marker =
+    "[INCOMPLETE: response budget reached; request a narrower line range.]\n";
+  let low = 0;
+  let high = content.length;
+  let best = "";
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const candidate = `${content.slice(0, middle)}${marker}`;
+    if (responseTokens(candidate, requestId, true) <= budget) {
+      best = candidate;
+      low = middle + 1;
+    } else high = middle - 1;
+  }
+  return (
+    best ||
+    (responseTokens(READ_LIMIT_GUIDANCE, requestId, true) <= budget
+      ? READ_LIMIT_GUIDANCE
+      : "")
+  );
+}
+
+export function boundReadResponse(
+  content: string,
+  requestId?: string | number,
+): OperationOutcome<string> {
+  const configuredBudget = getReadTokenLimit();
+  const budget =
+    requestId === undefined
+      ? configuredBudget
+      : Math.max(configuredBudget, getMinimumMcpReadResponseBudget(requestId));
+  if (responseTokens(content, requestId) <= budget)
+    return { status: "success", value: content };
+  return {
+    status: "output_limit_exceeded",
+    message: fitIncomplete(content, budget, requestId),
+  };
+}
+
 /**
  * Core logic for reading files, applying compaction, and calculating tokens.
  * This function returns the formatted string directly.
  */
-export async function getReadContent(
+export async function getReadOutcome(
   requests: FileRequest[],
   interactive = false,
   workspace?: WorkspaceContext,
-): Promise<string> {
+  requestId?: string | number,
+): Promise<OperationOutcome<string>> {
   if (!requests || requests.length === 0)
     throw new Error("At least one file path is required.");
 
@@ -114,9 +189,26 @@ export async function getReadContent(
     }
   }
 
-  return anyCompacted
+  const output = anyCompacted
     ? prependCompactionAdvisory(combinedOutput)
     : combinedOutput;
+  return boundReadResponse(output, requestId);
+}
+
+/** Compatibility renderer for existing internal string consumers. */
+export async function getReadContent(
+  requests: FileRequest[],
+  interactive = false,
+  workspace?: WorkspaceContext,
+  requestId?: string | number,
+): Promise<string> {
+  const outcome = await getReadOutcome(
+    requests,
+    interactive,
+    workspace,
+    requestId,
+  );
+  return getOutcomeText(outcome);
 }
 
 export async function runRead(
@@ -128,11 +220,19 @@ export async function runRead(
   } = {},
 ) {
   try {
-    const finalContent = await getReadContent(
+    const outcome = await getReadOutcome(
       requests,
       options.interactive ?? false,
       options.workspace,
     );
+    const finalContent = getOutcomeText(outcome);
+
+    if (outcome.status === "output_limit_exceeded") {
+      Logger.warn(
+        "Read response exceeded the response budget; output is incomplete.",
+      );
+      process.exitCode = 1;
+    }
 
     if (options.save) {
       await processOutput(finalContent, "spekta-read");

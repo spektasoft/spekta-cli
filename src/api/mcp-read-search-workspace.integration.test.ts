@@ -9,6 +9,9 @@ import { Logger } from "../utils/logger";
 import fs from "fs-extra";
 import path from "node:path";
 import { execa } from "execa";
+import { getMinimumMcpReadResponseBudget } from "../commands/read";
+import { getTokenCount } from "../utils/read-utils";
+import { serializeMcpToolReply } from "../__tests__/mcp-response-test-utils";
 
 let fixture: WorkspaceFixture;
 let originalExitCode: typeof process.exitCode;
@@ -88,6 +91,35 @@ describe("CLI and existing MCP workspace boundaries", () => {
       await expect(
         TOOL_REGISTRY.spekta_grep.handler({ pattern: "needle", path: target }),
       ).rejects.toThrow("outside");
+    }
+  });
+
+  it("bounds a formatted read delivered through the MCP handler", async () => {
+    const previousLimit = process.env.SPEKTA_READ_TOKEN_LIMIT;
+    process.env.SPEKTA_READ_TOKEN_LIMIT = "100";
+    const requestId = `read-budget-${"x".repeat(120)}`;
+    try {
+      await fs.writeFile(
+        path.join(fixture.root, "large-read.txt"),
+        `${"long formatted content line\n".repeat(100)}`,
+      );
+      const result = await TOOL_REGISTRY.spekta_read.handler(
+        { paths: ["large-read.txt"] },
+        undefined,
+        requestId,
+      );
+      const completeReply = serializeMcpToolReply(requestId, result);
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("#### large-read.txt");
+      expect(result.content[0].text).toContain("[INCOMPLETE:");
+      expect(getTokenCount(completeReply)).toBeLessThanOrEqual(
+        Math.max(100, getMinimumMcpReadResponseBudget(requestId)),
+      );
+    } finally {
+      if (previousLimit === undefined)
+        delete process.env.SPEKTA_READ_TOKEN_LIMIT;
+      else process.env.SPEKTA_READ_TOKEN_LIMIT = previousLimit;
     }
   });
 

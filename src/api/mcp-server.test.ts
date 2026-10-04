@@ -12,7 +12,7 @@ import {
   McpToolResponse,
   TOOL_REGISTRY,
 } from "./mcp-server/registry";
-import { getReadContent } from "../commands/read";
+import { getReadOutcome } from "../commands/read";
 import { executeSafeReplace } from "../commands/replace";
 import { getGrepOutcome } from "../commands/grep-search";
 import { getWriteContent } from "../commands/write";
@@ -21,7 +21,7 @@ import { getTokenCount } from "../utils/read-utils";
 import { getGrepResponseTokenCount } from "../commands/grep-output-parser";
 import { runGrep } from "../commands/grep";
 
-vi.mock("../commands/read", () => ({ getReadContent: vi.fn() }));
+vi.mock("../commands/read", () => ({ getReadOutcome: vi.fn() }));
 vi.mock("../commands/replace", () => ({ executeSafeReplace: vi.fn() }));
 vi.mock("../commands/write", () => ({ getWriteContent: vi.fn() }));
 vi.mock("../commands/grep-search", () => ({ getGrepOutcome: vi.fn() }));
@@ -253,7 +253,10 @@ describe("TOOL_REGISTRY", () => {
   it("binds documented operations to the server workspace and ignores injected grep context", async () => {
     const workspace = Object.freeze({ root: "/canonical/repo" });
     const tools = createToolRegistry(workspace);
-    vi.mocked(getReadContent).mockResolvedValueOnce("read result");
+    vi.mocked(getReadOutcome).mockResolvedValueOnce({
+      status: "success",
+      value: "read result",
+    });
     vi.mocked(getGrepOutcome).mockResolvedValueOnce({
       status: "success",
       value: "grep result",
@@ -283,10 +286,11 @@ describe("TOOL_REGISTRY", () => {
       blocks: "replacement blocks",
     });
 
-    expect(getReadContent).toHaveBeenCalledWith(
+    expect(getReadOutcome).toHaveBeenCalledWith(
       [{ path: "src/file.ts" }],
       false,
       workspace,
+      undefined,
     );
     expect(getGrepOutcome).toHaveBeenCalledWith(
       {
@@ -303,6 +307,28 @@ describe("TOOL_REGISTRY", () => {
       { path: "old.ts", blocks: [] },
       "replacement blocks",
       workspace,
+    );
+  });
+
+  it("reports read budget exhaustion as an MCP error and passes request ID", async () => {
+    vi.mocked(getReadOutcome).mockResolvedValueOnce({
+      status: "output_limit_exceeded",
+      message: "partial read [INCOMPLETE]",
+    });
+    const result = await TOOL_REGISTRY.spekta_read.handler(
+      { paths: ["src/file.ts"] },
+      undefined,
+      "request-42",
+    );
+    expect(result).toEqual({
+      isError: true,
+      content: [{ type: "text", text: "partial read [INCOMPLETE]" }],
+    });
+    expect(getReadOutcome).toHaveBeenCalledWith(
+      [{ path: "src/file.ts" }],
+      false,
+      undefined,
+      "request-42",
     );
   });
 
