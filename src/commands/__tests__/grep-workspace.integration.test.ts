@@ -6,7 +6,9 @@ import {
   type WorkspaceFixture,
 } from "../../__tests__/workspace-fixture";
 import { getGrepContent } from "../grep-search";
+import { getGrepOutcome } from "../grep-search";
 import { buildGrepArgs } from "../grep-args-builder";
+import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 import * as runner from "execa";
 
 vi.mock("execa", { spy: true });
@@ -22,6 +24,43 @@ afterEach(async () => {
 });
 
 describe("workspace searches with real ripgrep", () => {
+  it("keeps alias ignores and oversized descendants out of CLI and MCP results", async () => {
+    await fs.symlink(fixture.root, path.join(fixture.root, "alias"), "dir");
+    await fs.writeFile(
+      path.join(fixture.root, ".spektaignore"),
+      "alias/secret.txt\n!allowed.txt\n",
+    );
+    await fs.writeFile(
+      path.join(fixture.root, "secret.txt"),
+      "needle ALIAS_IGNORED_CONTENT\n",
+    );
+    await fs.writeFile(
+      path.join(fixture.root, "too-large-secret.txt"),
+      `needle OVERSIZED_CONTENT ${"x".repeat(10 * 1024 * 1024)}`,
+    );
+
+    const cli = await getGrepOutcome(
+      { pattern: "needle", path: "alias" },
+      { root: fixture.root },
+    );
+    const mcp = await TOOL_REGISTRY.spekta_grep.handler(
+      { pattern: "needle", path: "alias" },
+      { root: fixture.root },
+      1,
+    );
+
+    const cliText = cli.status === "success" ? cli.value : cli.message;
+    const mcpText = mcp.content[0]?.text ?? "";
+    for (const text of [cliText, mcpText]) {
+      expect(text).toContain("INTERNAL");
+      expect(text).not.toMatch(
+        /secret\.txt|ALIAS_IGNORED_CONTENT|too-large-secret|OVERSIZED_CONTENT|OVERSIZED_CONTENT/,
+      );
+    }
+    expect(mcp.isError).toBeUndefined();
+    expect(mcpText).toContain("INTERNAL");
+  });
+
   it.each([
     "../sibling.txt",
     "external-file.txt",

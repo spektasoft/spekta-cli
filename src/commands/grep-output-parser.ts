@@ -4,6 +4,7 @@ import type { ResolvedWorkspace } from "../utils/workspace";
 import { getGrepTokenLimit } from "../core/config";
 import { getTokenCount } from "../utils/read-utils";
 import { isPathIgnored } from "../utils/path-ignore";
+import { validateReadPathAccess } from "../utils/security";
 import type { OperationOutcome } from "../core/operation-outcome";
 
 export const MAX_MATCHES = 500;
@@ -111,7 +112,7 @@ export async function parseGrepOutput(
   const MAX_GREP_TOKENS = getGrepTokenLimit();
   let exceeded = false;
   let cancellationRequested = false;
-  const ignoreCache = new Map<string, boolean>();
+  const eligibilityCache = new Map<string, string | null>();
   const stopForLimit = () => {
     exceeded = true;
     cancellationRequested = true;
@@ -130,20 +131,41 @@ export async function parseGrepOutput(
         if (parsed?.type === "match" && parsed.data?.path?.text) {
           const filePath = parsed.data.path.text;
 
-          let isIgnored = ignoreCache.get(filePath);
-          if (isIgnored === undefined) {
-            isIgnored = context
-              ? await isPathIgnored(
+          let eligiblePath = eligibilityCache.get(filePath);
+          if (eligiblePath === undefined) {
+            try {
+              if (context) {
+                eligiblePath = await validateReadPathAccess(
                   filePath,
-                  undefined,
-                  context.workspace.canonicalRoot,
-                )
-              : await isPathIgnored(filePath);
-            ignoreCache.set(filePath, isIgnored);
+                  context.workspace,
+                );
+                const relativeToSearch = path.relative(
+                  context.canonicalSearchPath,
+                  eligiblePath,
+                );
+                const requestedMatchPath = path.resolve(
+                  context.workspace.root,
+                  context.requestedSearchPath,
+                  relativeToSearch,
+                );
+                const requestedEligiblePath = await validateReadPathAccess(
+                  requestedMatchPath,
+                  context.workspace,
+                );
+                if (requestedEligiblePath !== eligiblePath) eligiblePath = null;
+              } else {
+                eligiblePath = (await isPathIgnored(filePath))
+                  ? null
+                  : filePath;
+              }
+            } catch {
+              // Search may encounter denied descendants beneath an allowed
+              // root. Their names and contents must not reach the response.
+              eligiblePath = null;
+            }
+            eligibilityCache.set(filePath, eligiblePath);
           }
-          if (isIgnored) {
-            continue;
-          }
+          if (eligiblePath === null) continue;
 
           const lineNum = parsed.data.line_number;
           const colNums = parsed.data.submatches
@@ -153,7 +175,10 @@ export async function parseGrepOutput(
           const formattedLine = `${lineNum}:${colNums}:${text}`;
 
           const displayPath = context
-            ? displayGrepPath(filePath, context)
+            ? displayGrepPath(
+                path.relative(context.workspace.canonicalRoot, eligiblePath),
+                context,
+              )
             : filePath;
           if (
             totalMatches >= MAX_MATCHES ||

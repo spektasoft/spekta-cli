@@ -6,6 +6,7 @@ import {
 } from "../grep-output-parser";
 import { getTokenCount } from "../../utils/read-utils";
 import { createRgMatch, mockExecaStream } from "./grep-search.test.helpers";
+import { validateReadPathAccess } from "../../utils/security";
 
 vi.mock("../../core/config", () => ({
   getGrepTokenLimit: vi.fn().mockReturnValue(2000),
@@ -14,10 +15,42 @@ import { getGrepTokenLimit } from "../../core/config";
 vi.mock("../../utils/path-ignore", () => ({
   isPathIgnored: vi.fn().mockResolvedValue(false),
 }));
+vi.mock("../../utils/security", () => ({
+  validateReadPathAccess: vi.fn(
+    async (target: string, workspace: { canonicalRoot: string }) => {
+      if (target.includes("restricted") || target.includes("escape")) {
+        throw new Error("denied");
+      }
+      return path.resolve(workspace.canonicalRoot, target);
+    },
+  ),
+}));
+import path from "node:path";
 
 beforeEach(() => vi.mocked(getGrepTokenLimit).mockReturnValue(2000));
 
 describe("parseGrepOutput", () => {
+  it("withholds matches whose files fail the shared read eligibility policy", async () => {
+    const output = [
+      createRgMatch("restricted/secret.env", 1, 0, "DENIED_CONTENT"),
+      createRgMatch("escape-link/private.txt", 1, 0, "ESCAPED_CONTENT"),
+      createRgMatch("src/eligible.ts", 2, 0, "ELIGIBLE_CONTENT"),
+    ].join("\n");
+    const result = await parseGrepOutput(mockExecaStream(output), {
+      workspace: { root: "/repo", canonicalRoot: "/repo" },
+      canonicalSearchPath: "/repo",
+      requestedSearchPath: ".",
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    expect(result.value).toContain("ELIGIBLE_CONTENT");
+    expect(result.value).not.toMatch(
+      /restricted|escape-link|DENIED_CONTENT|ESCAPED_CONTENT/,
+    );
+    expect(validateReadPathAccess).toHaveBeenCalledTimes(4);
+  });
+
   it("formats ripgrep match lines into markdown blocks", async () => {
     const matchLine = createRgMatch("src/index.ts", 12, 4, "const val = 1;");
     const child = mockExecaStream(matchLine);
