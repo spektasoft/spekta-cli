@@ -72,12 +72,12 @@ describe("workspace searches with real ripgrep", () => {
     "alias.env.txt",
     "ignored-alias.txt",
   ])("rejects invalid root %s before spawning", async (target) => {
-    await expect(
-      getGrepContent(
-        { pattern: "needle", path: target },
-        { root: fixture.root },
-      ),
-    ).rejects.toThrow();
+    const result = await getGrepContent(
+      { pattern: "needle", path: target },
+      { root: fixture.root },
+    );
+    expect(result).toContain("Search rejected");
+    expect(result).not.toContain(target);
     expect(
       vi
         .mocked(runner.execa)
@@ -85,24 +85,25 @@ describe("workspace searches with real ripgrep", () => {
     ).toHaveLength(0);
   });
   it("denies external and oversized file roots", async () => {
-    await expect(
-      getGrepContent(
-        { pattern: "needle", path: path.join(fixture.outside, "secret.txt") },
-        { root: fixture.root },
-      ),
-    ).rejects.toThrow("outside");
+    const outsidePath = path.join(fixture.outside, "secret.txt");
+    const outsideResult = await getGrepContent(
+      { pattern: "needle", path: outsidePath },
+      { root: fixture.root },
+    );
+    expect(outsideResult).toContain("Search rejected");
+    expect(outsideResult).not.toContain(outsidePath);
     const handle = await fs.open(path.join(fixture.root, "huge.txt"), "w");
     try {
       await fs.ftruncate(handle, 10 * 1024 * 1024 + 1);
     } finally {
       await fs.close(handle);
     }
-    await expect(
-      getGrepContent(
-        { pattern: "needle", path: "huge.txt" },
-        { root: fixture.root },
-      ),
-    ).rejects.toThrow("size limit");
+    const oversized = await getGrepContent(
+      { pattern: "needle", path: "huge.txt" },
+      { root: fixture.root },
+    );
+    expect(oversized).toContain("Search rejected");
+    expect(oversized).not.toContain("huge.txt");
   });
   it.each([undefined, "*.txt,*"])(
     "does not follow external links with globs %s",

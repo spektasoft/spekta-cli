@@ -135,6 +135,39 @@ describe("runRead", () => {
     expect(outcome).toEqual({ status: "output_limit_exceeded", message: "" });
   });
 
+  it("bounds policy and authorized-file failure outcomes", async () => {
+    mockGetTokenCount.mockImplementation((text) => text.length);
+    mockGetReadTokenLimit.mockReturnValue(100);
+    mockValidatePathAccess.mockRejectedValueOnce(
+      new Error("Access Denied: /private/hidden.env"),
+    );
+    const rejected = await getReadOutcome([{ path: "/private/hidden.env" }]);
+    expect(rejected.status).toBe("policy_rejection");
+    expect(JSON.stringify(rejected)).not.toContain("hidden.env");
+
+    mockValidatePathAccess.mockResolvedValue("allowed.txt");
+    mockGetFileLines.mockRejectedValueOnce(
+      new Error("I/O failed for allowed.txt: SECRET_DIAGNOSTIC"),
+    );
+    const failed = await getReadOutcome([{ path: "allowed.txt" }], true);
+    expect(failed.status).toBe("engine_failure");
+    expect(JSON.stringify(failed)).not.toContain("allowed.txt");
+    expect(JSON.stringify(failed)).not.toContain("SECRET_DIAGNOSTIC");
+  });
+
+  it("fits failure outcomes within a tiny CLI response budget", async () => {
+    mockGetTokenCount.mockImplementation((text) => text.length);
+    mockGetReadTokenLimit.mockReturnValue(1);
+    mockValidatePathAccess.mockRejectedValueOnce(
+      new Error("Access Denied: private-target"),
+    );
+    const outcome = await getReadOutcome([{ path: "private-target" }]);
+    expect(outcome.status).toBe("policy_rejection");
+    if (outcome.status !== "policy_rejection") return;
+    expect(outcome.message).toBe("");
+    expect(mockGetTokenCount(`${outcome.message}\n`)).toBeLessThanOrEqual(1);
+  });
+
   it("raises tiny MCP budgets to fit the complete request-aware error reply", () => {
     mockGetTokenCount.mockImplementation((text) => text.length);
     mockGetReadTokenLimit.mockReturnValue(0);
@@ -178,7 +211,10 @@ describe("runRead", () => {
     mockGetReadTokenLimit.mockReturnValue(1000);
     mockGetFileLines
       .mockResolvedValueOnce({ lines: ["x".repeat(1500)], total: 80 })
-      .mockResolvedValueOnce({ lines: Array(80).fill("line"), total: 80 });
+      .mockResolvedValueOnce({
+        lines: Array<string>(80).fill("line"),
+        total: 80,
+      });
 
     const outcome = await getReadOutcome(
       [{ path: "a.ts", range: { start: 4, end: 8 } }],
@@ -232,19 +268,21 @@ describe("runRead", () => {
     );
   });
 
-  it("should error if a range request exceeds token limit", async () => {
+  it("returns bounded output-limit guidance if a range exceeds token limit", async () => {
     mockGetFileLines.mockResolvedValue({
       lines: ["large content"],
       total: 100,
     });
-    mockGetTokenCount.mockReturnValue(3000); // 3000 > 1000 limit
+    mockGetTokenCount
+      .mockReturnValueOnce(3000) // 3000 > 1000 limit
+      .mockImplementation((text) => text.length);
 
     await runRead([{ path: "large.ts", range: { start: 1, end: 100 } }]);
 
-    expect(mockLogger.error).toHaveBeenCalledWith(
-      "Requested range for large.ts exceeds token limit (3000 > 1000).",
+    expect(mockLogger.error).not.toHaveBeenCalled();
+    expect(stdoutSpy).toHaveBeenCalledWith(
+      "Requested read exceeds the response budget; request a narrower line range.",
     );
-    expect(stdoutSpy).toHaveBeenCalledWith("");
   });
 
   it("should utilize compaction for full-file reads", async () => {
@@ -376,7 +414,10 @@ describe("runRead", () => {
       });
       // First call: compaction gate — exceeds threshold so compactFile runs.
       // Second call: token-limit enforcement on the (un-compacted) output.
-      mockGetTokenCount.mockReturnValueOnce(2500).mockReturnValue(3000);
+      mockGetTokenCount
+        .mockReturnValueOnce(2500)
+        .mockReturnValueOnce(3000)
+        .mockImplementation((text) => text.length);
       mockCompactFile.mockReturnValue({
         content: Array(1000).fill("large content line").join("\n"),
         isCompacted: false,
@@ -385,9 +426,28 @@ describe("runRead", () => {
       await runRead([{ path: "large.ts" }], { interactive: false });
 
       expect(mockGetTokenCount).toHaveBeenCalled();
-      expect(mockLogger.warn).toHaveBeenCalledWith(
-        expect.stringContaining("large.ts exceeds token limit (3000 > 1000)"),
+      expect(mockLogger.warn).not.toHaveBeenCalled();
+      expect(stdoutSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[EXCEEDS TOKEN LIMIT]"),
       );
+    });
+
+    it("sets a failing CLI exit status for authorized-file failures", async () => {
+      const previousExitCode = process.exitCode;
+      process.exitCode = undefined;
+      mockValidatePathAccess.mockResolvedValue("allowed.txt");
+      mockGetTokenCount.mockImplementation((text) => text.length);
+      mockGetFileLines.mockRejectedValueOnce(
+        new Error("I/O error: PRIVATE_DIAGNOSTIC"),
+      );
+
+      await runRead([{ path: "allowed.txt" }], { interactive: true });
+
+      expect(process.exitCode).toBe(1);
+      expect(stdoutSpy).toHaveBeenCalledWith(
+        "Read failed while accessing an authorized file.",
+      );
+      process.exitCode = previousExitCode;
     });
 
     it("should never compact in interactive mode", async () => {

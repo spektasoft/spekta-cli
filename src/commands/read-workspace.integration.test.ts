@@ -5,7 +5,7 @@ import {
   createWorkspaceFixture,
   type WorkspaceFixture,
 } from "../__tests__/workspace-fixture";
-import { getReadContent } from "./read";
+import { getReadContent, getReadOutcome } from "./read";
 import * as readUtils from "../utils/read-utils";
 
 let fixture: WorkspaceFixture;
@@ -48,13 +48,10 @@ describe("workspace reads", () => {
       "missing.txt",
     ])(`denies %s in ${mode} mode before streaming`, async (target) => {
       const streams = vi.spyOn(readUtils, "getFileLines");
-      if (mode === "full")
-        await expect(read(target, mode, fixture.root)).rejects.toThrow();
-      else {
-        const output = await read(target, mode, fixture.root);
-        expect(output).toContain(" ERROR");
-        expect(output).not.toContain("EXTERNAL");
-      }
+      const output = await read(target, mode, fixture.root);
+      expect(output).toContain("Read rejected:");
+      expect(output).not.toContain(target);
+      expect(output).not.toContain("EXTERNAL");
       expect(streams).not.toHaveBeenCalled();
     });
   it.each(modes)(
@@ -67,16 +64,31 @@ describe("workspace reads", () => {
   );
   it("denies absolute escapes and preserves the size limit", async () => {
     const target = path.join(fixture.outside, "secret.txt");
-    await expect(read(target, "full", fixture.root)).rejects.toThrow("outside");
+    const rejected = await read(target, "full", fixture.root);
+    expect(rejected).toContain("Read rejected:");
+    expect(rejected).not.toContain(target);
     const handle = await fs.open(path.join(fixture.root, "huge.txt"), "w");
     try {
       await fs.ftruncate(handle, 10 * 1024 * 1024 + 1);
     } finally {
       await fs.close(handle);
     }
-    await expect(read("huge.txt", "full", fixture.root)).rejects.toThrow(
-      "size limit",
+    expect(await read("huge.txt", "full", fixture.root)).toContain(
+      "Read rejected:",
     );
+  });
+  it("withholds a partial multi-file read when any requested file is denied", async () => {
+    const outcome = await getReadOutcome(
+      [{ path: "internal-file.txt" }, { path: "../sibling.txt" }],
+      false,
+      { root: fixture.root },
+    );
+    expect(outcome.status).toBe("policy_rejection");
+    const serialized = JSON.stringify(outcome);
+    expect(serialized).not.toContain("internal-file.txt");
+    expect(serialized).not.toContain("sibling.txt");
+    expect(serialized).not.toContain("INTERNAL");
+    expect(serialized).not.toContain("SIBLING");
   });
   it("accepts absolute internal targets and nongit workspaces", async () => {
     expect(
@@ -86,10 +98,16 @@ describe("workspace reads", () => {
     await fs.outputFile(path.join(root, "file.txt"), "needle NO_GIT\n");
     expect(await read("file.txt", "full", root)).toContain("NO_GIT");
   });
-  it("preserves empty request and missing workspace errors", async () => {
-    await expect(getReadContent([])).rejects.toThrow("At least one file path");
-    await expect(
-      read("real.txt", "full", path.join(fixture.base, "missing-root")),
-    ).rejects.toThrow();
+  it("preserves empty request and conceals missing workspace diagnostics", async () => {
+    expect(await getReadContent([])).toBe(
+      "Read requires at least one file path.",
+    );
+    const missingWorkspace = await read(
+      "real.txt",
+      "full",
+      path.join(fixture.base, "missing-root"),
+    );
+    expect(missingWorkspace).toBe("Read rejected: workspace is unavailable.");
+    expect(missingWorkspace).not.toContain("missing-root");
   });
 });

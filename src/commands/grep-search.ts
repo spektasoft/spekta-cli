@@ -1,23 +1,53 @@
 import { execa } from "execa";
 import fs from "fs-extra";
 import path from "node:path";
-import { getIgnorePatterns } from "../core/config";
+import { getGrepTokenLimit, getIgnorePatterns } from "../core/config";
+import { getTokenCount } from "../utils/read-utils";
 import { isWhitelisted, validateReadPathAccess } from "../utils/security";
 import {
   buildGrepArgs,
   buildGrepFileListArgs,
   GrepOptions,
 } from "./grep-args-builder";
-import { parseGrepOutput, MAX_MATCHES } from "./grep-output-parser";
+import {
+  getGrepResponseTokenCount,
+  parseGrepOutput,
+  MAX_MATCHES,
+} from "./grep-output-parser";
 import {
   resolveWorkspace,
   type ResolvedWorkspace,
   type WorkspaceContext,
 } from "../utils/workspace";
-import type { OperationOutcome } from "../core/operation-outcome";
+import {
+  boundFailureOutcome,
+  type FailureOutcome,
+  type OperationOutcome,
+} from "../core/operation-outcome";
 
 export type { GrepOptions };
 export { MAX_MATCHES };
+
+function failureOutcome(
+  status: FailureOutcome["status"],
+  message: string,
+  responseId?: string | number,
+): OperationOutcome<string> {
+  const configuredLimit = getGrepTokenLimit();
+  const minimumEnvelope =
+    responseId === undefined
+      ? 0
+      : getGrepResponseTokenCount("", responseId, true);
+  const limit = Math.max(configuredLimit, minimumEnvelope);
+  const fallback =
+    status === "policy_rejection" ? "Search rejected." : "Search failed.";
+  return boundFailureOutcome(status, message, fallback, limit, (candidate) =>
+    Math.max(
+      getGrepResponseTokenCount(candidate, responseId, true),
+      getTokenCount(`[ERROR] ${candidate}\n`),
+    ),
+  );
+}
 
 async function findWhitelistedGitIgnoredFiles(
   options: GrepOptions,
@@ -124,47 +154,71 @@ export async function getGrepOutcome(
 
   // SECURITY: Reject empty/whitespace patterns to prevent full-codebase scans
   if (!pattern || pattern.trim() === "") {
-    throw new Error("Pattern cannot be empty or whitespace-only.");
+    return failureOutcome(
+      "policy_rejection",
+      "Search pattern cannot be empty or whitespace-only.",
+      responseId,
+    );
   }
 
-  const resolvedWorkspace = await resolveWorkspace(workspace);
-  const canonicalSearchPath = await validateReadPathAccess(
-    searchPath,
-    resolvedWorkspace,
-  );
+  let resolvedWorkspace: ResolvedWorkspace;
+  let canonicalSearchPath: string;
+  try {
+    resolvedWorkspace = await resolveWorkspace(workspace);
+    canonicalSearchPath = await validateReadPathAccess(
+      searchPath,
+      resolvedWorkspace,
+    );
+  } catch {
+    return failureOutcome(
+      "policy_rejection",
+      "Search rejected by workspace policy or the requested location is unavailable.",
+      responseId,
+    );
+  }
 
   try {
     await execa("rg", ["--version"]);
   } catch {
-    throw new Error(
-      "ripgrep (rg) is not installed. Please install it to use the search tool.",
+    return failureOutcome(
+      "engine_failure",
+      "Search failed: ripgrep is unavailable.",
+      responseId,
     );
   }
 
-  const args = await buildGrepArgs(
-    { ...options, path: canonicalSearchPath },
-    resolvedWorkspace.canonicalRoot,
-  );
-  const ignorePatterns = await getIgnorePatterns(
-    resolvedWorkspace.canonicalRoot,
-  );
-  const additionalPaths = await findWhitelistedGitIgnoredFiles(
-    options,
-    canonicalSearchPath,
-    resolvedWorkspace,
-    ignorePatterns,
-  );
-  if (additionalPaths.length > 0) {
-    args.splice(args.length - 1, 0, ...additionalPaths);
-  }
-  const child = execa("rg", args, { cwd: resolvedWorkspace.canonicalRoot });
+  try {
+    const args = await buildGrepArgs(
+      { ...options, path: canonicalSearchPath },
+      resolvedWorkspace.canonicalRoot,
+    );
+    const ignorePatterns = await getIgnorePatterns(
+      resolvedWorkspace.canonicalRoot,
+    );
+    const additionalPaths = await findWhitelistedGitIgnoredFiles(
+      options,
+      canonicalSearchPath,
+      resolvedWorkspace,
+      ignorePatterns,
+    );
+    if (additionalPaths.length > 0) {
+      args.splice(args.length - 1, 0, ...additionalPaths);
+    }
+    const child = execa("rg", args, { cwd: resolvedWorkspace.canonicalRoot });
 
-  return parseGrepOutput(child, {
-    workspace: resolvedWorkspace,
-    canonicalSearchPath,
-    requestedSearchPath: searchPath,
-    responseId,
-  });
+    return parseGrepOutput(child, {
+      workspace: resolvedWorkspace,
+      canonicalSearchPath,
+      requestedSearchPath: searchPath,
+      responseId,
+    });
+  } catch {
+    return failureOutcome(
+      "engine_failure",
+      "Search failed while preparing or running the search engine.",
+      responseId,
+    );
+  }
 }
 
 /** Compatibility renderer for existing internal string consumers. */

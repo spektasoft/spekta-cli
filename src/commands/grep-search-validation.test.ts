@@ -43,15 +43,16 @@ describe("getGrepContent pattern validation", () => {
   });
 
   it("rejects empty string pattern", async () => {
-    await expect(getGrepContent({ pattern: "" })).rejects.toThrow(
-      "Pattern cannot be empty or whitespace-only.",
+    await expect(getGrepContent({ pattern: "" })).resolves.toContain(
+      "Search pattern cannot be empty or whitespace-only.",
     );
   });
 
   it("rejects whitespace-only patterns", async () => {
-    await expect(getGrepContent({ pattern: "   " })).rejects.toThrow(
-      "Pattern cannot be empty or whitespace-only.",
+    await expect(getGrepContent({ pattern: "   " })).resolves.toContain(
+      "Search pattern cannot be empty or whitespace-only.",
     );
+    expect(execa).not.toHaveBeenCalled();
   });
 
   it("accepts valid pattern with non-whitespace content", async () => {

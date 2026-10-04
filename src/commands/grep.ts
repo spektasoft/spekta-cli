@@ -28,7 +28,10 @@ export async function runGrep(args?: string[]) {
       path,
       globs: globs.length > 0 ? globs.join(",") : undefined,
     });
-    if (outcome.status === "engine_failure") {
+    if (
+      outcome.status === "engine_failure" ||
+      outcome.status === "policy_rejection"
+    ) {
       if (outcome.message) Logger.error(outcome.message);
       process.exitCode = 1;
       return;
@@ -36,9 +39,8 @@ export async function runGrep(args?: string[]) {
     const content =
       outcome.status === "success" ? outcome.value : outcome.message;
     process.stdout.write(content + "\n");
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    Logger.error(message);
+  } catch {
+    Logger.error("Search failed.");
     process.exitCode = 1;
   }
 }

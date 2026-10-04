@@ -11,6 +11,7 @@ import path from "node:path";
 import { execa } from "execa";
 import { getMinimumMcpReadResponseBudget } from "../commands/read";
 import { getTokenCount } from "../utils/read-utils";
+import * as readUtils from "../utils/read-utils";
 import { serializeMcpToolReply } from "../__tests__/mcp-response-test-utils";
 
 let fixture: WorkspaceFixture;
@@ -47,9 +48,12 @@ describe("CLI and existing MCP workspace boundaries", () => {
         command,
         command === "read" ? ["../sibling.txt"] : ["needle", "../sibling.txt"],
       );
-      expect(errors).toHaveBeenCalledWith(expect.stringContaining("outside"));
+      expect(errors).not.toHaveBeenCalledWith(
+        expect.stringContaining("sibling.txt"),
+      );
       expect(process.exitCode).toBe(1);
       expect(output.join("")).not.toContain("SIBLING");
+      expect(output.join("")).not.toContain("sibling.txt");
     },
   );
   it("CLI commands deny symlink escapes", async () => {
@@ -85,12 +89,18 @@ describe("CLI and existing MCP workspace boundaries", () => {
       "external-file.txt",
       "external-dir/secret.txt",
     ]) {
-      await expect(
-        TOOL_REGISTRY.spekta_read.handler({ paths: [target] }),
-      ).rejects.toThrow("outside");
-      await expect(
-        TOOL_REGISTRY.spekta_grep.handler({ pattern: "needle", path: target }),
-      ).rejects.toThrow("outside");
+      const read = await TOOL_REGISTRY.spekta_read.handler({ paths: [target] });
+      const search = await TOOL_REGISTRY.spekta_grep.handler({
+        pattern: "needle",
+        path: target,
+      });
+      for (const response of [read, search]) {
+        const fields = JSON.stringify(response);
+        expect(response.isError).toBe(true);
+        expect(fields).not.toContain(target);
+        expect(fields).not.toContain("SIBLING");
+        expect(fields).not.toContain("EXTERNAL");
+      }
     }
   });
 
@@ -121,6 +131,25 @@ describe("CLI and existing MCP workspace boundaries", () => {
         delete process.env.SPEKTA_READ_TOKEN_LIMIT;
       else process.env.SPEKTA_READ_TOKEN_LIMIT = previousLimit;
     }
+  });
+
+  it("marks an authorized read execution failure as an MCP error", async () => {
+    const tools = createToolRegistry({ root: fixture.root });
+    vi.spyOn(readUtils, "getFileLines").mockRejectedValueOnce(
+      new Error("I/O failure PRIVATE_DIAGNOSTIC"),
+    );
+
+    const response = await tools.spekta_read.handler(
+      { paths: ["real.txt"] },
+      undefined,
+      "read-failure",
+    );
+
+    expect(response.isError).toBe(true);
+    const fields = JSON.stringify(response);
+    expect(fields).toContain("Read failed");
+    expect(fields).not.toContain("PRIVATE_DIAGNOSTIC");
+    expect(fields).not.toContain("real.txt");
   });
 
   it("keeps overlapping server registries on their own roots and ignore files", async () => {

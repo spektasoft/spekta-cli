@@ -7,6 +7,8 @@ import { resolveWorkspace } from "../../utils/workspace";
 import path from "node:path";
 import { getGrepContent } from "../grep-search";
 import { mockExecaStream } from "./grep-search.test.helpers";
+import { getGrepOutcome } from "../grep-search";
+import { getGrepResponseTokenCount } from "../grep-output-parser";
 
 vi.mock("execa");
 vi.mock("fs-extra");
@@ -55,10 +57,34 @@ describe("getGrepContent - flags", () => {
     vi.mocked(validateReadPathAccess).mockRejectedValueOnce(
       new Error("Access Denied: outside"),
     );
-    await expect(
-      getGrepContent({ pattern: "needle", path: "../outside" }),
-    ).rejects.toThrow("outside");
+    const result = await getGrepContent({
+      pattern: "needle",
+      path: "../outside",
+    });
+    expect(result).toContain("Search rejected");
+    expect(result).not.toContain("outside");
     expect(execa).not.toHaveBeenCalled();
+  });
+
+  it("bounds policy failures including the MCP error envelope", async () => {
+    vi.mocked(getGrepTokenLimit).mockReturnValue(1);
+    vi.mocked(validateReadPathAccess).mockRejectedValueOnce(
+      new Error("Access Denied: /private/secret.env"),
+    );
+    const outcome = await getGrepOutcome(
+      { pattern: "needle", path: "/private/secret.env" },
+      undefined,
+      "id",
+    );
+    expect(outcome.status).toBe("policy_rejection");
+    if (outcome.status !== "policy_rejection") return;
+    expect(outcome.message).toBe("");
+    expect(
+      getGrepResponseTokenCount(outcome.message, "id", true),
+    ).toBeLessThanOrEqual(
+      Math.max(getGrepTokenLimit(), getGrepResponseTokenCount("", "id", true)),
+    );
+    expect(outcome.message).not.toContain("secret.env");
   });
 
   it("reports backend launch and execution failures", async () => {
@@ -66,7 +92,7 @@ describe("getGrepContent - flags", () => {
       throw new Error("ENOENT");
     });
     await expect(getGrepContent({ pattern: "needle" })).rejects.toThrow(
-      "ripgrep (rg) is not installed",
+      "ripgrep is unavailable",
     );
     vi.mocked(execa)
       .mockImplementationOnce(() => mockExecaStream("version"))

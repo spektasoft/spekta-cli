@@ -52,7 +52,9 @@ const registry: Record<string, ToolRegistryEntry> = {
         requestId,
       );
       return {
-        ...(outcome.status === "output_limit_exceeded"
+        ...(outcome.status === "output_limit_exceeded" ||
+        outcome.status === "policy_rejection" ||
+        outcome.status === "engine_failure"
           ? { isError: true }
           : {}),
         content: [
@@ -152,7 +154,10 @@ const registry: Record<string, ToolRegistryEntry> = {
       const text =
         outcome.status === "success" ? outcome.value : outcome.message;
       return {
-        ...(outcome.status === "engine_failure" ? { isError: true } : {}),
+        ...(outcome.status === "engine_failure" ||
+        outcome.status === "policy_rejection"
+          ? { isError: true }
+          : {}),
         content: [{ type: "text", text }],
       };
     },

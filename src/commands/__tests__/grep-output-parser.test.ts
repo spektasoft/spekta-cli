@@ -17,11 +17,11 @@ vi.mock("../../utils/path-ignore", () => ({
 }));
 vi.mock("../../utils/security", () => ({
   validateReadPathAccess: vi.fn(
-    async (target: string, workspace: { canonicalRoot: string }) => {
+    (target: string, workspace: { canonicalRoot: string }) => {
       if (target.includes("restricted") || target.includes("escape")) {
-        throw new Error("denied");
+        return Promise.reject(new Error("denied"));
       }
-      return path.resolve(workspace.canonicalRoot, target);
+      return Promise.resolve(path.resolve(workspace.canonicalRoot, target));
     },
   ),
 }));
@@ -109,7 +109,7 @@ describe("parseGrepOutput", () => {
       {
         exitCode: 2,
         stdout: secretMatch,
-        stderr: "diagnostic stderr",
+        stderr: "diagnostic stderr /workspace/private.ts WITHHELD_SECRET",
       },
     );
     const child = Object.assign(Promise.reject(failure), {
@@ -123,6 +123,8 @@ describe("parseGrepOutput", () => {
     if (outcome.status !== "engine_failure") return;
     expect(outcome.message).not.toContain("WITHHELD_SECRET");
     expect(outcome.message).not.toContain("private.ts");
+    expect(outcome.message).not.toContain("diagnostic stderr");
+    expect(outcome.message).not.toContain("/workspace");
     expect(outcome.message).toContain("exit code 2");
   });
 

@@ -32,7 +32,7 @@ describe("compaction warning surfacing", () => {
     vi.clearAllMocks();
   });
 
-  it("logs and labels a compaction warning without marking the file as compacted", async () => {
+  it("includes a compaction warning in the bounded response without marking the file as compacted", async () => {
     vi.mocked(compactor.compactFile).mockReturnValue({
       content: "unchanged content",
       isCompacted: false,
@@ -42,9 +42,7 @@ describe("compaction warning surfacing", () => {
 
     const output = await getReadContent([{ path: "main.rs" }], false);
 
-    expect(Logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining("not yet verified"),
-    );
+    expect(Logger.warn).not.toHaveBeenCalled();
     expect(output).toContain("Compaction skipped");
   });
 });

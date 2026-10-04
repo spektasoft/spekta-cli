@@ -250,7 +250,12 @@ describe("runMcpServer", () => {
     ) => Promise<unknown>;
     await expect(handler({})).resolves.toEqual({
       isError: true,
-      content: [{ type: "text", text: "Execution failed: Error: boom" }],
+      content: [
+        {
+          type: "text",
+          text: "Operation failed. Check workspace policy and retry with a narrower request.",
+        },
+      ],
     });
     toolHandler.mockResolvedValueOnce({
       content: [{ type: "text", text: "ok" }],

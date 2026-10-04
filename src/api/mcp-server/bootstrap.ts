@@ -55,14 +55,16 @@ export async function runMcpServer() {
               undefined,
               extra?.requestId,
             );
-          } catch (error: unknown) {
-            Logger.error(`MCP Tool Execution Error [${tool.name}]:`, error);
+          } catch {
+            // Exception messages can contain denied paths, file content, or
+            // child stderr. Keep diagnostics useful without forwarding them.
+            Logger.error(`MCP tool ${tool.name} failed.`);
             return {
               isError: true,
               content: [
                 {
                   type: "text",
-                  text: `Execution failed: ${String(error)}`,
+                  text: "Operation failed. Check workspace policy and retry with a narrower request.",
                 },
               ],
             };
@@ -71,8 +73,8 @@ export async function runMcpServer() {
       );
 
       registeredNames.add(tool.name);
-    } catch (err: unknown) {
-      Logger.error(`Failed to register tool ${tool.name}:`, err);
+    } catch {
+      Logger.error(`Failed to register MCP tool ${tool.name}.`);
     }
   }
 

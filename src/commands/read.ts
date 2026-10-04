@@ -3,17 +3,19 @@ import { processOutput } from "../utils/editor-utils";
 import { Logger } from "../utils/logger";
 import { FileRequest, getFileLines, getTokenCount } from "../utils/read-utils";
 import { validateReadPathAccess } from "../utils/security";
-import { resolveWorkspace, type WorkspaceContext } from "../utils/workspace";
+import {
+  resolveWorkspace,
+  type ResolvedWorkspace,
+  type WorkspaceContext,
+} from "../utils/workspace";
 import { analyzeFile } from "../utils/file-analyzer";
 import {
+  boundFailureOutcome,
   getOutcomeText,
+  type FailureOutcome,
   type OperationOutcome,
 } from "../core/operation-outcome";
-import {
-  formatReadOutput,
-  formatReadError,
-  prependCompactionAdvisory,
-} from "./read-formatter";
+import { formatReadOutput, prependCompactionAdvisory } from "./read-formatter";
 
 function responseTokens(
   text: string,
@@ -40,6 +42,32 @@ export function getMinimumMcpReadResponseBudget(
   requestId: string | number,
 ): number {
   return responseTokens("", requestId, true);
+}
+
+function boundedReadFailure(
+  status: FailureOutcome["status"],
+  message: string,
+  requestId?: string | number,
+): FailureOutcome {
+  const budget =
+    requestId === undefined
+      ? getReadTokenLimit()
+      : Math.max(
+          getReadTokenLimit(),
+          getMinimumMcpReadResponseBudget(requestId),
+        );
+  const fallback =
+    status === "policy_rejection"
+      ? "Read rejected by workspace policy."
+      : status === "engine_failure"
+        ? "Read failed."
+        : "Read too large; narrow the request.";
+  return boundFailureOutcome(status, message, fallback, budget, (candidate) =>
+    Math.max(
+      responseTokens(candidate, requestId, true),
+      getTokenCount(`[ERROR] ${candidate}\n`),
+    ),
+  );
 }
 
 function fitIncomplete(
@@ -96,60 +124,67 @@ export async function getReadOutcome(
   requestId?: string | number,
 ): Promise<OperationOutcome<string>> {
   if (!requests || requests.length === 0)
-    throw new Error("At least one file path is required.");
+    return boundedReadFailure(
+      "policy_rejection",
+      "Read requires at least one file path.",
+      requestId,
+    );
 
-  const resolvedWorkspace = await resolveWorkspace(workspace);
+  let resolvedWorkspace: ResolvedWorkspace;
+  try {
+    resolvedWorkspace = await resolveWorkspace(workspace);
+  } catch {
+    return boundedReadFailure(
+      "policy_rejection",
+      "Read rejected: workspace is unavailable.",
+      requestId,
+    );
+  }
   const tokenLimit = getReadTokenLimit();
   let combinedOutput = "";
   let anyCompacted = false;
 
   for (const req of requests) {
     const isRangeRequest = !!req.range;
-
-    if (!isRangeRequest && !interactive) {
-      const analysis = await analyzeFile(req.path, resolvedWorkspace);
-      const content = analysis.content;
-      const total = analysis.totalLines;
-      const isCompacted = analysis.isCompacted;
-      const fullTokens = analysis.rawTokens;
-      const compactionWarning = analysis.compactionWarning ?? "";
-
-      if (compactionWarning) {
-        Logger.warn(compactionWarning);
-      }
-
-      if (isCompacted) {
-        anyCompacted = true;
-      }
-
-      const tokens = analysis.finalTokens;
-      const exceedsLimit = analysis.exceedsLimit;
-
-      if (exceedsLimit && !isCompacted) {
-        Logger.warn(
-          `${req.path} exceeds token limit (${tokens} > ${tokenLimit}) and could not be compacted.`,
-        );
-      }
-
-      combinedOutput += formatReadOutput({
-        path: req.path,
-        content,
-        total,
-        isRangeRequest: false,
-        tokens,
-        fullTokens,
-        isCompacted,
-        exceedsLimit,
-        warning: compactionWarning,
-      });
-      continue;
+    let readPath: string;
+    try {
+      readPath = await validateReadPathAccess(req.path, resolvedWorkspace);
+    } catch {
+      return boundedReadFailure(
+        "policy_rejection",
+        "Read rejected: one or more requested files are unavailable under workspace policy.",
+        requestId,
+      );
     }
 
     try {
-      const readPath = await validateReadPathAccess(
-        req.path,
-        resolvedWorkspace,
-      );
+      if (!isRangeRequest && !interactive) {
+        const analysis = await analyzeFile(req.path, resolvedWorkspace);
+        const content = analysis.content;
+        const total = analysis.totalLines;
+        const isCompacted = analysis.isCompacted;
+        const fullTokens = analysis.rawTokens;
+        const compactionWarning = analysis.compactionWarning ?? "";
+
+        if (isCompacted) anyCompacted = true;
+
+        const tokens = analysis.finalTokens;
+        const exceedsLimit = analysis.exceedsLimit;
+
+        combinedOutput += formatReadOutput({
+          path: req.path,
+          content,
+          total,
+          isRangeRequest: false,
+          tokens,
+          fullTokens,
+          isCompacted,
+          exceedsLimit,
+          warning: compactionWarning,
+        });
+        continue;
+      }
+
       const { lines, total: rangeTotal } = await getFileLines(
         readPath,
         req.range || { start: 1, end: "$" },
@@ -160,10 +195,11 @@ export async function getReadOutcome(
       const tokens = getTokenCount(content);
 
       if (!interactive && tokens > tokenLimit) {
-        const errorMessage = `Requested range for ${req.path} exceeds token limit (${tokens} > ${tokenLimit}).`;
-        Logger.error(errorMessage);
-        combinedOutput += formatReadError(req.path, errorMessage);
-        continue;
+        return boundedReadFailure(
+          "output_limit_exceeded",
+          "Requested read exceeds the response budget; request a narrower line range.",
+          requestId,
+        );
       }
 
       let fullTokens = tokens;
@@ -183,9 +219,12 @@ export async function getReadOutcome(
         fullTokens,
         exceedsLimit: !interactive && tokens > tokenLimit,
       });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      combinedOutput += formatReadError(req.path, message);
+    } catch {
+      return boundedReadFailure(
+        "engine_failure",
+        "Read failed while accessing an authorized file.",
+        requestId,
+      );
     }
   }
 
@@ -227,10 +266,11 @@ export async function runRead(
     );
     const finalContent = getOutcomeText(outcome);
 
-    if (outcome.status === "output_limit_exceeded") {
-      Logger.warn(
-        "Read response exceeded the response budget; output is incomplete.",
-      );
+    if (
+      outcome.status === "policy_rejection" ||
+      outcome.status === "engine_failure" ||
+      outcome.status === "output_limit_exceeded"
+    ) {
       process.exitCode = 1;
     }
 
@@ -239,9 +279,9 @@ export async function runRead(
     } else {
       process.stdout.write(finalContent);
     }
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    Logger.error(message);
+  } catch {
+    const failure = boundedReadFailure("engine_failure", "Read failed.");
+    if (failure.message) Logger.error(failure.message);
     process.exitCode = 1;
   }
 }
