@@ -142,6 +142,34 @@ export async function executeGitHistoryPatchOutcome(
   const hashes = commits.stdout
     .split(/\r?\n/)
     .filter((hash) => /^[0-9a-f]{40,64}$/i.test(hash));
+  for (const hash of hashes) {
+    let ancestry: { stdout: string; exitCode: number };
+    try {
+      const result = await execa(
+        "git",
+        ["rev-list", "--parents", "-n", "1", hash],
+        {
+          cwd: context?.root ?? process.cwd(),
+          reject: false,
+          env: {
+            ...process.env,
+            GIT_PAGER: "cat",
+            PAGER: "cat",
+            GIT_OPTIONAL_LOCKS: "0",
+          },
+        },
+      );
+      ancestry = { stdout: result.stdout, exitCode: result.exitCode ?? 0 };
+    } catch {
+      return fail("Git history patch ancestry could not be verified.");
+    }
+    if (ancestry.exitCode !== 0)
+      return fail("Git history patch ancestry could not be verified.");
+    if (ancestry.stdout.trim().split(/\s+/).length > 2)
+      return fail(
+        "Git history patch rejected: merge commits have ambiguous combined history patches.",
+      );
+  }
   const workspace = await resolveWorkspace(context);
   const root = findRepositoryRoot(context);
   const selectedCommits: Array<{ hash: string; paths: string[] }> = [];
@@ -246,7 +274,12 @@ export async function executeGitHistoryPatchOutcome(
       );
     if (
       /^GIT binary patch/m.test(stdout) ||
-      /^Binary files .+ and .+ differ$/m.test(stdout) ||
+      /^Binary files .+ and .+ differ$/m.test(stdout)
+    )
+      return fail(
+        "Git history patch rejected: binary patches are unsupported.",
+      );
+    if (
       /^(?:old mode |new mode |Subproject commit |diff --(?:cc|combined) )|^@@@/m.test(
         stdout,
       )

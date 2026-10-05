@@ -168,6 +168,14 @@ describe.skipIf(missing.length > 0)(
       expect(freeText.mcp.content[0].text).not.toContain(
         "MIXED_HISTORY_SECRET",
       );
+      const mixedPatch = await both(["log", "-p", "-n", "1"]);
+      expect(mixedPatch.mcp.isError).toBe(false);
+      for (const text of [mixedPatch.cli, mixedPatch.mcp.content[0].text]) {
+        expect(text).toContain("visible");
+        expect(text).not.toContain("denied.txt");
+        expect(text).not.toContain("hidden");
+        expect(text).not.toContain("MIXED_HISTORY_SECRET");
+      }
     });
 
     it("filters both historical rename identities", async () => {
@@ -177,6 +185,17 @@ describe.skipIf(missing.length > 0)(
       expect(allowed.mcp.isError).toBe(false);
       expect(allowed.mcp.content[0].text).toContain("filename-only");
       expect(allowed.mcp.content[0].text).toContain("renamed-history.txt");
+      const renamePatch = await both([
+        "show",
+        "HEAD",
+        "--",
+        "filename-only",
+        "renamed-history.txt",
+      ]);
+      expect(renamePatch.mcp.isError).toBe(false);
+      expect(renamePatch.mcp.content[0].text).toContain(
+        "a/filename-only b/renamed-history.txt",
+      );
 
       fs.writeFileSync(
         path.join(context.workspace, ".gitignore"),
@@ -190,6 +209,72 @@ describe.skipIf(missing.length > 0)(
         expect(text).not.toContain("renamed-history.txt");
         expect(text).not.toContain("denied.private");
         expect(text).not.toContain("DENIED_RENAME");
+      }
+    });
+
+    it("explicitly rejects merge history patches without disclosing commit data", async () => {
+      await fixtureGit([
+        "stash",
+        "push",
+        "--include-untracked",
+        "-m",
+        "fixture-worktree",
+      ]);
+      await fixtureGit(["checkout", "-b", "merge-side"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "merge-side.txt"),
+        "SIDE_SECRET\n",
+      );
+      await fixtureGit(["add", "--", "merge-side.txt"]);
+      await fixtureGit(["commit", "-m", "MERGE_SIDE_MESSAGE"]);
+      await fixtureGit(["checkout", "main"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "main-side.txt"),
+        "MAIN_SECRET\n",
+      );
+      await fixtureGit(["add", "--", "main-side.txt"]);
+      await fixtureGit(["commit", "-m", "MAIN_SIDE_MESSAGE"]);
+      await fixtureGit([
+        "merge",
+        "--no-ff",
+        "merge-side",
+        "-m",
+        "MERGE_ENVELOPE_SECRET",
+      ]);
+      await fixtureGit(["stash", "pop"]);
+
+      const result = await both(["show", "HEAD"]);
+      expect(result.mcp.isError).toBe(true);
+      expect(result.mcp.content[0].text).toMatch(/merge/i);
+      for (const text of [result.cli, result.mcp.content[0].text]) {
+        expect(text).not.toContain("SIDE_SECRET");
+        expect(text).not.toContain("MAIN_SECRET");
+        expect(text).not.toContain("MERGE_ENVELOPE_SECRET");
+      }
+    });
+
+    it("explicitly rejects binary history patches without disclosing paths or payloads", async () => {
+      const binary = Buffer.from([0, 1, 2, 3, 255]);
+      fs.writeFileSync(
+        path.join(context.workspace, "binary-history.dat"),
+        binary,
+      );
+      await fixtureGit(["add", "--", "binary-history.dat"]);
+      await fixtureGit(["commit", "-m", "BINARY_HISTORY_SECRET"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "binary-history.dat"),
+        Buffer.from([0, 8, 7, 6, 255]),
+      );
+      await fixtureGit(["add", "--", "binary-history.dat"]);
+      await fixtureGit(["commit", "-m", "BINARY_CHANGE_SECRET"]);
+
+      const result = await both(["show", "HEAD"]);
+      expect(result.mcp.isError).toBe(true);
+      expect(result.mcp.content[0].text).toMatch(/binary/i);
+      for (const text of [result.cli, result.mcp.content[0].text]) {
+        expect(text).not.toContain("binary-history.dat");
+        expect(text).not.toContain("BINARY_HISTORY_SECRET");
+        expect(text).not.toContain("BINARY_CHANGE_SECRET");
       }
     });
 
