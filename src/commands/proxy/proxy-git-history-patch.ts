@@ -118,7 +118,7 @@ export async function executeGitHistoryPatchOutcome(
           ...(paths.length ? paths : ["."]),
         ];
   if (!countOption && subcommand === "log") selection.push("-n", "10");
-  let commits: { stdout: string; exitCode: number };
+  let commits: { stdout: string; stderr: string; exitCode: number };
   try {
     const result = await execa("git", selection, {
       cwd: context?.root ?? process.cwd(),
@@ -130,15 +130,25 @@ export async function executeGitHistoryPatchOutcome(
         GIT_OPTIONAL_LOCKS: "0",
       },
     });
-    commits = { stdout: result.stdout, exitCode: result.exitCode ?? 0 };
+    commits = {
+      stdout: result.stdout,
+      stderr: result.stderr,
+      exitCode: result.exitCode ?? 0,
+    };
   } catch {
     return fail("Git history patch selection failed.");
   }
-  if (commits.exitCode !== 0)
+  if (commits.exitCode !== 0) {
+    if (/not a git repository/i.test(commits.stderr))
+      return fail(
+        "Git history selection failed: not a Git repository.",
+        commits.exitCode,
+      );
     return fail(
       `Git history patch selection failed with exit status ${commits.exitCode}.`,
       commits.exitCode,
     );
+  }
   const hashes = commits.stdout
     .split(/\r?\n/)
     .filter((hash) => /^[0-9a-f]{40,64}$/i.test(hash));

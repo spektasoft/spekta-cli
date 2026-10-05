@@ -1,5 +1,6 @@
 import { renderGitStatusOutcome } from "../../commands/proxy/proxy-git-status";
 import { renderGitHistoryOutcome } from "../../commands/proxy/proxy-git-history";
+import { renderGitBlobOutcome } from "../../commands/proxy/proxy-git-blob";
 import {
   executeGitHistoryPatchOutcome,
   isGitHistoryPatchRequest,
@@ -15,7 +16,11 @@ import { getGrepOutcome } from "../../commands/grep-search";
 import { getReadOutcome } from "../../commands/read";
 import { executeSafeReplace } from "../../commands/replace";
 import { getWriteContent } from "../../commands/write";
-import { redactSecrets, truncateOutput } from "../../commands/proxy";
+import {
+  formatProxyOutput,
+  redactSecrets,
+  truncateOutput,
+} from "../../commands/proxy";
 import {
   formatProxyFailure,
   validateProxyRequest,
@@ -298,6 +303,35 @@ const registry: Record<string, ToolRegistryEntry> = {
               text:
                 outcome.status === "failure"
                   ? outcome.message
+                  : outcome.content,
+            },
+          ],
+        };
+      }
+
+      if (
+        command === "git" &&
+        cleanArgs[0] === "show" &&
+        cleanArgs.some(
+          (arg, index) =>
+            index > 0 && !arg.startsWith("-") && arg.includes(":"),
+        )
+      ) {
+        const selector = cleanArgs.find(
+          (arg, index) =>
+            index > 0 && !arg.startsWith("-") && arg.includes(":"),
+        )!;
+        const outcome = await renderGitBlobOutcome(result, selector, context);
+        return {
+          isError: outcome.status === "failure",
+          content: [
+            {
+              type: "text",
+              text:
+                outcome.status === "failure"
+                  ? formatProxyOutput("git", outcome.message, {
+                      exitCode: outcome.exitCode,
+                    })
                   : outcome.content,
             },
           ],

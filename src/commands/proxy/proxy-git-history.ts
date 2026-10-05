@@ -11,7 +11,7 @@ const LIMIT = 1000;
 
 /** Render log/show summaries from NUL-delimited name-status records. */
 export async function renderGitHistoryOutcome(
-  result: { stdout: string; exitCode: number },
+  result: { stdout: string; stderr?: string; exitCode: number },
   args: string[],
   context?: WorkspaceContext,
 ): Promise<DiscoveryRenderOutcome> {
@@ -20,11 +20,17 @@ export async function renderGitHistoryOutcome(
     message,
     exitCode,
   });
-  if (result.exitCode !== 0)
+  if (result.exitCode !== 0) {
+    if (/not a git repository/i.test(result.stderr ?? ""))
+      return fail(
+        "Git history summary failed: not a Git repository.",
+        result.exitCode,
+      );
     return fail(
       `RTK command failed with exit status ${result.exitCode}.`,
       result.exitCode,
     );
+  }
 
   const flags = args.slice(
     1,

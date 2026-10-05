@@ -130,6 +130,27 @@ describe.skipIf(missing.length > 0)(
       expect(deleted.mcp.content[0].text).toBe("historical-only");
     });
 
+    it("withholds ignored historical blobs without echoing their selector", async () => {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "historical-secret.txt\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "historical-secret.txt"),
+        "HISTORICAL_SECRET_BLOB_BODY\n",
+      );
+      await fixtureGit(["add", "--", ".gitignore"]);
+      await fixtureGit(["add", "-f", "--", "historical-secret.txt"]);
+      await fixtureGit(["commit", "-m", "safe historical fixture"]);
+
+      const result = await both(["show", "HEAD:historical-secret.txt"]);
+      expect(result.mcp.isError).toBe(true);
+      for (const text of [result.cli, result.mcp.content[0].text]) {
+        expect(text).not.toContain("historical-secret.txt");
+        expect(text).not.toContain("HISTORICAL_SECRET_BLOB_BODY");
+      }
+    });
+
     it("filters historical summary paths and withholds commit prose", async () => {
       fs.writeFileSync(
         path.join(context.workspace, ".gitignore"),

@@ -1,5 +1,6 @@
 import { renderGitStatusOutcome } from "./proxy-git-status";
 import { renderGitHistoryOutcome } from "./proxy-git-history";
+import { renderGitBlobOutcome } from "./proxy-git-blob";
 import {
   executeGitHistoryPatchOutcome,
   isGitHistoryPatchRequest,
@@ -44,7 +45,11 @@ export async function runRtkProxy(
     const outcome = await executeGitDiffPatchOutcome(rawArgs, context);
     if (outcome.status === "failure") {
       process.exitCode = outcome.exitCode;
-      console.error(outcome.message);
+      console.log(
+        formatProxyOutput(command, outcome.message, {
+          exitCode: outcome.exitCode,
+        }),
+      );
     } else {
       console.log(
         formatProxyOutput(command, outcome.content, {
@@ -91,7 +96,11 @@ export async function runRtkProxy(
     );
     if (outcome.status === "failure") {
       process.exitCode = outcome.exitCode;
-      console.error(outcome.message);
+      console.log(
+        formatProxyOutput(command, outcome.message, {
+          exitCode: outcome.exitCode,
+        }),
+      );
       return;
     }
     console.log(
@@ -106,7 +115,11 @@ export async function runRtkProxy(
     const outcome = await renderGitStatusOutcome(result, rawArgs, context);
     if (outcome.status === "failure") {
       process.exitCode = outcome.exitCode;
-      console.error(outcome.message);
+      console.log(
+        formatProxyOutput(command, outcome.message, {
+          exitCode: outcome.exitCode,
+        }),
+      );
     } else
       console.log(
         formatProxyOutput(command, outcome.content, {
@@ -116,11 +129,43 @@ export async function runRtkProxy(
     return;
   }
 
+  if (
+    command === "git" &&
+    rawArgs[0] === "show" &&
+    rawArgs.some(
+      (arg, index) => index > 0 && !arg.startsWith("-") && arg.includes(":"),
+    )
+  ) {
+    const selector = rawArgs.find(
+      (arg, index) => index > 0 && !arg.startsWith("-") && arg.includes(":"),
+    )!;
+    const outcome = await renderGitBlobOutcome(result, selector, context);
+    if (outcome.status === "failure") {
+      process.exitCode = outcome.exitCode;
+      console.log(
+        formatProxyOutput(command, outcome.message, {
+          exitCode: outcome.exitCode,
+        }),
+      );
+    } else {
+      console.log(
+        formatProxyOutput(command, outcome.content, {
+          truncated: outcome.truncated,
+        }),
+      );
+    }
+    return;
+  }
+
   if (command === "git" && isGitHistoryPatchRequest(rawArgs)) {
     const outcome = await executeGitHistoryPatchOutcome(rawArgs, context);
     if (outcome.status === "failure") {
       process.exitCode = outcome.exitCode;
-      console.error(outcome.message);
+      console.log(
+        formatProxyOutput(command, outcome.message, {
+          exitCode: outcome.exitCode,
+        }),
+      );
     } else
       console.log(
         formatProxyOutput(command, outcome.content, {
@@ -141,7 +186,11 @@ export async function runRtkProxy(
     const outcome = await renderGitHistoryOutcome(result, rawArgs, context);
     if (outcome.status === "failure") {
       process.exitCode = outcome.exitCode;
-      console.error(outcome.message);
+      console.log(
+        formatProxyOutput(command, outcome.message, {
+          exitCode: outcome.exitCode,
+        }),
+      );
     } else console.log(formatProxyOutput(command, outcome.content));
     return;
   }
@@ -150,7 +199,11 @@ export async function runRtkProxy(
     const outcome = await renderGitDiffOutcome(result, rawArgs, context);
     if (outcome.status === "failure") {
       process.exitCode = outcome.exitCode;
-      console.error(outcome.message);
+      console.log(
+        formatProxyOutput(command, outcome.message, {
+          exitCode: outcome.exitCode,
+        }),
+      );
     } else {
       console.log(
         formatProxyOutput(command, outcome.content, {

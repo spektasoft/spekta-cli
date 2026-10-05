@@ -36,11 +36,17 @@ export async function executeGitDiffPatchOutcome(
   );
   if (!manifest.available)
     return failure("The `rtk` executable was not found.");
-  if (manifest.exitCode !== 0)
+  if (manifest.exitCode !== 0) {
+    if (/not a git repository/i.test(manifest.stderr))
+      return failure(
+        "Git operation failed: not a Git repository.",
+        manifest.exitCode,
+      );
     return failure(
       `RTK command failed with exit status ${manifest.exitCode}.`,
       manifest.exitCode,
     );
+  }
   const records = manifest.stdout === "" ? [] : manifest.stdout.split("\0");
   if (records.length && records.pop() !== "")
     return failure(
