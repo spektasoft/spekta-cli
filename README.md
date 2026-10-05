@@ -125,7 +125,7 @@ Revisions support `HEAD`, hexadecimal IDs, conservative ASCII named refs such as
 
 `diff` compares the working tree with the index by default. With one revision it compares the working tree with that revision; two revisions compare endpoints. `A..B` compares endpoints and `A...B` compares the merge base of A/B with B; diff requires both range endpoints. A range must be the only revision operand. `--cached` and `--staged` compare the index with HEAD or one supplied revision, and support an unborn HEAD when no revision is supplied. Only one staged selector is allowed; staged ranges, multiple staged revisions, blob selectors, `--no-index`, and all unlisted diff flags are unsupported.
 
-Paths must stay lexically and canonically inside the current workspace and cannot target restricted files or aliases to them. Absolute POSIX/Windows/UNC paths, escaping or dangling symlinks, Git pathspec magic, wildcards, backslashes, colons, tilde expansion syntax, and control characters are unsupported. Ordinary missing paths remain valid for historical inspection. Spaces and option-looking filenames are supported after `--`. These checks protect explicit operands and cwd; unscoped history/diff output and directory operands are not recursively filtered by filename.
+Paths must stay lexically and canonically inside the current workspace and cannot target restricted files or aliases to them. Absolute POSIX/Windows/UNC paths, escaping or dangling symlinks, Git pathspec magic, wildcards, backslashes, colons, tilde expansion syntax, and control characters are unsupported. Ordinary missing paths remain valid for historical inspection. Spaces and option-looking filenames are supported after `--`. History summaries filter historical paths (including deleted paths and both rename endpoints) through the workspace disclosure policy, even for broad or directory selections. Summary counts describe eligible paths only. Commit messages, graph/decorations, and other free text are rejected because they cannot be attributed safely to eligible paths.
 
 `show REV:path` uses a repository-relative blob path. The nearest `.git` directory or worktree `.git` file establishes its root. From a nested workspace directory, only blob paths inside that workspace are accepted. Empty paths, dot/dot-dot segments, `REV:./path`, index-stage selectors, additional path operands, and unsupported repository markers are rejected.
 
@@ -133,7 +133,7 @@ Paths must stay lexically and canonically inside the current workspace and canno
 spekta ls src
 spekta git status --short
 spekta git status --porcelain=v2 -- src
-spekta git log --oneline -n 5 main..HEAD -- src
+spekta git log --name-status -n 5 main..HEAD -- src
 spekta git show --stat HEAD
 spekta git show HEAD -- src/example.ts
 spekta git show HEAD:src/example.ts

@@ -1,4 +1,5 @@
 import { renderGitStatusOutcome } from "../../commands/proxy/proxy-git-status";
+import { renderGitHistoryOutcome } from "../../commands/proxy/proxy-git-history";
 import {
   executeGitDiffPatchOutcome,
   renderGitDiffOutcome,
@@ -266,6 +267,33 @@ const registry: Record<string, ToolRegistryEntry> = {
 
       if (command === "git" && cleanArgs[0] === "status") {
         const outcome = await renderGitStatusOutcome(
+          result,
+          cleanArgs,
+          context,
+        );
+        return {
+          isError: outcome.status === "failure",
+          content: [
+            {
+              type: "text",
+              text:
+                outcome.status === "failure"
+                  ? outcome.message
+                  : outcome.content,
+            },
+          ],
+        };
+      }
+
+      if (
+        command === "git" &&
+        ["log", "show"].includes(cleanArgs[0]) &&
+        (cleanArgs[0] === "log" ||
+          cleanArgs.some((arg) =>
+            ["--stat", "--name-only", "--name-status"].includes(arg),
+          ))
+      ) {
+        const outcome = await renderGitHistoryOutcome(
           result,
           cleanArgs,
           context,

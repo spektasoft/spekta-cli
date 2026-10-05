@@ -1,4 +1,5 @@
 import { renderGitStatusOutcome } from "./proxy-git-status";
+import { renderGitHistoryOutcome } from "./proxy-git-history";
 import {
   executeGitDiffPatchOutcome,
   renderGitDiffOutcome,
@@ -108,6 +109,22 @@ export async function runRtkProxy(
           truncated: outcome.truncated,
         }),
       );
+    return;
+  }
+
+  if (
+    command === "git" &&
+    ["log", "show"].includes(rawArgs[0]) &&
+    (rawArgs[0] === "log" ||
+      rawArgs.some((arg) =>
+        ["--stat", "--name-only", "--name-status"].includes(arg),
+      ))
+  ) {
+    const outcome = await renderGitHistoryOutcome(result, rawArgs, context);
+    if (outcome.status === "failure") {
+      process.exitCode = outcome.exitCode;
+      console.error(outcome.message);
+    } else console.log(formatProxyOutput(command, outcome.content));
     return;
   }
 

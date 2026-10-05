@@ -108,6 +108,30 @@ export function prepareRtkInvocation(
   if (args[0] === "diff") env.GIT_OPTIONAL_LOCKS = "0";
   const history = ["log", "show", "diff"].includes(args[0]);
   let commandArgs = args.slice(1);
+  if (["log", "show"].includes(args[0])) {
+    const separator = commandArgs.indexOf("--");
+    const flags = commandArgs.slice(
+      0,
+      separator < 0 ? commandArgs.length : separator,
+    );
+    const summary = flags.some((flag) =>
+      ["--stat", "--name-only", "--name-status"].includes(flag),
+    );
+    if (summary) {
+      const selected = flags.filter(
+        (flag) => !["--stat", "--name-only", "--name-status"].includes(flag),
+      );
+      const paths = separator < 0 ? [] : commandArgs.slice(separator + 1);
+      commandArgs = [
+        ...selected,
+        "--format=",
+        "--name-status",
+        "-z",
+        "--",
+        ...(paths.length ? paths : ["."]),
+      ];
+    }
+  }
   if (args[0] === "diff") {
     const separator = commandArgs.indexOf("--");
     const flags = commandArgs.slice(
