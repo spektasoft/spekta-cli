@@ -107,7 +107,7 @@ async function isIgnoredDirectory(
   return !isWhitelisted(relativePath, patterns);
 }
 
-async function isEligibleEntry(
+export async function isEligibleEntry(
   directory: string,
   name: string,
   workspace: ResolvedWorkspace,

@@ -33,6 +33,12 @@ beforeEach(() => {
   ({ fixture, workspace } = proxyFixture.setup());
   fs.ensureDirSync(path.join(workspace, "space name"));
   fs.ensureDirSync(path.join(workspace, "-directory"));
+  fs.writeFileSync(path.join(workspace, "one.ts"), "one");
+  fs.writeFileSync(path.join(workspace, "space name", "two.ts"), "two");
+  vi.mocked(execa).mockImplementation(((command: string) => {
+    if (command === "git") throw new Error("not ignored");
+    return Promise.resolve({ stdout: listing, stderr: "", exitCode: 0 });
+  }) as never);
   fs.writeFileSync(path.join(workspace, "sentinel.txt"), "preserve this file");
   fs.writeFileSync(
     path.join(fixture, "outside", "external-sentinel.txt"),
@@ -50,6 +56,15 @@ describe("restricted find CLI and MCP parity", () => {
     "executes accepted request $args through equivalent public adapters",
     async ({ args, expectedArgs }) => {
       const original = [...args];
+      const root = args[0] && !args[0].startsWith("-") ? args[0] : ".";
+      const listing =
+        root === "." ? "./one.ts\n./space name/two.ts" : `${root}/one.ts`;
+      if (root !== ".")
+        fs.writeFileSync(path.join(workspace, root, "one.ts"), "one");
+      vi.mocked(execa).mockImplementation(((command: string) => {
+        if (command === "git") throw new Error("not ignored");
+        return Promise.resolve({ stdout: listing, stderr: "", exitCode: 0 });
+      }) as never);
 
       await runRtkProxy("find", args);
       const mcp = await TOOL_REGISTRY.spekta_shell.handler({
@@ -57,9 +72,10 @@ describe("restricted find CLI and MCP parity", () => {
         args,
       });
 
-      expect(execa).toHaveBeenCalledTimes(2);
-      expect(execa).toHaveBeenNthCalledWith(
-        1,
+      expect(
+        vi.mocked(execa).mock.calls.filter(([command]) => command === "rtk"),
+      ).toHaveLength(2);
+      expect(execa).toHaveBeenCalledWith(
         "rtk",
         expectedArgs,
         expect.objectContaining({
@@ -71,8 +87,7 @@ describe("restricted find CLI and MCP parity", () => {
           }) as unknown,
         }),
       );
-      expect(execa).toHaveBeenNthCalledWith(
-        2,
+      expect(execa).toHaveBeenCalledWith(
         "rtk",
         expectedArgs,
         expect.objectContaining({
@@ -269,16 +284,16 @@ describe("restricted find CLI and MCP parity", () => {
       args: ["."],
     });
 
-    expect(console.log).toHaveBeenCalledWith(
-      expect.stringContaining("native find failed"),
-    );
+    expect(console.log).not.toHaveBeenCalled();
     expect(console.error).toHaveBeenCalledWith(
       expect.stringMatching(/status 7/i),
     );
     expect(process.exitCode).toBe(7);
     expect(mcp).toEqual({
       isError: true,
-      content: [{ type: "text", text: "native find failed" }],
+      content: [
+        { type: "text", text: "RTK command failed with exit status 7." },
+      ],
     });
     expect(confirm).not.toHaveBeenCalled();
   });

@@ -27,7 +27,6 @@ let workspace = "";
 let savedExitCode: typeof process.exitCode;
 
 const expectedTypeScriptFiles = [
-  "./.env/visible.ts",
   "./root.ts",
   "./space name/file name.ts",
   "./src/deep/deep.ts",
@@ -243,7 +242,7 @@ describeBackend(backendSuiteName, () => {
   }, 30_000);
 
   it("treats a restricted-looking name as a filter rather than a root", async () => {
-    await expectDiscovery([".", "-type", "d", "-name", ".env"], ["./.env"]);
+    await expectDiscovery([".", "-type", "d", "-name", ".env"], []);
   }, 30_000);
 
   it("does not traverse a contained directory symlink supplied as the root", async () => {
@@ -282,7 +281,7 @@ describeBackend(backendSuiteName, () => {
     expect(lines).toContain(".");
     expect(lines).toContain("./root.ts");
     expect(lines).toContain("./root.js");
-    expect(lines).toContain("./escape");
+    expect(lines).not.toContain("./escape");
     expect(lines).toContain("./internal-alias");
     expect(cli).not.toContain("outside-only.ts");
     expect(mcpText).not.toContain("outside-only.ts");
