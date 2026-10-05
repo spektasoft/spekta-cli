@@ -1,13 +1,118 @@
 import path from "node:path";
 import { resolveWorkspace, type WorkspaceContext } from "../../utils/workspace";
 import { getTokenCount } from "../../utils/read-utils";
-import { formatProxyOutput } from "./proxy-output";
+import { formatProxyOutput, truncateOutput } from "./proxy-output";
 import { redactSecrets } from "./proxy-secret-redaction";
 import { findRepositoryRoot } from "./proxy-git-policy";
 import { isEligibleGitPath } from "./proxy-git-status";
+import { executeRtkCommand } from "./proxy-execution";
 import type { DiscoveryRenderOutcome } from "./proxy-ls-render";
 
 const LIMIT = 1000;
+
+/** Execute and render ordinary text patches only after their paths pass disclosure policy. */
+export async function executeGitDiffPatchOutcome(
+  args: string[],
+  context?: WorkspaceContext,
+): Promise<DiscoveryRenderOutcome> {
+  const failure = (message: string, exitCode = 1): DiscoveryRenderOutcome => ({
+    status: "failure",
+    message,
+    exitCode,
+  });
+  const separator = args.indexOf("--");
+  const flags = args.slice(1, separator < 0 ? args.length : separator);
+  const paths = separator < 0 ? [] : args.slice(separator + 1);
+  const manifest = await executeRtkCommand(
+    "git",
+    [
+      "diff",
+      ...flags,
+      "--name-status",
+      "--",
+      ...(paths.length ? paths : ["."]),
+    ],
+    context,
+  );
+  if (!manifest.available)
+    return failure("The `rtk` executable was not found.");
+  if (manifest.exitCode !== 0)
+    return failure(
+      `RTK command failed with exit status ${manifest.exitCode}.`,
+      manifest.exitCode,
+    );
+  const records = manifest.stdout === "" ? [] : manifest.stdout.split("\0");
+  if (records.length && records.pop() !== "")
+    return failure(
+      "Git diff patch rejected: entries could not be attributed reliably.",
+    );
+  const workspace = await resolveWorkspace(context);
+  const root = findRepositoryRoot(context);
+  const selected: string[] = [];
+  for (let i = 0; i < records.length;) {
+    const status = records[i++];
+    if (status === "R" || status === "C" || /^[RC]/.test(status))
+      return failure(
+        "Git diff patch rejected: rename and copy patches are unsupported.",
+      );
+    if (!/^[AMD]$/.test(status) || i >= records.length)
+      return failure(
+        "Git diff patch rejected: unsupported patch representation.",
+      );
+    const name = records[i++];
+    if (
+      !name ||
+      path.isAbsolute(name) ||
+      name.split("/").some((part) => !part || part === "." || part === "..")
+    )
+      return failure(
+        "Git diff patch rejected: entries could not be attributed reliably.",
+      );
+    const relative = path.relative(workspace.root, path.resolve(root, name));
+    if (await isEligibleGitPath(relative, workspace)) selected.push(name);
+  }
+  let patch = "";
+  for (const name of selected) {
+    const cwdName = path.relative(process.cwd(), path.resolve(root, name));
+    const result = await executeRtkCommand(
+      "git",
+      ["diff", ...flags, "--", cwdName],
+      context,
+    );
+    if (!result.available)
+      return failure("The `rtk` executable was not found.");
+    if (result.exitCode !== 0)
+      return failure(
+        `RTK command failed with exit status ${result.exitCode}.`,
+        result.exitCode,
+      );
+    if (
+      /^(?:Binary files |GIT binary patch|old mode |new mode |Subproject commit )/m.test(
+        result.stdout,
+      )
+    )
+      return failure(
+        "Git diff patch rejected: binary or metadata patch representations are unsupported.",
+      );
+    if (result.stdout && !result.stdout.startsWith("diff --git "))
+      return failure(
+        "Git diff patch rejected: unsupported patch representation.",
+      );
+    patch += result.stdout;
+  }
+  const output = redactSecrets(patch);
+  const condensed = truncateOutput(output, 900);
+  const rendered = formatProxyOutput("git", condensed.content, {
+    truncated: condensed.truncated,
+  });
+  if (getTokenCount(`${rendered}\n`) > LIMIT)
+    return failure("Git diff patch too large. Choose a narrower path.");
+  return {
+    status: "success",
+    content: condensed.content,
+    truncated: condensed.truncated,
+  };
+}
 
 /** Render normalized NUL-delimited Git summary records after filtering both path names. */
 export async function renderGitDiffOutcome(

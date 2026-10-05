@@ -1,5 +1,8 @@
 import { renderGitStatusOutcome } from "./proxy-git-status";
-import { renderGitDiffOutcome } from "./proxy-git-diff";
+import {
+  executeGitDiffPatchOutcome,
+  renderGitDiffOutcome,
+} from "./proxy-git-diff";
 import { executeRtkCommand } from "./proxy-execution";
 import { formatProxyFailure, validateProxyRequest } from "./proxy-policy";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
@@ -24,6 +27,26 @@ export async function runRtkProxy(
   } catch (error: unknown) {
     console.error(formatProxyFailure(error));
     process.exitCode = 1;
+    return;
+  }
+  if (
+    command === "git" &&
+    rawArgs[0] === "diff" &&
+    !rawArgs.some((arg) =>
+      ["--name-only", "--name-status", "--stat"].includes(arg),
+    )
+  ) {
+    const outcome = await executeGitDiffPatchOutcome(rawArgs, context);
+    if (outcome.status === "failure") {
+      process.exitCode = outcome.exitCode;
+      console.error(outcome.message);
+    } else {
+      console.log(
+        formatProxyOutput(command, outcome.content, {
+          truncated: outcome.truncated,
+        }),
+      );
+    }
     return;
   }
   let result;
@@ -88,13 +111,7 @@ export async function runRtkProxy(
     return;
   }
 
-  if (
-    command === "git" &&
-    rawArgs[0] === "diff" &&
-    rawArgs.some((arg) =>
-      ["--name-only", "--name-status", "--stat"].includes(arg),
-    )
-  ) {
+  if (command === "git" && rawArgs[0] === "diff") {
     const outcome = await renderGitDiffOutcome(result, rawArgs, context);
     if (outcome.status === "failure") {
       process.exitCode = outcome.exitCode;

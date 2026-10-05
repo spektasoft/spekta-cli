@@ -36,6 +36,14 @@ describe.skipIf(missing.length > 0)(
       expect(snapshotRepository()).toEqual(before);
     });
 
+    it("renders revision patches for unusual quoted paths safely", async () => {
+      const result = await both(["diff", "HEAD", "--", "space name"]);
+      expect(result.mcp.isError).toBe(false);
+      expect(result.cli).toContain("diff --git");
+      expect(result.cli).toContain("space name");
+      expect(result.mcp.content[0].text).toContain("spaces-blob");
+    });
+
     it("filters name-only, name-status, and stat summaries by eligible paths", async () => {
       fs.writeFileSync(
         path.join(context.workspace, ".gitignore"),
@@ -70,6 +78,60 @@ describe.skipIf(missing.length > 0)(
         expect(result.cli).not.toContain("denied.txt");
         expect(result.mcp.content[0].text).not.toContain("denied.txt");
       }
+    });
+
+    it("filters ordinary patch sections by eligible paths", async () => {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "denied.txt\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "denied.txt"),
+        "private-v1\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "visible.txt"),
+        "public-v1\n",
+      );
+      await fixtureGit(["add", "--", ".gitignore", "visible.txt"]);
+      await fixtureGit(["add", "-f", "--", "denied.txt"]);
+      await fixtureGit(["commit", "-m", "PATCH_FIXTURE"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "denied.txt"),
+        "private-v2\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "visible.txt"),
+        "public-v2\n",
+      );
+
+      const result = await both(["diff"]);
+      expect(result.cli).toContain("public-v1");
+      expect(result.mcp.content[0].text).toContain("public-v2");
+      for (const text of [result.cli, result.mcp.content[0].text]) {
+        expect(text).not.toContain("denied.txt");
+        expect(text).not.toContain("private-v1");
+        expect(text).not.toContain("private-v2");
+      }
+    });
+
+    it("rejects rename patch representations without returning paths", async () => {
+      await fixtureGit(["mv", "filename-only", "renamed-file.txt"]);
+      const result = await both(["diff", "--cached"]);
+      expect(result.mcp.isError).toBe(true);
+      expect(result.mcp.content[0].text).toContain(
+        "rename and copy patches are unsupported",
+      );
+      expect(result.cli).not.toContain("file.txt");
+      expect(result.cli).not.toContain("renamed-file.txt");
+    });
+
+    it("reports a failed patch child without forwarding its diagnostics", async () => {
+      const result = await both(["diff", "missing-revision"]);
+      expect(result.mcp.isError).toBe(true);
+      expect(result.mcp.content[0].text).toMatch(/exit status/);
+      expect(result.mcp.content[0].text).not.toContain("fatal:");
+      expect(result.cli).not.toContain("fatal:");
     });
 
     it("compares revisions and preserves hashes and historical missing paths", async () => {
@@ -195,6 +257,7 @@ describe.skipIf(missing.length > 0)(
         expect(getTokenCount(result.mcp.content[0].text)).toBeLessThanOrEqual(
           1000,
         );
+        expect(getTokenCount(`${result.cli}\n`)).toBeLessThanOrEqual(1000);
         expect(snapshotRepository()).toEqual(before);
       }
     });

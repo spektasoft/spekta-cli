@@ -1,5 +1,8 @@
 import { renderGitStatusOutcome } from "../../commands/proxy/proxy-git-status";
-import { renderGitDiffOutcome } from "../../commands/proxy/proxy-git-diff";
+import {
+  executeGitDiffPatchOutcome,
+  renderGitDiffOutcome,
+} from "../../commands/proxy/proxy-git-diff";
 import { z } from "zod";
 import path from "node:path";
 
@@ -190,6 +193,27 @@ const registry: Record<string, ToolRegistryEntry> = {
           content: [{ type: "text", text: formatProxyFailure(error) }],
         };
       }
+      if (
+        command === "git" &&
+        cleanArgs[0] === "diff" &&
+        !cleanArgs.some((arg) =>
+          ["--name-only", "--name-status", "--stat"].includes(arg),
+        )
+      ) {
+        const outcome = await executeGitDiffPatchOutcome(cleanArgs, context);
+        return {
+          isError: outcome.status === "failure",
+          content: [
+            {
+              type: "text",
+              text:
+                outcome.status === "failure"
+                  ? outcome.message
+                  : outcome.content,
+            },
+          ],
+        };
+      }
       let result;
       try {
         result = await executeRtkCommand(command, cleanArgs, context);
@@ -260,13 +284,7 @@ const registry: Record<string, ToolRegistryEntry> = {
         };
       }
 
-      if (
-        command === "git" &&
-        cleanArgs[0] === "diff" &&
-        cleanArgs.some((arg) =>
-          ["--name-only", "--name-status", "--stat"].includes(arg),
-        )
-      ) {
+      if (command === "git" && cleanArgs[0] === "diff") {
         const outcome = await renderGitDiffOutcome(result, cleanArgs, context);
         return {
           isError: outcome.status === "failure",
