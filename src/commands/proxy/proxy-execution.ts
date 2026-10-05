@@ -65,6 +65,44 @@ export function prepareRtkInvocation(
     };
   }
 
+  if (args[0] === "status") {
+    const separator = args.indexOf("--");
+    const flags = args.slice(1, separator < 0 ? args.length : separator);
+    const version = flags
+      .filter((flag) => flag.startsWith("--porcelain"))
+      .at(-1);
+    const untracked = flags
+      .filter((flag) => flag.startsWith("--untracked-files="))
+      .at(-1);
+    return {
+      args: [
+        "proxy",
+        "git",
+        "--no-pager",
+        "--literal-pathspecs",
+        "-c",
+        "status.relativePaths=true",
+        "status",
+        version === "--porcelain=v2" ? version : "--porcelain=v1",
+        "-z",
+        ...(flags.includes("--branch") || flags.includes("-b")
+          ? ["--branch"]
+          : []),
+        untracked === "--untracked-files=no"
+          ? untracked
+          : "--untracked-files=all",
+        "--",
+        ...(separator < 0
+          ? ["."]
+          : args.slice(separator + 1).length
+            ? args.slice(separator + 1)
+            : ["."]),
+      ],
+      env: { ...env, GIT_OPTIONAL_LOCKS: "0", GIT_PAGER: "cat", PAGER: "cat" },
+      cwd: workspaceCwd ?? process.cwd(),
+    };
+  }
+
   env.GIT_PAGER = "cat";
   env.PAGER = "cat";
   if (args[0] === "diff") env.GIT_OPTIONAL_LOCKS = "0";

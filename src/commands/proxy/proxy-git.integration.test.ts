@@ -13,7 +13,11 @@ describe.skipIf(missing.length > 0)(
   () => {
     const context = useRealGitFixture();
     const { git, snapshotRepository, both } = context;
-    it.each(realRequests.map((args) => ({ args })))(
+    it.each(
+      realRequests
+        .filter((args) => args[0] !== "status")
+        .map((args) => ({ args })),
+    )(
       "preserves native Git meaning for $args in both adapters",
       async ({ args }) => {
         const history = ["log", "show", "diff"].includes(args[0]);

@@ -1,3 +1,4 @@
+import { renderGitStatusOutcome } from "../../commands/proxy/proxy-git-status";
 import { z } from "zod";
 import path from "node:path";
 
@@ -198,7 +199,9 @@ const registry: Record<string, ToolRegistryEntry> = {
             {
               type: "text",
               text:
-                command === "ls" || command === "find"
+                (command === "git" && cleanArgs[0] === "status") ||
+                command === "ls" ||
+                command === "find"
                   ? "RTK listing failed before output could be checked."
                   : formatProxyFailure(error),
             },
@@ -234,6 +237,26 @@ const registry: Record<string, ToolRegistryEntry> = {
               isError: false,
               content: [{ type: "text", text: outcome.content }],
             };
+      }
+
+      if (command === "git" && cleanArgs[0] === "status") {
+        const outcome = await renderGitStatusOutcome(
+          result,
+          cleanArgs,
+          context,
+        );
+        return {
+          isError: outcome.status === "failure",
+          content: [
+            {
+              type: "text",
+              text:
+                outcome.status === "failure"
+                  ? outcome.message
+                  : outcome.content,
+            },
+          ],
+        };
       }
 
       const rawOutput = [result.stdout, result.stderr]

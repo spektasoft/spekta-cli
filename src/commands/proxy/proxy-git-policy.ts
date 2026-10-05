@@ -105,7 +105,7 @@ function validateDiffRevisions(revisions: string[], staged: boolean): void {
   }
   for (const revision of revisions) validateRevision(revision);
 }
-function findRepositoryRoot(context?: WorkspaceContext): string {
+export function findRepositoryRoot(context?: WorkspaceContext): string {
   let directory = path.resolve(context?.root ?? process.cwd());
   while (true) {
     let marker: ReturnType<typeof fs.lstatSync> | undefined;

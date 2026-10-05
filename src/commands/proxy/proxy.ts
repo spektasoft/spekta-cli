@@ -1,3 +1,4 @@
+import { renderGitStatusOutcome } from "./proxy-git-status";
 import { executeRtkCommand } from "./proxy-execution";
 import { formatProxyFailure, validateProxyRequest } from "./proxy-policy";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
@@ -29,7 +30,9 @@ export async function runRtkProxy(
     result = await executeRtkCommand(command, rawArgs, context);
   } catch (error: unknown) {
     console.error(
-      command === "ls" || command === "find"
+      (command === "git" && rawArgs[0] === "status") ||
+        command === "ls" ||
+        command === "find"
         ? "RTK listing failed before output could be checked."
         : formatProxyFailure(error),
     );
@@ -67,6 +70,20 @@ export async function runRtkProxy(
         truncated: outcome.truncated,
       }),
     );
+    return;
+  }
+
+  if (command === "git" && rawArgs[0] === "status") {
+    const outcome = await renderGitStatusOutcome(result, rawArgs, context);
+    if (outcome.status === "failure") {
+      process.exitCode = outcome.exitCode;
+      console.error(outcome.message);
+    } else
+      console.log(
+        formatProxyOutput(command, outcome.content, {
+          truncated: outcome.truncated,
+        }),
+      );
     return;
   }
 

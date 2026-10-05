@@ -34,7 +34,20 @@ describe("executeRtkCommand", () => {
     expect(execa).toHaveBeenCalledTimes(1);
     expect(execa).toHaveBeenCalledWith(
       "rtk",
-      ["proxy", "git", "--no-pager", "--literal-pathspecs", "status"],
+      [
+        "proxy",
+        "git",
+        "--no-pager",
+        "--literal-pathspecs",
+        "-c",
+        "status.relativePaths=true",
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+        "--",
+        ".",
+      ],
       expect.objectContaining({
         reject: false,
         env: expect.objectContaining({
@@ -49,7 +62,14 @@ describe("executeRtkCommand", () => {
     ...acceptedBranchRequests.map((args) => ({ args, expected: [...args] })),
     {
       args: ["status", "--porcelain=v2", "--", "-file"],
-      expected: ["status", "--porcelain=v2", "--", "-file"],
+      expected: [
+        "status",
+        "--porcelain=v2",
+        "-z",
+        "--untracked-files=all",
+        "--",
+        "-file",
+      ],
     },
     {
       args: ["log", "-p", "HEAD~1..HEAD"],
@@ -130,7 +150,11 @@ describe("executeRtkCommand", () => {
           "git",
           "--no-pager",
           "--literal-pathspecs",
-          ...(args[0] === "diff" ? ["-c", "diff.autoRefreshIndex=false"] : []),
+          ...(args[0] === "diff"
+            ? ["-c", "diff.autoRefreshIndex=false"]
+            : args[0] === "status"
+              ? ["-c", "status.relativePaths=true"]
+              : []),
           ...expected,
         ],
         expect.objectContaining({
@@ -154,7 +178,7 @@ describe("executeRtkCommand", () => {
     }
   });
 
-  it("disables optional locks only in the diff child environment", () => {
+  it("disables optional locks in diff and status child environments", () => {
     const saved = process.env.GIT_OPTIONAL_LOCKS;
     process.env.GIT_OPTIONAL_LOCKS = "1";
     try {
@@ -167,7 +191,7 @@ describe("executeRtkCommand", () => {
       ).toBe("0");
       expect(
         prepareRtkInvocation("git", ["status"]).env.GIT_OPTIONAL_LOCKS,
-      ).toBe("1");
+      ).toBe("0");
       expect(process.env.GIT_OPTIONAL_LOCKS).toBe("1");
     } finally {
       if (saved === undefined) delete process.env.GIT_OPTIONAL_LOCKS;
