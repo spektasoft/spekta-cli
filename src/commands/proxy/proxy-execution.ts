@@ -107,6 +107,32 @@ export function prepareRtkInvocation(
   env.PAGER = "cat";
   if (args[0] === "diff") env.GIT_OPTIONAL_LOCKS = "0";
   const history = ["log", "show", "diff"].includes(args[0]);
+  let commandArgs = args.slice(1);
+  if (args[0] === "diff") {
+    const separator = commandArgs.indexOf("--");
+    const flags = commandArgs.slice(
+      0,
+      separator < 0 ? commandArgs.length : separator,
+    );
+    const summary = flags.some((flag) =>
+      ["--name-only", "--name-status", "--stat"].includes(flag),
+    );
+    if (summary) {
+      const revisions = flags.filter(
+        (flag) => !["--name-only", "--name-status", "--stat"].includes(flag),
+      );
+      const paths = separator < 0 ? [] : commandArgs.slice(separator + 1);
+      const mode = flags.includes("--stat") ? ["--numstat"] : ["--name-status"];
+      commandArgs = [
+        ...revisions,
+        ...mode,
+        "-z",
+        "-M",
+        "--",
+        ...(paths.length ? paths : ["."]),
+      ];
+    }
+  }
   return {
     args: [
       "proxy",
@@ -117,8 +143,8 @@ export function prepareRtkInvocation(
       args[0],
       ...(history ? ["--no-ext-diff", "--no-textconv"] : []),
       ...(args[0] === "diff" ? ["--submodule=short"] : []),
-      ...args.slice(1),
-      ...(history && !args.includes("--") ? ["--"] : []),
+      ...commandArgs,
+      ...(history && !commandArgs.includes("--") ? ["--"] : []),
     ],
     env,
     cwd: workspaceCwd ?? process.cwd(),

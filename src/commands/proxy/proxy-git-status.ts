@@ -42,35 +42,6 @@ export async function renderGitStatusOutcome(
     const records = result.stdout === "" ? [] : result.stdout.split("\0");
     if (records.length && records.pop() !== "") return failure(rejected);
     const lines: string[] = [];
-    const eligible = async (name: string): Promise<boolean> => {
-      try {
-        const target = await resolveWorkspaceMutationTarget(
-          name,
-          workspace,
-          true,
-        );
-        for (const candidate of new Set([
-          name,
-          path.relative(workspace.canonicalRoot, target.canonicalPath),
-        ])) {
-          if (
-            candidate.split("/").some((part) => RESTRICTED_FILES.includes(part))
-          )
-            return false;
-          await assertPathNotIgnored(
-            candidate,
-            candidate,
-            { gitNoIndex: true },
-            workspace.canonicalRoot,
-          );
-        }
-        if (await fs.pathExists(target.absolutePath))
-          await validateReadPathAccess(name, workspace);
-        return true;
-      } catch {
-        return false;
-      }
-    };
     const unsafeText = (value: string): boolean =>
       Array.from(value).some(
         (char) =>
@@ -141,8 +112,8 @@ export async function renderGitStatusOutcome(
           path.resolve(repositoryRoot, source),
         );
       if (
-        !(await eligible(name)) ||
-        (source !== undefined && !(await eligible(source)))
+        !(await isEligibleGitPath(name, workspace)) ||
+        (source !== undefined && !(await isEligibleGitPath(source, workspace)))
       )
         continue;
       lines.push(
@@ -178,5 +149,34 @@ export async function renderGitStatusOutcome(
     return failure("Git status too large. Choose a narrower path.");
   } catch {
     return failure(rejected);
+  }
+}
+
+/** Shared name and content disclosure check for Git paths, including historical paths. */
+export async function isEligibleGitPath(
+  name: string,
+  workspace?: Awaited<ReturnType<typeof resolveWorkspace>>,
+): Promise<boolean> {
+  try {
+    const resolved = workspace ?? (await resolveWorkspace());
+    const target = await resolveWorkspaceMutationTarget(name, resolved, true);
+    for (const candidate of new Set([
+      name,
+      path.relative(resolved.canonicalRoot, target.canonicalPath),
+    ])) {
+      if (candidate.split("/").some((part) => RESTRICTED_FILES.includes(part)))
+        return false;
+      await assertPathNotIgnored(
+        candidate,
+        candidate,
+        { gitNoIndex: true },
+        resolved.canonicalRoot,
+      );
+    }
+    if (await fs.pathExists(target.absolutePath))
+      await validateReadPathAccess(name, resolved);
+    return true;
+  } catch {
+    return false;
   }
 }

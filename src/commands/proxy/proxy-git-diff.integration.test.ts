@@ -36,6 +36,42 @@ describe.skipIf(missing.length > 0)(
       expect(snapshotRepository()).toEqual(before);
     });
 
+    it("filters name-only, name-status, and stat summaries by eligible paths", async () => {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "denied.txt\n",
+      );
+      fs.writeFileSync(path.join(context.workspace, "denied.txt"), "hidden\n");
+      fs.writeFileSync(
+        path.join(context.workspace, "visible.txt"),
+        "visible\n",
+      );
+      await fixtureGit(["add", "--", ".gitignore", "visible.txt"]);
+      await fixtureGit(["add", "-f", "--", "denied.txt"]);
+      await fixtureGit(["commit", "-m", "SUMMARY_FIXTURE"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "denied.txt"),
+        "hidden changed\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "visible.txt"),
+        "visible changed\n",
+      );
+
+      for (const args of [
+        ["diff", "--name-only"],
+        ["diff", "--name-status"],
+        ["diff", "--stat"],
+      ]) {
+        const result = await both(args);
+        expect(result.mcp.isError).toBe(false);
+        expect(result.cli).toContain("visible.txt");
+        expect(result.mcp.content[0].text).toContain("visible.txt");
+        expect(result.cli).not.toContain("denied.txt");
+        expect(result.mcp.content[0].text).not.toContain("denied.txt");
+      }
+    });
+
     it("compares revisions and preserves hashes and historical missing paths", async () => {
       const hash = await fixtureGit(["rev-parse", "HEAD"]);
       const before = snapshotRepository();

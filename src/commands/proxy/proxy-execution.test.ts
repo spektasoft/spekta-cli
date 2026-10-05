@@ -125,8 +125,17 @@ describe("executeRtkCommand", () => {
         "--no-ext-diff",
         "--no-textconv",
         "--submodule=short",
-        ...args.slice(1),
-        ...(args.includes("--") ? [] : ["--"]),
+        ...(args.includes("--stat")
+          ? [
+              ...args.slice(1).filter((arg) => arg !== "--stat"),
+              "--numstat",
+              "-z",
+              "-M",
+              "--",
+              ".",
+            ]
+          : args.slice(1)),
+        ...(args.includes("--") || args.includes("--stat") ? [] : ["--"]),
       ],
     })),
   ])("preserves tokens and controls $args", async ({ args, expected }) => {

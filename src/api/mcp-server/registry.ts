@@ -1,4 +1,5 @@
 import { renderGitStatusOutcome } from "../../commands/proxy/proxy-git-status";
+import { renderGitDiffOutcome } from "../../commands/proxy/proxy-git-diff";
 import { z } from "zod";
 import path from "node:path";
 
@@ -245,6 +246,28 @@ const registry: Record<string, ToolRegistryEntry> = {
           cleanArgs,
           context,
         );
+        return {
+          isError: outcome.status === "failure",
+          content: [
+            {
+              type: "text",
+              text:
+                outcome.status === "failure"
+                  ? outcome.message
+                  : outcome.content,
+            },
+          ],
+        };
+      }
+
+      if (
+        command === "git" &&
+        cleanArgs[0] === "diff" &&
+        cleanArgs.some((arg) =>
+          ["--name-only", "--name-status", "--stat"].includes(arg),
+        )
+      ) {
+        const outcome = await renderGitDiffOutcome(result, cleanArgs, context);
         return {
           isError: outcome.status === "failure",
           content: [
