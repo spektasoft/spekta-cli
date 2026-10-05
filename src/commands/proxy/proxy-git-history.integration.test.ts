@@ -29,6 +29,98 @@ describe.skipIf(missing.length > 0)(
       expect(blob.mcp.content[0].text).not.toContain("working-copy");
     });
 
+    it("renders ordinary multi-commit history patches without commit prose", async () => {
+      const result = await both(["log", "-p", "-n", "2", "--", "file.txt"]);
+      expect(
+        result.mcp.isError,
+        `${result.cli}\n${JSON.stringify(result.mcp.content)}`,
+      ).toBe(false);
+      expect(result.cli).toContain("safe-v2");
+      expect(result.cli).toContain("safe-v1");
+      expect(result.mcp.content[0].text).toContain("safe-v2");
+      expect(result.mcp.content[0].text).not.toContain("MIXED_HISTORY_SECRET");
+      const range = await both([
+        "log",
+        "--patch",
+        "main~1..HEAD",
+        "--",
+        "file.txt",
+      ]);
+      expect(range.mcp.isError).toBe(false);
+      expect(range.mcp.content[0].text).toContain("safe-v2");
+      expect(range.mcp.content[0].text).not.toContain("nested/file.txt");
+    });
+
+    it("preserves nested-cwd path selection for historical patches", async () => {
+      vi.spyOn(process, "cwd").mockReturnValue(
+        path.join(context.workspace, "nested"),
+      );
+      const result = await both(["log", "-p", "-n", "1", "--", "file.txt"]);
+      expect(result.mcp.isError).toBe(false);
+      expect(result.mcp.content[0].text).toContain("nested-blob");
+      expect(result.mcp.content[0].text).not.toContain("safe-v2");
+    });
+
+    it("filters deleted and denied paths in default show patches", async () => {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "denied.txt\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "denied.txt"),
+        "DENIED_PATCH_BODY\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "deleted-history.txt"),
+        "VISIBLE_DELETED_BODY\n",
+      );
+      await fixtureGit(["add", "--", ".gitignore", "deleted-history.txt"]);
+      await fixtureGit(["add", "-f", "--", "denied.txt"]);
+      await fixtureGit(["commit", "-m", "DENIED_PATCH_MESSAGE"]);
+      await fixtureGit(["rm", "--", "deleted-history.txt"]);
+      await fixtureGit(["commit", "-m", "DELETE_PATCH_MESSAGE"]);
+
+      const result = await both([
+        "show",
+        "HEAD",
+        "--",
+        "deleted-history.txt",
+        "denied.txt",
+      ]);
+      expect(result.mcp.isError).toBe(false);
+      for (const text of [result.cli, result.mcp.content[0].text]) {
+        expect(text).toContain("VISIBLE_DELETED_BODY");
+        expect(text).not.toContain("DENIED_PATCH_BODY");
+        expect(text).not.toContain("denied.txt");
+        expect(text).not.toContain("DENIED_PATCH_MESSAGE");
+        expect(text).not.toContain("DELETE_PATCH_MESSAGE");
+      }
+    });
+
+    it("bounds large history patches and marks condensed output incomplete", async () => {
+      fs.writeFileSync(
+        path.join(context.workspace, "large-history.txt"),
+        "base\n",
+      );
+      await fixtureGit(["add", "--", "large-history.txt"]);
+      await fixtureGit(["commit", "-m", "LARGE_HISTORY_BASE"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "large-history.txt"),
+        `${"history patch line\n".repeat(4000)}`,
+      );
+      await fixtureGit(["add", "--", "large-history.txt"]);
+      await fixtureGit(["commit", "-m", "LARGE_HISTORY_CHANGE"]);
+
+      const result = await both(["show", "HEAD", "--", "large-history.txt"]);
+      expect(result.mcp.isError).toBe(false);
+      expect(result.cli).toContain("OUTPUT TRUNCATED");
+      expect(result.mcp.content[0].text).toContain("lines collapsed");
+      expect(getTokenCount(`${result.cli}\n`)).toBeLessThanOrEqual(1000);
+      expect(getTokenCount(result.mcp.content[0].text)).toBeLessThanOrEqual(
+        1000,
+      );
+    });
+
     it("supports a hash revision and historical missing path", async () => {
       const hash = await fixtureGit(["rev-parse", "HEAD"]);
       const hashed = await both(["show", "--name-only", hash]);

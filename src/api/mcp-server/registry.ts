@@ -1,6 +1,10 @@
 import { renderGitStatusOutcome } from "../../commands/proxy/proxy-git-status";
 import { renderGitHistoryOutcome } from "../../commands/proxy/proxy-git-history";
 import {
+  executeGitHistoryPatchOutcome,
+  isGitHistoryPatchRequest,
+} from "../../commands/proxy/proxy-git-history-patch";
+import {
   executeGitDiffPatchOutcome,
   renderGitDiffOutcome,
 } from "../../commands/proxy/proxy-git-diff";
@@ -192,6 +196,21 @@ const registry: Record<string, ToolRegistryEntry> = {
         return {
           isError: true,
           content: [{ type: "text", text: formatProxyFailure(error) }],
+        };
+      }
+      if (command === "git" && isGitHistoryPatchRequest(cleanArgs)) {
+        const outcome = await executeGitHistoryPatchOutcome(cleanArgs, context);
+        return {
+          isError: outcome.status === "failure",
+          content: [
+            {
+              type: "text",
+              text:
+                outcome.status === "failure"
+                  ? outcome.message
+                  : outcome.content,
+            },
+          ],
         };
       }
       if (
