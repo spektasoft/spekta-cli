@@ -115,15 +115,66 @@ describe.skipIf(missing.length > 0)(
       }
     });
 
-    it("rejects rename patch representations without returning paths", async () => {
+    it("renders eligible rename patches and withholds either denied endpoint", async () => {
       await fixtureGit(["mv", "filename-only", "renamed-file.txt"]);
       const result = await both(["diff", "--cached"]);
-      expect(result.mcp.isError).toBe(true);
-      expect(result.mcp.content[0].text).toContain(
-        "rename and copy patches are unsupported",
+      expect(result.mcp.isError).toBe(false);
+      expect(result.cli).toContain("filename-only");
+      expect(result.cli).toContain("renamed-file.txt");
+      expect(result.mcp.content[0].text).toContain("filename-only");
+      expect(result.mcp.content[0].text).toContain("renamed-file.txt");
+
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "*.private\n",
       );
-      expect(result.cli).not.toContain("file.txt");
-      expect(result.cli).not.toContain("renamed-file.txt");
+      await fixtureGit(["mv", "renamed-file.txt", "denied.private"]);
+      const deniedNew = await both(["diff", "--cached"]);
+      expect(deniedNew.mcp.isError).toBe(false);
+      expect(deniedNew.cli).not.toContain("renamed-file.txt");
+      expect(deniedNew.cli).not.toContain("denied.private");
+      expect(deniedNew.mcp.content[0].text).not.toContain("renamed-file.txt");
+      expect(deniedNew.mcp.content[0].text).not.toContain("denied.private");
+
+      await fixtureGit(["commit", "-m", "RENAME_DENIED_DESTINATION"]);
+      await fixtureGit(["mv", "denied.private", "restored.txt"]);
+      const deniedOld = await both(["diff", "--cached"]);
+      expect(deniedOld.mcp.isError).toBe(false);
+      expect(deniedOld.cli).not.toContain("denied.private");
+      expect(deniedOld.cli).not.toContain("restored.txt");
+      expect(deniedOld.mcp.content[0].text).not.toContain("denied.private");
+      expect(deniedOld.mcp.content[0].text).not.toContain("restored.txt");
+    });
+
+    it("renders eligible binary notices without decoding binary patches", async () => {
+      const binary = path.join(context.workspace, "image.bin");
+      fs.writeFileSync(binary, Buffer.from([0, 1, 2, 3]));
+      await fixtureGit(["add", "--", "image.bin"]);
+      await fixtureGit(["commit", "-m", "BINARY_BASE"]);
+      fs.writeFileSync(binary, Buffer.from([0, 1, 2, 4]));
+      const visible = await both(["diff"]);
+      expect(visible.mcp.isError).toBe(false);
+      expect(visible.cli).toContain("Binary file changed");
+      expect(visible.cli).toContain("image.bin");
+
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "secret.bin\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "secret.bin"),
+        Buffer.from([1, 2]),
+      );
+      await fixtureGit(["add", "-f", "--", "secret.bin"]);
+      await fixtureGit(["commit", "-m", "DENIED_BINARY"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "secret.bin"),
+        Buffer.from([1, 3]),
+      );
+      const denied = await both(["diff"]);
+      expect(denied.mcp.isError).toBe(false);
+      expect(denied.cli).not.toContain("secret.bin");
+      expect(denied.mcp.content[0].text).not.toContain("secret.bin");
     });
 
     it("reports a failed patch child without forwarding its diagnostics", async () => {

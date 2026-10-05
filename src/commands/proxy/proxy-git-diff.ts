@@ -10,7 +10,7 @@ import type { DiscoveryRenderOutcome } from "./proxy-ls-render";
 
 const LIMIT = 1000;
 
-/** Execute and render ordinary text patches only after their paths pass disclosure policy. */
+/** Execute and render attributable text patches only after every path passes policy. */
 export async function executeGitDiffPatchOutcome(
   args: string[],
   context?: WorkspaceContext,
@@ -48,35 +48,38 @@ export async function executeGitDiffPatchOutcome(
     );
   const workspace = await resolveWorkspace(context);
   const root = findRepositoryRoot(context);
-  const selected: string[] = [];
+  const selected: string[][] = [];
   for (let i = 0; i < records.length;) {
     const status = records[i++];
-    if (status === "R" || status === "C" || /^[RC]/.test(status))
-      return failure(
-        "Git diff patch rejected: rename and copy patches are unsupported.",
-      );
-    if (!/^[AMD]$/.test(status) || i >= records.length)
+    const paired = /^[RC]\d{1,3}$/.test(status);
+    if (!/^(?:[AMD]|[RC]\d{1,3})$/.test(status) || i >= records.length)
       return failure(
         "Git diff patch rejected: unsupported patch representation.",
       );
-    const name = records[i++];
-    if (
-      !name ||
-      path.isAbsolute(name) ||
-      name.split("/").some((part) => !part || part === "." || part === "..")
-    )
+    const names = paired ? [records[i++], records[i++]] : [records[i++]];
+    const safeName = (name: string | undefined) =>
+      !!name &&
+      !path.isAbsolute(name) &&
+      !name.split("/").some((part) => !part || part === "." || part === "..");
+    if (names.some((name) => !safeName(name)))
       return failure(
         "Git diff patch rejected: entries could not be attributed reliably.",
       );
-    const relative = path.relative(workspace.root, path.resolve(root, name));
-    if (await isEligibleGitPath(relative, workspace)) selected.push(name);
+    const eligible: boolean[] = [];
+    for (const name of names) {
+      const relative = path.relative(workspace.root, path.resolve(root, name));
+      eligible.push(await isEligibleGitPath(relative, workspace));
+    }
+    if (eligible.every(Boolean)) selected.push(names);
   }
   let patch = "";
-  for (const name of selected) {
-    const cwdName = path.relative(process.cwd(), path.resolve(root, name));
+  for (const names of selected) {
+    const cwdNames = names.map((name) =>
+      path.relative(process.cwd(), path.resolve(root, name)),
+    );
     const result = await executeRtkCommand(
       "git",
-      ["diff", ...flags, "--", cwdName],
+      ["diff", ...flags, "--", ...cwdNames],
       context,
     );
     if (!result.available)
@@ -86,13 +89,24 @@ export async function executeGitDiffPatchOutcome(
         `RTK command failed with exit status ${result.exitCode}.`,
         result.exitCode,
       );
+    if (/^GIT binary patch/m.test(result.stdout))
+      return failure(
+        "Git diff patch rejected: binary patch data is unsupported.",
+      );
+    if (/^Binary files .+ and .+ differ$/m.test(result.stdout)) {
+      patch +=
+        names.length === 1
+          ? `Binary file changed: ${JSON.stringify(names[0])}\n`
+          : `Binary file changed: ${names.map((name) => JSON.stringify(name)).join(" -> ")}\n`;
+      continue;
+    }
     if (
-      /^(?:Binary files |GIT binary patch|old mode |new mode |Subproject commit )/m.test(
+      /^(?:old mode |new mode |Subproject commit |diff --(?:cc|combined) )|^@@@/m.test(
         result.stdout,
       )
     )
       return failure(
-        "Git diff patch rejected: binary or metadata patch representations are unsupported.",
+        "Git diff patch rejected: metadata or combined patches are unsupported.",
       );
     if (result.stdout && !result.stdout.startsWith("diff --git "))
       return failure(
