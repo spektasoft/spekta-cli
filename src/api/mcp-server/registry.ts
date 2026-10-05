@@ -1,4 +1,5 @@
 import { renderGitStatusOutcome } from "../../commands/proxy/proxy-git-status";
+import { renderGitBranchOutcome } from "../../commands/proxy/proxy-git-branch";
 import { renderGitHistoryOutcome } from "../../commands/proxy/proxy-git-history";
 import { renderGitBlobOutcome } from "../../commands/proxy/proxy-git-blob";
 import {
@@ -295,6 +296,22 @@ const registry: Record<string, ToolRegistryEntry> = {
           cleanArgs,
           context,
         );
+        return {
+          isError: outcome.status === "failure",
+          content: [
+            {
+              type: "text",
+              text:
+                outcome.status === "failure"
+                  ? outcome.message
+                  : outcome.content,
+            },
+          ],
+        };
+      }
+
+      if (command === "git" && cleanArgs[0] === "branch") {
+        const outcome = renderGitBranchOutcome(result);
         return {
           isError: outcome.status === "failure",
           content: [

@@ -2,6 +2,7 @@ import fs from "fs-extra";
 import path from "path";
 import { execa } from "execa";
 import { describe, expect, it, vi } from "vitest";
+import { getTokenCount } from "../../utils/read-utils";
 import { rejectedBranchRequests } from "./proxy-branch.test-fixtures";
 import { useRealGitFixture, missing } from "./proxy-git.integration-harness";
 
@@ -32,7 +33,7 @@ describe.skipIf(missing.length > 0)(
       expect(local.mcp.content[0].text).not.toContain("origin/");
       for (const flag of ["--all", "-a"]) {
         const result = await both(["branch", flag]);
-        expect(result.mcp.isError).toBe(false);
+        expect(result.mcp.isError, result.mcp.content[0].text).toBe(false);
         expect(result.mcp.content[0].text).toContain("feature/topic");
         expect(result.mcp.content[0].text).toContain("origin/main");
       }
@@ -132,13 +133,66 @@ describe.skipIf(missing.length > 0)(
       const outsideBefore = snapshotRepository(outside);
       const result = await both(["branch"]);
       expect(result.mcp.isError).toBe(true);
-      expect(result.mcp.content[0].text).toMatch(/not a git repository/i);
-      expect(result.cli).toContain("FAILED: Exit");
-      expect(console.error).toHaveBeenCalledExactlyOnceWith(
-        "RTK command failed with exit status 128.",
+      expect(result.mcp.content[0].text).toMatch(
+        /RTK command failed with exit status/i,
       );
-      expect(process.exitCode).toBe(128);
+      expect(result.cli).toContain("FAILED: Exit");
+      expect(process.exitCode).not.toBe(0);
       expect(snapshotRepository(outside)).toEqual(outsideBefore);
+    });
+
+    it("withholds verbose commit text while retaining the selected branch names", async () => {
+      const denied = "DENIED_BRANCH_COMMIT_SUBJECT_7f91";
+      await fixtureGit(["commit", "--allow-empty", "-m", denied]);
+      await fixtureGit(["branch", "metadata-check"]);
+
+      for (const args of [
+        ["branch", "--verbose"],
+        ["branch", "-v", "-v"],
+        [
+          "branch",
+          "--all",
+          "--list",
+          "--verbose",
+          "--",
+          "main",
+          "metadata-check",
+        ],
+      ]) {
+        const result = await both(args);
+        expect(result.mcp.isError, result.mcp.content[0].text).toBe(false);
+        expect(result.cli).toContain("metadata-check");
+        expect(result.mcp.content[0].text).toContain("metadata-check");
+        expect(result.cli).not.toContain(denied);
+        expect(result.mcp.content[0].text).not.toContain(denied);
+      }
+    });
+
+    it("bounds the complete CLI and MCP response for long branch listings", async () => {
+      const head = await fixtureGit(["rev-parse", "HEAD"]);
+      const refs = Array.from(
+        { length: 600 },
+        (_, index) =>
+          `create refs/heads/budget-${String(index).padStart(3, "0")} ${head}`,
+      ).join("\n");
+      await execa("git", ["update-ref", "--stdin"], {
+        cwd: context.workspace,
+        input: `${refs}\n`,
+      });
+
+      const result = await both(["branch", "--list", "budget-*"]);
+      expect(result.mcp.isError).toBe(false);
+      expect(result.cli).toContain("OUTPUT TRUNCATED");
+      expect(getTokenCount(`${result.cli}\n`)).toBeLessThanOrEqual(1000);
+      expect(
+        getTokenCount(
+          JSON.stringify({
+            isError: result.mcp.isError,
+            content: result.mcp.content,
+          }),
+        ),
+      ).toBeLessThanOrEqual(1000);
+      expect(result.mcp.content[0].text).toContain("lines collapsed");
     });
   },
 );

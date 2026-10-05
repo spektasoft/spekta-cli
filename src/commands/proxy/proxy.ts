@@ -1,4 +1,5 @@
 import { renderGitStatusOutcome } from "./proxy-git-status";
+import { renderGitBranchOutcome } from "./proxy-git-branch";
 import { renderGitHistoryOutcome } from "./proxy-git-history";
 import { renderGitBlobOutcome } from "./proxy-git-blob";
 import {
@@ -126,6 +127,25 @@ export async function runRtkProxy(
           truncated: outcome.truncated,
         }),
       );
+    return;
+  }
+
+  if (command === "git" && rawArgs[0] === "branch") {
+    const outcome = renderGitBranchOutcome(result);
+    if (outcome.status === "failure") {
+      process.exitCode = outcome.exitCode;
+      console.log(
+        formatProxyOutput(command, outcome.message, {
+          exitCode: outcome.exitCode,
+        }),
+      );
+    } else {
+      console.log(
+        formatProxyOutput(command, outcome.content, {
+          truncated: outcome.truncated,
+        }),
+      );
+    }
     return;
   }
 

@@ -103,6 +103,31 @@ export function prepareRtkInvocation(
     };
   }
 
+  if (args[0] === "branch") {
+    const flags = args.slice(1);
+    const list = flags
+      .map((flag) => (flag === "--verbose" || flag === "-v" ? undefined : flag))
+      .filter((flag): flag is string => flag !== undefined);
+    const optionEnd = list.findIndex(
+      (flag) => flag === "--" || !flag.startsWith("-"),
+    );
+    const insertion = optionEnd < 0 ? list.length : optionEnd;
+    return {
+      args: [
+        "proxy",
+        "git",
+        "--no-pager",
+        "branch",
+        "--no-color",
+        ...list.slice(0, insertion),
+        "--format=%(if)%(HEAD)%(then)* %(end)%(refname:short)",
+        ...list.slice(insertion),
+      ],
+      env: { ...env, GIT_PAGER: "cat", PAGER: "cat" },
+      cwd: workspaceCwd ?? process.cwd(),
+    };
+  }
+
   env.GIT_PAGER = "cat";
   env.PAGER = "cat";
   if (args[0] === "diff") env.GIT_OPTIONAL_LOCKS = "0";
