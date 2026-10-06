@@ -248,6 +248,39 @@ async function readOptional(path: string): Promise<string | undefined> {
   }
 }
 
+function isRecognizedOwnedHook(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const entry = value as Record<string, unknown>;
+  if (
+    Object.keys(entry).length !== 2 ||
+    entry.matcher !== CODEX_HOOK_MATCHER ||
+    !Array.isArray(entry.hooks) ||
+    entry.hooks.length !== 1
+  )
+    return false;
+  const handler: unknown = (entry.hooks as unknown[])[0];
+  if (!handler || typeof handler !== "object" || Array.isArray(handler))
+    return false;
+  const command = handler as Record<string, unknown>;
+  if (
+    Object.keys(command).length !== 3 ||
+    command.type !== "command" ||
+    command.timeout !== 3 ||
+    typeof command.command !== "string"
+  )
+    return false;
+  try {
+    return (
+      typeof JSON.parse(command.command) === "string" &&
+      String(JSON.parse(command.command)).length > 0 &&
+      String(JSON.parse(command.command)).split(/[\\/]/).at(-1) ===
+        "spekta-codex-hook"
+    );
+  } catch {
+    return false;
+  }
+}
+
 function buildHooks(original: string | undefined, executable: string): string {
   let config: Record<string, unknown> = {};
   if (original !== undefined) {
@@ -295,13 +328,7 @@ function buildHooks(original: string | undefined, executable: string): string {
   const updatedEntries = [...entries];
   if (owned.length === 1) {
     const existing = entries[owned[0]];
-    if (
-      !existing ||
-      typeof existing !== "object" ||
-      Array.isArray(existing) ||
-      (existing as Record<string, unknown>).matcher !== CODEX_HOOK_MATCHER ||
-      !JSON.stringify(existing).includes('"type":"command"')
-    ) {
+    if (!isRecognizedOwnedHook(existing)) {
       throw new Error(
         "hooks.json contains conflicting Spekta-owned hook content; inspect and repair it manually",
       );

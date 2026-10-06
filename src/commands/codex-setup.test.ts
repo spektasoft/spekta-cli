@@ -19,6 +19,13 @@ import {
 
 const fixtures: string[] = [];
 
+function installedHookCommand(content: string): string {
+  const parsed = JSON.parse(content) as {
+    hooks: { PreToolUse: { hooks: { command: string }[] }[] };
+  };
+  return parsed.hooks.PreToolUse[0].hooks[0].command;
+}
+
 async function fixture(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "spekta-codex-setup-"));
   fixtures.push(root);
@@ -323,6 +330,42 @@ describe("previewCodexSetup", () => {
     );
     expect(plan.diagnostics.join("\n")).toMatch(/usage block was edited/i);
   });
+
+  it("refuses a Spekta hook definition with unfamiliar fields", async () => {
+    const root = await fixture();
+    const codex = join(root, ".codex");
+    const bin = join(root, "bin");
+    await mkdir(codex);
+    await mkdir(bin);
+    await writeFile(join(bin, "spekta-codex-hook"), "");
+    await chmod(join(bin, "spekta-codex-hook"), 0o755);
+    const original = JSON.stringify({
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "^(Bash)$",
+            hooks: [
+              {
+                type: "command",
+                command: JSON.stringify("/old/spekta-codex-hook"),
+                timeout: 3,
+              },
+            ],
+            userData: "keep this unfamiliar change",
+          },
+        ],
+      },
+    });
+    await writeFile(join(codex, "hooks.json"), original);
+
+    const plan = await previewCodexSetup({ home: root, path: bin });
+
+    expect(plan.status).toBe("refused");
+    expect(plan.diagnostics.join("\n")).toMatch(
+      /conflicting Spekta-owned hook/i,
+    );
+    expect(await readFile(join(codex, "hooks.json"), "utf8")).toBe(original);
+  });
 });
 
 describe("applyCodexSetup", () => {
@@ -362,6 +405,65 @@ describe("applyCodexSetup", () => {
     expect(await readFile(join(root, ".codex", "AGENTS.md"), "utf8")).toBe(
       instructionsBefore,
     );
+  });
+
+  it("updates the owned executable path and completes a partial installation", async () => {
+    const root = await fixture();
+    const codex = join(root, ".codex");
+    const oldBin = join(root, "old-bin");
+    const newBin = join(root, "new-bin");
+    await mkdir(codex);
+    await mkdir(oldBin);
+    await mkdir(newBin);
+    await writeFile(join(oldBin, "spekta-codex-hook"), "");
+    await chmod(join(oldBin, "spekta-codex-hook"), 0o755);
+    await writeFile(join(newBin, "spekta-codex-hook"), "");
+    await chmod(join(newBin, "spekta-codex-hook"), 0o755);
+    await writeFile(
+      join(codex, "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "^(Bash)$",
+              hooks: [
+                {
+                  type: "command",
+                  command: JSON.stringify(join(oldBin, "spekta-codex-hook")),
+                  timeout: 3,
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    const preview = await previewCodexSetup({ home: root, path: newBin });
+
+    expect(preview.status).toBe("ready");
+    expect(preview.files.map(({ action }) => action)).toEqual([
+      "update",
+      "create",
+    ]);
+    expect(installedHookCommand(preview.files[0].content)).toBe(
+      JSON.stringify(join(newBin, "spekta-codex-hook")),
+    );
+    expect(await readdir(codex)).toEqual(["hooks.json"]);
+
+    const applied = await applyCodexSetup({ home: root, path: newBin });
+    expect(applied.status).toBe("configured");
+    expect(applied.activation).toBe("unverified");
+    expect(applied.files.map(({ action }) => action)).toEqual([
+      "update",
+      "create",
+    ]);
+    expect(await readFile(join(codex, "AGENTS.md"), "utf8")).toContain(
+      CODEX_USAGE_START,
+    );
+    expect(
+      installedHookCommand(await readFile(join(codex, "hooks.json"), "utf8")),
+    ).toBe(JSON.stringify(join(newBin, "spekta-codex-hook")));
   });
 
   it("refuses conflicts and missing executables without writing configuration", async () => {
