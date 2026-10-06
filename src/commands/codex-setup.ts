@@ -16,11 +16,192 @@ export interface CodexSetupPlan {
   status: "ready" | "refused";
   files: CodexSetupFile[];
   diagnostics: string[];
+  conflicts: CodexSetupConflict[];
+}
+
+export interface CodexSetupConflict {
+  source: string;
+  kind: "rtk-rewrite" | "competing-hook" | "ambiguous-source";
+  message: string;
 }
 
 export interface CodexSetupOptions {
   home: string;
   path: string;
+  cwd?: string;
+}
+
+function activeHookSources(options: CodexSetupOptions): string[] {
+  const sources = [
+    join(options.home, ".codex", "hooks.json"),
+    join(options.home, ".codex", "config.toml"),
+  ];
+  if (options.cwd) {
+    let directory = resolve(options.cwd);
+    while (true) {
+      sources.push(
+        join(directory, ".codex", "hooks.json"),
+        join(directory, ".codex", "config.toml"),
+      );
+      const parent = resolve(directory, "..");
+      if (parent === directory) break;
+      directory = parent;
+    }
+  }
+  return [...new Set(sources)];
+}
+
+function hasBashMatcher(matcher: unknown): boolean {
+  if (matcher === undefined || matcher === "") return true;
+  if (typeof matcher !== "string") throw new Error("matcher is not a string");
+  try {
+    return new RegExp(matcher).test("Bash");
+  } catch {
+    throw new Error("matcher is not a valid regular expression");
+  }
+}
+
+async function findRewriteConflicts(
+  options: CodexSetupOptions,
+): Promise<CodexSetupConflict[]> {
+  const conflicts: CodexSetupConflict[] = [];
+  for (const source of activeHookSources(options)) {
+    const content = await readOptional(source).catch(() => null);
+    if (content === null) {
+      conflicts.push({
+        source,
+        kind: "ambiguous-source",
+        message: "could not be read; inspect active hooks and resolve manually",
+      });
+      continue;
+    }
+    if (content === undefined) continue;
+    if (source.endsWith("config.toml")) {
+      if (/^\s*\[\[?hooks(?:\.|\])/m.test(content)) {
+        conflicts.push({
+          source,
+          kind: "ambiguous-source",
+          message:
+            "contains inline hook configuration that cannot be safely interpreted; review and resolve hooks manually",
+        });
+      }
+      continue;
+    }
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      conflicts.push({
+        source,
+        kind: "ambiguous-source",
+        message: "is malformed; preserve it and inspect active hooks manually",
+      });
+      continue;
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      conflicts.push({
+        source,
+        kind: "ambiguous-source",
+        message:
+          "has an ambiguous top-level value; preserve it and inspect active hooks manually",
+      });
+      continue;
+    }
+    const hooks = (parsed as Record<string, unknown>).hooks;
+    if (hooks === undefined) continue;
+    if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) {
+      conflicts.push({
+        source,
+        kind: "ambiguous-source",
+        message:
+          "has an ambiguous hooks object; preserve it and inspect active hooks manually",
+      });
+      continue;
+    }
+    const preToolUse = (hooks as Record<string, unknown>).PreToolUse;
+    if (preToolUse === undefined) continue;
+    if (!Array.isArray(preToolUse)) {
+      conflicts.push({
+        source,
+        kind: "ambiguous-source",
+        message:
+          "has an ambiguous PreToolUse definition; preserve it and inspect active hooks manually",
+      });
+      continue;
+    }
+    for (const group of preToolUse) {
+      if (!group || typeof group !== "object" || Array.isArray(group)) {
+        conflicts.push({
+          source,
+          kind: "ambiguous-source",
+          message:
+            "has an ambiguous PreToolUse entry; preserve it and inspect active hooks manually",
+        });
+        continue;
+      }
+      const matcherResult = (() => {
+        try {
+          return {
+            matchesBash: hasBashMatcher(
+              (group as Record<string, unknown>).matcher,
+            ),
+          };
+        } catch {
+          return undefined;
+        }
+      })();
+      if (!matcherResult) {
+        conflicts.push({
+          source,
+          kind: "ambiguous-source",
+          message:
+            "has an ambiguous Bash matcher; preserve it and inspect active hooks manually",
+        });
+        continue;
+      }
+      const { matchesBash } = matcherResult;
+      if (!matchesBash) continue;
+      const handlers = (group as Record<string, unknown>).hooks;
+      if (!Array.isArray(handlers)) {
+        conflicts.push({
+          source,
+          kind: "ambiguous-source",
+          message:
+            "has an ambiguous matching hook list; preserve it and inspect active hooks manually",
+        });
+        continue;
+      }
+      for (const handler of handlers) {
+        const command =
+          handler && typeof handler === "object"
+            ? (handler as Record<string, unknown>).command
+            : undefined;
+        if (typeof command !== "string") {
+          conflicts.push({
+            source,
+            kind: "ambiguous-source",
+            message:
+              "has a matching hook without an interpretable command; preserve it and inspect manually",
+          });
+        } else if (/\brtk(?:\s|$)/i.test(command)) {
+          conflicts.push({
+            source,
+            kind: "rtk-rewrite",
+            message:
+              "contains an active RTK command hook matching Bash; resolve the competing rewrite manually",
+          });
+        } else if (!command.includes("spekta-codex-hook")) {
+          conflicts.push({
+            source,
+            kind: "competing-hook",
+            message:
+              "contains an unfamiliar active command hook matching Bash; resolve the competing rewrite manually",
+          });
+        }
+      }
+    }
+  }
+  return conflicts;
 }
 
 const ownedInstructions = `${CODEX_USAGE_START}
@@ -151,6 +332,16 @@ export async function previewCodexSetup(
   const hookPath = join(codexDirectory, "hooks.json");
   const instructionPath = join(codexDirectory, "AGENTS.md");
   const diagnostics: string[] = [];
+  const conflicts = await findRewriteConflicts(options);
+  diagnostics.push(
+    ...conflicts
+      .slice(0, 20)
+      .map((conflict) => `${conflict.source}: ${conflict.message}`),
+  );
+  if (conflicts.length > 20)
+    diagnostics.push(
+      `Additional active hook conflicts were found (${conflicts.length - 20} omitted); inspect the relevant Codex sources manually.`,
+    );
   const executable = await findHook(options.path);
   if (!executable)
     diagnostics.push(
@@ -181,10 +372,12 @@ export async function previewCodexSetup(
   } catch (error) {
     diagnostics.push(error instanceof Error ? error.message : String(error));
   }
-  if (diagnostics.length) return { status: "refused", files: [], diagnostics };
+  if (diagnostics.length)
+    return { status: "refused", files: [], diagnostics, conflicts };
   return {
     status: "ready",
     diagnostics,
+    conflicts,
     files: [
       {
         path: hookPath,
@@ -222,6 +415,7 @@ export async function runCodexSetup(args: string[] = []): Promise<void> {
   const plan = await previewCodexSetup({
     home: process.env.HOME ?? "",
     path: process.env.PATH ?? "",
+    cwd: process.cwd(),
   });
   if (plan.status === "refused") {
     for (const diagnostic of plan.diagnostics)
