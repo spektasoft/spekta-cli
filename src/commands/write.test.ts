@@ -136,7 +136,7 @@ describe("write command logic", () => {
     await runWrite(["existing.ts", "new content"]);
 
     expect(Logger.error).toHaveBeenCalledWith(
-      expect.stringContaining("File already exists"),
+      expect.stringContaining("target already exists"),
     );
     expect(Logger.info).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);

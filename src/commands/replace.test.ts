@@ -94,7 +94,7 @@ const value = "new";
 
     expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(errorSpy).toHaveBeenCalledWith(
-      `Action Failed: Replacement failed for "${testFile}": Security Violation`,
+      "Mutation rejected by workspace policy.",
     );
     expect(process.exitCode).toBe(1);
 

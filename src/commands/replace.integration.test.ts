@@ -149,6 +149,8 @@ describe("replace handler integration", { concurrent: false }, () => {
     expect(result.content[0].text).toContain(
       "Retrying the mutation is unnecessary.",
     );
+    expect(result.content[0].text).not.toContain("SyntaxError");
+    expect(result.content[0].text).not.toContain("Unexpected token");
     expect(await fs.readFile("invalid.ts", "utf-8")).toBe("const value = ;\n");
   });
 
@@ -161,7 +163,9 @@ describe("replace handler integration", { concurrent: false }, () => {
     });
 
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("Execution failed:");
+    expect(result.content[0].text).toContain("restricted system file");
+    expect(result.content[0].text).not.toContain(".env");
+    expect(result.content[0].text).not.toContain("secret=fixture");
     expect(result.content[0].text).not.toContain("Content was saved");
     expect(await fs.readFile(".env", "utf-8")).toBe("secret=fixture\n");
   });

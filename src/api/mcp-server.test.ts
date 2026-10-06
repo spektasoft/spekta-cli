@@ -13,9 +13,9 @@ import {
   TOOL_REGISTRY,
 } from "./mcp-server/registry";
 import { getReadOutcome } from "../commands/read";
-import { executeSafeReplace } from "../commands/replace";
+import { executeSafeReplaceOutcome } from "../commands/replace";
 import { getGrepOutcome } from "../commands/grep-search";
-import { getWriteContent } from "../commands/write";
+import { getWriteOutcome } from "../commands/write";
 import { executeRtkCommand } from "../commands/proxy/proxy-execution";
 import { getTokenCount } from "../utils/read-utils";
 import { getGrepResponseTokenCount } from "../commands/grep-output-parser";
@@ -25,8 +25,8 @@ import os from "node:os";
 import path from "node:path";
 
 vi.mock("../commands/read", () => ({ getReadOutcome: vi.fn() }));
-vi.mock("../commands/replace", () => ({ executeSafeReplace: vi.fn() }));
-vi.mock("../commands/write", () => ({ getWriteContent: vi.fn() }));
+vi.mock("../commands/replace", () => ({ executeSafeReplaceOutcome: vi.fn() }));
+vi.mock("../commands/write", () => ({ getWriteOutcome: vi.fn() }));
 vi.mock("../commands/grep-search", () => ({ getGrepOutcome: vi.fn() }));
 vi.mock("../commands/proxy/proxy-execution", () => ({
   executeRtkCommand: vi.fn(),
@@ -70,10 +70,10 @@ describe("McpToolResponse Compatibility", () => {
 
 describe("TOOL_REGISTRY", () => {
   it("reports write no-overwrite failures as MCP errors", async () => {
-    vi.mocked(getWriteContent).mockResolvedValueOnce({
-      success: false,
+    vi.mocked(getWriteOutcome).mockResolvedValueOnce({
+      status: "policy_rejection",
       message:
-        "Write failed: File already exists at existing.ts. Cannot overwrite with this tool.",
+        "The target already exists; create leaves existing files unchanged.",
     });
 
     const result = await TOOL_REGISTRY.spekta_write.handler({
@@ -85,7 +85,7 @@ describe("TOOL_REGISTRY", () => {
     expect(result.content).toEqual([
       {
         type: "text",
-        text: "Write failed: File already exists at existing.ts. Cannot overwrite with this tool.",
+        text: "The target already exists; create leaves existing files unchanged.",
       },
     ]);
   });
@@ -259,13 +259,13 @@ describe("TOOL_REGISTRY", () => {
       status: "success",
       value: "grep result",
     });
-    vi.mocked(getWriteContent).mockResolvedValueOnce({
-      success: true,
-      message: "written",
+    vi.mocked(getWriteOutcome).mockResolvedValueOnce({
+      status: "success",
+      value: { message: "written", changed: true },
     });
-    vi.mocked(executeSafeReplace).mockResolvedValueOnce({
-      message: "replaced",
-      appliedCount: 1,
+    vi.mocked(executeSafeReplaceOutcome).mockResolvedValueOnce({
+      status: "success",
+      value: { message: "replaced", changed: true },
     });
 
     await tools.spekta_read.handler({ paths: ["src/file.ts"] });
@@ -300,11 +300,17 @@ describe("TOOL_REGISTRY", () => {
       workspace,
       undefined,
     );
-    expect(getWriteContent).toHaveBeenCalledWith("new.ts", "body", workspace);
-    expect(executeSafeReplace).toHaveBeenCalledWith(
+    expect(getWriteOutcome).toHaveBeenCalledWith(
+      "new.ts",
+      "body",
+      workspace,
+      undefined,
+    );
+    expect(executeSafeReplaceOutcome).toHaveBeenCalledWith(
       { path: "old.ts", blocks: [] },
       "replacement blocks",
       workspace,
+      undefined,
     );
   });
 

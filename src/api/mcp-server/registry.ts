@@ -15,8 +15,8 @@ import path from "node:path";
 
 import { getGrepOutcome } from "../../commands/grep-search";
 import { getReadOutcome } from "../../commands/read";
-import { executeSafeReplace } from "../../commands/replace";
-import { getWriteContent } from "../../commands/write";
+import { executeSafeReplaceOutcome } from "../../commands/replace";
+import { getWriteOutcome } from "../../commands/write";
 import {
   formatProxyOutput,
   redactSecrets,
@@ -90,26 +90,33 @@ const registry: Record<string, ToolRegistryEntry> = {
         path: z.string().describe(params.path?.description || ""),
         blocks: z.string().describe(params.blocks?.description || ""),
       }),
-    handler: async (rawArgs, context) => {
+    handler: async (rawArgs, context, requestId) => {
       const { path: filePath, blocks } = rawArgs as {
         path: string;
         blocks: string;
       };
-      try {
-        const { message } = await executeSafeReplace(
-          { path: filePath, blocks: [] },
-          blocks,
-          context,
-        );
-        return { content: [{ type: "text", text: message }] };
-      } catch (error: unknown) {
-        return {
-          isError: true,
-          content: [
-            { type: "text", text: `Execution failed: ${String(error)}` },
-          ],
-        };
-      }
+      const outcome = await executeSafeReplaceOutcome(
+        { path: filePath, blocks: [] },
+        blocks,
+        context,
+        requestId,
+      );
+      return {
+        ...(outcome.status === "policy_rejection" ||
+        outcome.status === "engine_failure" ||
+        outcome.status === "output_limit_exceeded"
+          ? { isError: true }
+          : {}),
+        content: [
+          {
+            type: "text",
+            text:
+              outcome.status === "success"
+                ? outcome.value.message
+                : outcome.message,
+          },
+        ],
+      };
     },
   },
 
@@ -119,25 +126,33 @@ const registry: Record<string, ToolRegistryEntry> = {
         path: z.string().describe(params.path?.description || ""),
         content: z.string().describe(params.content?.description || ""),
       }),
-    handler: async (rawArgs, context) => {
+    handler: async (rawArgs, context, requestId) => {
       const { path: filePath, content } = rawArgs as {
         path: string;
         content: string;
       };
-      try {
-        const result = await getWriteContent(filePath, content, context);
-        return {
-          isError: !result.success,
-          content: [{ type: "text", text: result.message }],
-        };
-      } catch (error: unknown) {
-        return {
-          isError: true,
-          content: [
-            { type: "text", text: `Execution failed: ${String(error)}` },
-          ],
-        };
-      }
+      const outcome = await getWriteOutcome(
+        filePath,
+        content,
+        context,
+        requestId,
+      );
+      return {
+        ...(outcome.status === "policy_rejection" ||
+        outcome.status === "engine_failure" ||
+        outcome.status === "output_limit_exceeded"
+          ? { isError: true }
+          : {}),
+        content: [
+          {
+            type: "text",
+            text:
+              outcome.status === "success"
+                ? outcome.value.message
+                : outcome.message,
+          },
+        ],
+      };
     },
   },
 

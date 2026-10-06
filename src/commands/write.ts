@@ -6,6 +6,11 @@ import { validateParentDirForCreate } from "../utils/security";
 import { formatFileInPlace } from "../utils/format-utils";
 import { validatePathAccessForWrite } from "../utils/security";
 import { resolveWorkspace, type WorkspaceContext } from "../utils/workspace";
+import {
+  boundMutationSuccess,
+  mutationFailure,
+  type MutationOutcome,
+} from "./mutation-outcomes";
 
 export async function getWriteContent(
   filePath: string,
@@ -66,6 +71,38 @@ export async function getWriteContent(
   };
 }
 
+export async function getWriteOutcome(
+  filePath: string,
+  content: string,
+  workspace?: WorkspaceContext,
+  requestId?: string | number,
+): Promise<MutationOutcome> {
+  try {
+    const result = await getWriteContent(filePath, content, workspace);
+    if (!result.success) {
+      return mutationFailure(
+        "policy_rejection",
+        "The target already exists; create leaves existing files unchanged.",
+        requestId,
+      );
+    }
+    const message = result.message.replace(
+      /(formatting failed: ).*(\. Retrying)/s,
+      "$1formatter could not process the saved content$2",
+    );
+    return boundMutationSuccess(
+      { message, changed: true, cliOutput: `[INFO] ${message}\n` },
+      requestId,
+    );
+  } catch {
+    return mutationFailure(
+      "policy_rejection",
+      "Mutation rejected by workspace policy.",
+      requestId,
+    );
+  }
+}
+
 export async function runWrite(args?: string[]): Promise<void> {
   const usageMessage =
     "Usage: spekta write <relative/path/to/newfile.ext> [content]\n" +
@@ -77,11 +114,11 @@ export async function runWrite(args?: string[]): Promise<void> {
       return;
     }
 
-    const result = await getWriteContent(resolved.filePath, resolved.content);
-    if (result.success) {
-      Logger.info(result.message);
+    const outcome = await getWriteOutcome(resolved.filePath, resolved.content);
+    if (outcome.status === "success") {
+      Logger.info(outcome.value.message);
     } else {
-      Logger.error(result.message);
+      Logger.error(outcome.message);
       process.exitCode = 1;
     }
   } catch (err: unknown) {

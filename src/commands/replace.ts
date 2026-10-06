@@ -10,6 +10,11 @@ import {
 import { resolveCommandInput } from "../utils/cli-input";
 import { validateEditAccess } from "../utils/security";
 import { resolveWorkspace, type WorkspaceContext } from "../utils/workspace";
+import {
+  boundMutationSuccess,
+  mutationFailure,
+  type MutationOutcome,
+} from "./mutation-outcomes";
 
 const MAX_BLOCKS_PER_REPLACE = 50;
 
@@ -182,6 +187,72 @@ export async function executeSafeReplace(
   }
 }
 
+export async function executeSafeReplaceOutcome(
+  request: ReplaceRequest,
+  blocksInput?: string,
+  workspace?: WorkspaceContext,
+  requestId?: string | number,
+): Promise<MutationOutcome> {
+  try {
+    const result = await executeSafeReplace(request, blocksInput, workspace);
+    const message = result.message.replace(
+      /(formatting failed: ).*(\. Retrying)/s,
+      "$1formatter could not process the saved content$2",
+    );
+    const cliOutput =
+      result.appliedCount > 0
+        ? `${message}[INFO] Successfully applied ${result.appliedCount} replacement(s) to ${request.path}\n`
+        : message;
+    return boundMutationSuccess(
+      {
+        message,
+        changed: result.appliedCount > 0,
+        appliedCount: result.appliedCount,
+        cliOutput,
+      },
+      requestId,
+    );
+  } catch (error: unknown) {
+    const raw = error instanceof Error ? error.message : "";
+    if (raw.includes("File was modified by another process")) {
+      return mutationFailure(
+        "policy_rejection",
+        "The file changed during preparation; no replacement was saved.",
+        requestId,
+      );
+    }
+    if (
+      raw.includes("could not be found") ||
+      raw.includes("search block was not found")
+    ) {
+      return mutationFailure(
+        "policy_rejection",
+        "The SEARCH block could not be found. Ensure it matches the file content exactly, including indentation.",
+        requestId,
+      );
+    }
+    if (raw.includes("ignored by git")) {
+      return mutationFailure(
+        "policy_rejection",
+        "Replacement rejected: target is ignored by git.",
+        requestId,
+      );
+    }
+    if (raw.includes("restricted system file")) {
+      return mutationFailure(
+        "policy_rejection",
+        "Replacement rejected: target is a restricted system file.",
+        requestId,
+      );
+    }
+    return mutationFailure(
+      "policy_rejection",
+      "Mutation rejected by workspace policy.",
+      requestId,
+    );
+  }
+}
+
 /**
  * CLI command for replace operation.
  */
@@ -198,15 +269,18 @@ export async function runReplace(args?: string[]): Promise<void> {
 
     const request: ReplaceRequest = { path: resolved.filePath, blocks: [] };
 
-    const { message, appliedCount } = await executeSafeReplace(
-      request,
-      resolved.content,
-    );
+    const outcome = await executeSafeReplaceOutcome(request, resolved.content);
+    if (outcome.status !== "success") {
+      Logger.error(outcome.message);
+      process.exitCode = 1;
+      return;
+    }
+    const { message } = outcome.value;
 
     process.stdout.write(message);
-    if (appliedCount > 0) {
+    if (outcome.value.changed) {
       Logger.info(
-        `Successfully applied ${appliedCount} replacement(s) to ${resolved.filePath}`,
+        `Successfully applied ${outcome.value.appliedCount} replacement(s) to ${resolved.filePath}`,
       );
     }
   } catch (error: unknown) {
