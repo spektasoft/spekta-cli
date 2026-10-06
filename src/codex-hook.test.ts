@@ -76,6 +76,21 @@ describe("Codex inspection hook parser", () => {
   );
 
   it.each([
+    ["git status --short", "'spekta' 'git' 'status' '--short'"],
+    ["git diff --stat HEAD", "'spekta' 'git' 'diff' '--stat' 'HEAD'"],
+    ["git log --stat -n 2", "'spekta' 'git' 'log' '--stat' '-n' '2'"],
+    ["git show --stat HEAD", "'spekta' 'git' 'show' '--stat' 'HEAD'"],
+    ["git branch --list", "'spekta' 'git' 'branch' '--list'"],
+    ["git diff -- 'space name'", "'spekta' 'git' 'diff' '--' 'space name'"],
+    [
+      "git log --stat -- README.md",
+      "'spekta' 'git' 'log' '--stat' '--' 'README.md'",
+    ],
+  ])("routes supported Git inspection %s", (input, expected) =>
+    expect(rewritten(input)).toBe(expected),
+  );
+
+  it.each([
     "ls -a",
     "ls --",
     "ls a b",
@@ -100,7 +115,11 @@ describe("Codex inspection hook parser", () => {
     "rtk find .",
     "find src -exec cat {} \\;",
     "find src -maxdepth 2",
-    "git status",
+    "git status --ignored",
+    "git log --oneline -n 1",
+    "git commit -m message",
+    "git diff -- src | cat",
+    "git status && git diff",
     "npm test",
     "npm run build",
     "ls 'unterminated",

@@ -1,6 +1,9 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { isSupportedDiscoveryRequest } from "./commands/proxy/proxy-policy.js";
+import {
+  isSupportedDiscoveryRequest,
+  isSupportedGitProxyRequest,
+} from "./commands/proxy/proxy-policy.js";
 
 const MAX_INPUT = 64 * 1024;
 const INPUT_TIMEOUT_MS = 2_000;
@@ -9,7 +12,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function parseLiteralCommand(command: string): string[] | undefined {
+function parseLiteralCommand(
+  command: string,
+  cwd: string,
+): string[] | undefined {
   const words: string[] = [];
   let word = "";
   let started = false;
@@ -73,8 +79,14 @@ function parseLiteralCommand(command: string): string[] | undefined {
   }
   if (quote) return;
   if (started) words.push(word);
-  if (words.length < 1 || !["ls", "find"].includes(words[0])) return;
-  if (!isSupportedDiscoveryRequest(words[0], words.slice(1))) return;
+  if (words.length < 1) return;
+  if (words[0] === "git") {
+    if (!isSupportedGitProxyRequest(words.slice(1), cwd)) return;
+  } else if (
+    !["ls", "find"].includes(words[0]) ||
+    !isSupportedDiscoveryRequest(words[0], words.slice(1))
+  )
+    return;
   return words;
 }
 
@@ -97,7 +109,7 @@ export function rewriteEvent(value: unknown): string | undefined {
     throw new Error("invalid event");
   const command = event.tool_input.command;
   if (typeof command !== "string") throw new Error("invalid event");
-  const words = parseLiteralCommand(command);
+  const words = parseLiteralCommand(command, event.cwd);
   if (!words) return;
   const rewrittenCommand = ["spekta", ...words].map(shellQuote).join(" ");
   return JSON.stringify({

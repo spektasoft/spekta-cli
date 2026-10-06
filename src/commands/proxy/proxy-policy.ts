@@ -90,6 +90,52 @@ export function isSupportedDiscoveryRequest(
   return true;
 }
 
+/** Classifies standalone Git inspections using the proxy's execution policy. */
+export function isSupportedGitProxyRequest(
+  args: string[],
+  cwd: string,
+): boolean {
+  try {
+    validateGitProxyRequest(args, { root: cwd });
+    const subcommand = args[0];
+    if (subcommand === "log" || subcommand === "show") {
+      const separator = args.indexOf("--");
+      const flags = args.slice(1, separator < 0 ? args.length : separator);
+      const summary = flags.some((flag) =>
+        ["--stat", "--name-only", "--name-status"].includes(flag),
+      );
+      if (
+        flags.some((flag) =>
+          [
+            "--oneline",
+            "--graph",
+            "--decorate",
+            "--decorate=short",
+            "--decorate=full",
+            "--all",
+          ].includes(flag),
+        )
+      ) {
+        return false;
+      }
+      if (summary && flags.some((flag) => ["-p", "--patch"].includes(flag)))
+        return false;
+      if (
+        subcommand === "log" &&
+        !summary &&
+        !flags.some((flag) => ["-p", "--patch"].includes(flag))
+      ) {
+        return false;
+      }
+      if (subcommand === "show" && flags.includes("--no-patch") && !summary)
+        return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function formatProxyFailure(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return truncateOutput(redactSecrets(message)).content;
