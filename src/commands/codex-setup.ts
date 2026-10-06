@@ -15,7 +15,7 @@ export const CODEX_HOOK_MATCHER = "^(Bash)$";
 
 export interface CodexSetupFile {
   path: string;
-  action: "create" | "update" | "unchanged";
+  action: "create" | "update" | "unchanged" | "delete";
   content: string;
 }
 
@@ -41,6 +41,18 @@ export interface CodexSetupOptions {
 export interface CodexSetupApplyResult {
   status: "configured" | "refused" | "failed";
   activation: "unverified";
+  files: CodexSetupFile[];
+  diagnostics: string[];
+}
+
+export interface CodexUninstallPlan {
+  status: "ready" | "refused";
+  files: CodexSetupFile[];
+  diagnostics: string[];
+}
+
+export interface CodexUninstallResult {
+  status: "uninstalled" | "refused" | "failed";
   files: CodexSetupFile[];
   diagnostics: string[];
 }
@@ -366,6 +378,175 @@ function buildInstructions(original: string | undefined): string {
   return `${original.replace(/\s*$/, "")}\n\n${ownedInstructions}\n`;
 }
 
+function removeOwnedInstructions(original: string): string | undefined {
+  const startCount = original.split(CODEX_USAGE_START).length - 1;
+  const endCount = original.split(CODEX_USAGE_END).length - 1;
+  if (startCount !== endCount || startCount > 1) {
+    throw new Error(
+      "AGENTS.md has malformed or duplicate Spekta usage markers; preserving it",
+    );
+  }
+  if (startCount === 0) return original;
+  const start = original.indexOf(CODEX_USAGE_START);
+  const end = original.indexOf(CODEX_USAGE_END) + CODEX_USAGE_END.length;
+  if (original.slice(start, end) !== ownedInstructions) {
+    throw new Error(
+      "AGENTS.md Spekta usage block was edited; preserving unfamiliar content",
+    );
+  }
+  let removeStart = start;
+  let removeEnd = end;
+  if (original.slice(0, start).endsWith("\n\n")) removeStart -= 2;
+  else if (original[removeEnd] === "\n") removeEnd += 1;
+  const updated = original.slice(0, removeStart) + original.slice(removeEnd);
+  return updated.length === 0 ? undefined : updated;
+}
+
+function removeOwnedHooks(original: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(original);
+  } catch (error) {
+    throw new Error(
+      `hooks.json has invalid JSON; preserving it: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error(
+      "hooks.json has an ambiguous top-level value; preserving it",
+    );
+  const config = parsed as Record<string, unknown>;
+  const hooks = config.hooks;
+  if (hooks === undefined) return original;
+  if (!hooks || typeof hooks !== "object" || Array.isArray(hooks))
+    throw new Error("hooks.json has a malformed hooks object; preserving it");
+  const hookConfig = hooks as Record<string, unknown>;
+  const entries = hookConfig.PreToolUse;
+  if (entries === undefined) return original;
+  if (!Array.isArray(entries))
+    throw new Error("hooks.json has malformed hooks.PreToolUse; preserving it");
+  const kept: unknown[] = [];
+  let removed = false;
+  for (const entry of entries) {
+    const rendered = JSON.stringify(entry);
+    if (!rendered.includes("spekta-codex-hook")) {
+      kept.push(entry);
+      continue;
+    }
+    if (!isRecognizedOwnedHook(entry))
+      throw new Error(
+        "hooks.json contains conflicting Spekta-owned hook content; preserving it",
+      );
+    removed = true;
+  }
+  if (!removed) return original;
+  if (kept.length) hookConfig.PreToolUse = kept;
+  else delete hookConfig.PreToolUse;
+  if (Object.keys(hookConfig).length === 0) delete config.hooks;
+  if (Object.keys(config).length === 0) return undefined;
+  return `${JSON.stringify(config, null, 2)}\n`;
+}
+
+export async function previewCodexUninstall(
+  options: Pick<CodexSetupOptions, "home">,
+): Promise<CodexUninstallPlan> {
+  const codexDirectory = join(options.home, ".codex");
+  const diagnostics: string[] = [];
+  const files: CodexSetupFile[] = [];
+  for (const [path, remove] of [
+    [join(codexDirectory, "hooks.json"), removeOwnedHooks],
+    [join(codexDirectory, "AGENTS.md"), removeOwnedInstructions],
+  ] as const) {
+    let original: string | undefined;
+    try {
+      original = await readOptional(path);
+    } catch (error) {
+      diagnostics.push(
+        `Unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      continue;
+    }
+    if (original === undefined) continue;
+    try {
+      const content = remove(original);
+      if (content === original) continue;
+      files.push({
+        path,
+        action: content === undefined ? "delete" : "update",
+        content: content ?? "",
+      });
+    } catch (error) {
+      diagnostics.push(
+        `${path}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  return {
+    status: diagnostics.length ? "refused" : "ready",
+    files,
+    diagnostics,
+  };
+}
+
+export async function applyCodexUninstall(
+  options: Pick<CodexSetupOptions, "home">,
+  write: (
+    path: string,
+    content: string,
+    encoding: "utf8",
+  ) => Promise<void> = writeFile,
+): Promise<CodexUninstallResult> {
+  const plan = await previewCodexUninstall(options);
+  if (plan.status === "refused")
+    return { status: "refused", files: [], diagnostics: plan.diagnostics };
+  const originals: Array<{ file: CodexSetupFile; content: string }> = [];
+  try {
+    for (const file of plan.files) {
+      const content = await readOptional(file.path);
+      if (content === undefined)
+        throw new Error(`${file.path} changed during uninstall`);
+      originals.push({ file, content });
+    }
+    const applied: typeof originals = [];
+    try {
+      for (const original of originals) {
+        applied.push(original);
+        if (original.file.action === "delete") await unlink(original.file.path);
+        else await write(original.file.path, original.file.content, "utf8");
+      }
+    } catch (error) {
+      const rollbackErrors: string[] = [];
+      for (const original of applied.reverse()) {
+        try {
+          await writeFile(original.file.path, original.content, "utf8");
+        } catch (rollbackError) {
+          rollbackErrors.push(
+            rollbackError instanceof Error
+              ? rollbackError.message
+              : String(rollbackError),
+          );
+        }
+      }
+      if (rollbackErrors.length)
+        throw new Error(
+          `${error instanceof Error ? error.message : String(error)}; rollback incomplete: ${rollbackErrors.join("; ")}`,
+          { cause: error },
+        );
+      throw error;
+    }
+    return { status: "uninstalled", files: plan.files, diagnostics: [] };
+  } catch (error) {
+    return {
+      status: "failed",
+      files: [],
+      diagnostics: [
+        `Codex configuration removal failed: ${error instanceof Error ? error.message : String(error)}`,
+      ],
+    };
+  }
+}
+
 export async function previewCodexSetup(
   options: CodexSetupOptions,
 ): Promise<CodexSetupPlan> {
@@ -566,5 +747,48 @@ export async function runCodexSetup(args: string[] = []): Promise<void> {
     console.log(`${file.action.toUpperCase()} ${file.path}`);
     console.log(file.content);
   }
+  console.log("Preview only; no Codex configuration or files were changed.");
+}
+
+export async function runCodexUninstall(args: string[] = []): Promise<void> {
+  const isApply = args[2] === "--apply";
+  if (
+    args.length !== 3 ||
+    args[0] !== "--global" ||
+    args[1] !== "--codex" ||
+    (!isApply && args[2] !== "--dry-run")
+  ) {
+    throw new Error(
+      "Usage: spekta uninstall --global --codex --dry-run|--apply",
+    );
+  }
+  const options = { home: process.env.HOME ?? "" };
+  if (isApply) {
+    const result = await applyCodexUninstall(options);
+    if (result.status !== "uninstalled") {
+      for (const diagnostic of result.diagnostics)
+        console.error(`Uninstall ${result.status}: ${diagnostic}`);
+      process.exitCode = 1;
+      return;
+    }
+    for (const file of result.files)
+      console.log(`${file.action.toUpperCase()} ${file.path}`);
+    if (result.files.length === 0)
+      console.log("No Spekta Codex artifacts were installed.");
+    return;
+  }
+  const plan = await previewCodexUninstall(options);
+  if (plan.status === "refused") {
+    for (const diagnostic of plan.diagnostics)
+      console.error(`Uninstall preview refused: ${diagnostic}`);
+    process.exitCode = 1;
+    return;
+  }
+  for (const file of plan.files) {
+    console.log(`${file.action.toUpperCase()} ${file.path}`);
+    if (file.action === "update") console.log(file.content);
+  }
+  if (plan.files.length === 0)
+    console.log("No Spekta Codex artifacts were found.");
   console.log("Preview only; no Codex configuration or files were changed.");
 }

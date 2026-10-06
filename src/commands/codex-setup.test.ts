@@ -14,6 +14,8 @@ import {
   CODEX_USAGE_END,
   CODEX_USAGE_START,
   applyCodexSetup,
+  applyCodexUninstall,
+  previewCodexUninstall,
   previewCodexSetup,
 } from "./codex-setup.js";
 
@@ -515,5 +517,167 @@ describe("applyCodexSetup", () => {
     });
     expect(result.diagnostics.join("\n")).toMatch(/fixture write failure/i);
     expect(await readdir(codex)).toEqual([]);
+  });
+});
+
+describe("previewCodexUninstall", () => {
+  it("treats an absent installation as a no-op without creating configuration", async () => {
+    const root = await fixture();
+
+    const plan = await previewCodexUninstall({ home: root, path: "" });
+    const result = await applyCodexUninstall({ home: root, path: "" });
+
+    expect(plan).toMatchObject({ status: "ready", files: [], diagnostics: [] });
+    expect(result).toMatchObject({ status: "uninstalled", files: [] });
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it("previews exact removal while preserving unrelated hooks, MCP servers, and prose", async () => {
+    const root = await fixture();
+    const bin = join(root, "bin");
+    await mkdir(bin);
+    await writeFile(join(bin, "spekta-codex-hook"), "#!/bin/sh\n");
+    await chmod(join(bin, "spekta-codex-hook"), 0o755);
+    await applyCodexSetup({ home: root, path: bin });
+    const hooksPath = join(root, ".codex", "hooks.json");
+    const instructionsPath = join(root, ".codex", "AGENTS.md");
+    const installedHooks = JSON.parse(await readFile(hooksPath, "utf8")) as {
+      hooks: Record<string, unknown>;
+      mcpServers?: Record<string, unknown>;
+    };
+    installedHooks.mcpServers = { keep: { command: "mcp-server" } };
+    installedHooks.hooks.SessionStart = [{ hooks: [{ command: "keep" }] }];
+    installedHooks.hooks.PreToolUse = [
+      {
+        matcher: "^(Bash)$",
+        hooks: [{ type: "command", command: "rtk rewrite" }],
+      },
+      ...((installedHooks.hooks.PreToolUse as unknown[]) ?? []),
+    ];
+    await writeFile(hooksPath, JSON.stringify(installedHooks, null, 2) + "\n");
+    await writeFile(
+      instructionsPath,
+      `Keep this prose.\n\n${await readFile(instructionsPath, "utf8")}`,
+    );
+    const beforeHooks = await readFile(hooksPath, "utf8");
+    const beforeInstructions = await readFile(instructionsPath, "utf8");
+
+    const plan = await previewCodexUninstall({ home: root });
+
+    expect(plan.status).toBe("ready");
+    expect(plan.files.map(({ action }) => action)).toEqual([
+      "update",
+      "update",
+    ]);
+    expect(JSON.parse(plan.files[0].content)).toEqual({
+      mcpServers: { keep: { command: "mcp-server" } },
+      hooks: {
+        SessionStart: [{ hooks: [{ command: "keep" }] }],
+        PreToolUse: [
+          {
+            matcher: "^(Bash)$",
+            hooks: [{ type: "command", command: "rtk rewrite" }],
+          },
+        ],
+      },
+    });
+    expect(plan.files[1].content).toBe("Keep this prose.\n");
+    expect(await readFile(hooksPath, "utf8")).toBe(beforeHooks);
+    expect(await readFile(instructionsPath, "utf8")).toBe(beforeInstructions);
+  });
+
+  it("preserves malformed or edited ownership and diagnoses it", async () => {
+    const root = await fixture();
+    const codex = join(root, ".codex");
+    await mkdir(codex);
+    const hooks = JSON.stringify({
+      hooks: {
+        PreToolUse: [
+          {
+            matcher: "^(Bash)$",
+            hooks: [
+              {
+                type: "command",
+                command: '"/x/spekta-codex-hook"',
+                timeout: 3,
+              },
+            ],
+            unexpected: true,
+          },
+        ],
+      },
+    });
+    const instructions = `${CODEX_USAGE_START}\nEdited instructions\n${CODEX_USAGE_END}\n`;
+    await writeFile(join(codex, "hooks.json"), hooks);
+    await writeFile(join(codex, "AGENTS.md"), instructions);
+
+    const plan = await previewCodexUninstall({ home: root });
+
+    expect(plan.status).toBe("refused");
+    expect(plan.diagnostics.join("\n")).toMatch(
+      /conflicting Spekta-owned hook/i,
+    );
+    expect(plan.diagnostics.join("\n")).toMatch(/usage block was edited/i);
+    expect(plan.files).toEqual([]);
+    expect(await readFile(join(codex, "hooks.json"), "utf8")).toBe(hooks);
+    expect(await readFile(join(codex, "AGENTS.md"), "utf8")).toBe(instructions);
+  });
+});
+
+describe("applyCodexUninstall", () => {
+  it("removes owned files when no unrelated content remains and completes a partial install", async () => {
+    const root = await fixture();
+    const bin = join(root, "bin");
+    await mkdir(bin);
+    await writeFile(join(bin, "spekta-codex-hook"), "#!/bin/sh\n");
+    await chmod(join(bin, "spekta-codex-hook"), 0o755);
+    await applyCodexSetup({ home: root, path: bin });
+    const agents = join(root, ".codex", "AGENTS.md");
+    await rm(agents);
+
+    const result = await applyCodexUninstall({ home: root });
+
+    expect(result.status).toBe("uninstalled");
+    expect(result.files.map(({ action }) => action)).toEqual(["delete"]);
+    expect(await readdir(join(root, ".codex"))).toEqual([]);
+  });
+
+  it("restores already removed artifacts when a later removal fails", async () => {
+    const root = await fixture();
+    const bin = join(root, "bin");
+    await mkdir(bin);
+    await writeFile(join(bin, "spekta-codex-hook"), "#!/bin/sh\n");
+    await chmod(join(bin, "spekta-codex-hook"), 0o755);
+    await applyCodexSetup({ home: root, path: bin });
+    const hooksPath = join(root, ".codex", "hooks.json");
+    const instructionsPath = join(root, ".codex", "AGENTS.md");
+    const hookConfig = JSON.parse(await readFile(hooksPath, "utf8")) as {
+      hooks: Record<string, unknown>;
+    };
+    hookConfig.hooks.SessionStart = [{ hooks: [{ command: "keep" }] }];
+    await writeFile(hooksPath, JSON.stringify(hookConfig));
+    await writeFile(
+      instructionsPath,
+      `Keep this prose.\n\n${await readFile(instructionsPath, "utf8")}`,
+    );
+    const before = [
+      await readFile(hooksPath, "utf8"),
+      await readFile(instructionsPath, "utf8"),
+    ];
+
+    let writes = 0;
+    const result = await applyCodexUninstall(
+      { home: root },
+      async (path, content, encoding) => {
+        writes += 1;
+        if (writes === 2) throw new Error("fixture removal failure");
+        return writeFile(path, content, encoding);
+      },
+    );
+
+    expect(result.status).toBe("failed");
+    expect(result.diagnostics.join("\n")).toMatch(/fixture removal failure/i);
+    expect(await readFile(hooksPath, "utf8")).toBe(before[0]);
+    expect(await readFile(instructionsPath, "utf8")).toBe(before[1]);
   });
 });
