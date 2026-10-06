@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   CODEX_USAGE_END,
   CODEX_USAGE_START,
+  applyCodexSetup,
   previewCodexSetup,
 } from "./codex-setup.js";
 
@@ -321,5 +322,96 @@ describe("previewCodexSetup", () => {
       /conflicting Spekta-owned hook/i,
     );
     expect(plan.diagnostics.join("\n")).toMatch(/usage block was edited/i);
+  });
+});
+
+describe("applyCodexSetup", () => {
+  it("installs once and keeps repeated setup unchanged", async () => {
+    const root = await fixture();
+    const bin = join(root, "bin");
+    await mkdir(bin);
+    await writeFile(join(bin, "spekta-codex-hook"), "#!/bin/sh\n");
+    await chmod(join(bin, "spekta-codex-hook"), 0o755);
+    const options = { home: root, path: bin, cwd: root };
+
+    const first = await applyCodexSetup(options);
+    expect(first.status).toBe("configured");
+    expect(first.activation).toBe("unverified");
+    expect(first.files.map(({ action }) => action)).toEqual([
+      "create",
+      "create",
+    ]);
+    const hooksBefore = await readFile(
+      join(root, ".codex", "hooks.json"),
+      "utf8",
+    );
+    const instructionsBefore = await readFile(
+      join(root, ".codex", "AGENTS.md"),
+      "utf8",
+    );
+
+    const repeated = await applyCodexSetup(options);
+    expect(repeated.status).toBe("configured");
+    expect(repeated.files.map(({ action }) => action)).toEqual([
+      "unchanged",
+      "unchanged",
+    ]);
+    expect(await readFile(join(root, ".codex", "hooks.json"), "utf8")).toBe(
+      hooksBefore,
+    );
+    expect(await readFile(join(root, ".codex", "AGENTS.md"), "utf8")).toBe(
+      instructionsBefore,
+    );
+  });
+
+  it("refuses conflicts and missing executables without writing configuration", async () => {
+    const root = await fixture();
+    const codex = join(root, ".codex");
+    await mkdir(codex);
+    await writeFile(
+      join(codex, "hooks.json"),
+      JSON.stringify({
+        hooks: { PreToolUse: [{ hooks: [{ command: "rtk rewrite" }] }] },
+      }),
+    );
+
+    const conflict = await applyCodexSetup({ home: root, path: "", cwd: root });
+    expect(conflict.status).toBe("refused");
+    expect(conflict.activation).toBe("unverified");
+    expect(await readdir(codex)).toEqual(["hooks.json"]);
+
+    await writeFile(join(codex, "hooks.json"), "{}");
+    const missing = await applyCodexSetup({ home: root, path: "" });
+    expect(missing.status).toBe("refused");
+    expect(missing.diagnostics.join("\n")).toMatch(/not found/i);
+    expect(await readdir(codex)).toEqual(["hooks.json"]);
+  });
+
+  it("reports a write failure without claiming activation", async () => {
+    const root = await fixture();
+    const codex = join(root, ".codex");
+    const bin = join(root, "bin");
+    await mkdir(codex);
+    await mkdir(bin);
+    await writeFile(join(bin, "spekta-codex-hook"), "");
+    await chmod(join(bin, "spekta-codex-hook"), 0o755);
+
+    let writeCount = 0;
+    const result = await applyCodexSetup(
+      { home: root, path: bin },
+      (path, content, encoding) => {
+        writeCount += 1;
+        if (writeCount === 2)
+          return Promise.reject(new Error("fixture write failure"));
+        return writeFile(path, content, encoding);
+      },
+    );
+
+    expect(result).toMatchObject({
+      status: "failed",
+      activation: "unverified",
+    });
+    expect(result.diagnostics.join("\n")).toMatch(/fixture write failure/i);
+    expect(await readdir(codex)).toEqual([]);
   });
 });
