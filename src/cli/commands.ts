@@ -17,6 +17,7 @@ import { runDiagnosticInteractive } from "../commands/diagnostic-interactive";
 import { runRtkProxy } from "../commands/proxy";
 import { searchableSelect } from "../ui/ui";
 import { parseFilePathWithRange } from "../utils/read-utils";
+import { runCodexSetup } from "../commands/codex-setup";
 
 export interface CommandDefinition {
   name: string;
@@ -103,6 +104,11 @@ export const COMMANDS: Record<string, CommandDefinition> = {
   mcp: {
     name: "Start the MCP Server",
     run: runMcpServer,
+    hidden: true,
+  },
+  setup: {
+    name: "Preview Codex Setup",
+    run: runCodexSetup,
     hidden: true,
   },
 };
