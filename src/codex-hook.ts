@@ -82,7 +82,9 @@ function parseLiteralCommand(
   if (words.length < 1) return;
   if (words[0] === "git") {
     if (!isSupportedGitProxyRequest(words.slice(1), cwd)) return;
-  } else if (["cat", "sed"].includes(words[0])) {
+  } else if (words[0] === "rtk") {
+    if (words[1] !== "rg") return;
+  } else if (["cat", "sed", "rg"].includes(words[0])) {
     // Read forms are classified and translated after tokenization.
   } else if (
     !["ls", "find"].includes(words[0]) ||
@@ -106,6 +108,11 @@ function translateRead(words: string[]): string[] | undefined {
     if (/\[(?:\d+|\$)?(?:,(?:\d+|\$))?\]$/.test(words[1])) return;
     return ["spekta", "read", words[1]];
   }
+  if (command === "rg") {
+    const translated = translateSearch(words);
+    if (!translated) return;
+    return translated;
+  }
   if (command !== "sed" || words.length !== 4 || words[1] !== "-n") return;
   const range = words[2].match(/^([1-9]\d*)(?:,(\d+|\$))?p$/);
   const path = words[3];
@@ -118,6 +125,60 @@ function translateRead(words: string[]): string[] | undefined {
   const start = range[1];
   const end = range[2] ?? "$";
   return ["spekta", "read", `${path}[${start},${end}]`];
+}
+
+function translateSearch(words: string[]): string[] | undefined {
+  const args = words.slice(1);
+  let pattern: string | undefined;
+  let searchPath: string | undefined;
+  let caseInsensitive = false;
+  const globs: string[] = [];
+  const positional: string[] = [];
+  let optionsEnded = false;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (!optionsEnded && arg === "--") {
+      optionsEnded = true;
+      continue;
+    }
+    if (
+      !optionsEnded &&
+      !pattern &&
+      (arg === "-i" || arg === "--ignore-case")
+    ) {
+      caseInsensitive = true;
+      continue;
+    }
+    if (!optionsEnded && !pattern && (arg === "-g" || arg === "--glob")) {
+      const glob = args[++i];
+      if (!glob || glob.startsWith("-") || glob.includes(",")) return;
+      globs.push(glob);
+      continue;
+    }
+    if (!optionsEnded && !pattern && arg === "-e") {
+      pattern = args[++i];
+      if (pattern === undefined) return;
+      continue;
+    }
+    if (!optionsEnded && arg.startsWith("-")) return;
+    positional.push(arg);
+  }
+
+  if (pattern === undefined) {
+    if (positional.length === 0) return;
+    pattern = positional.shift();
+  }
+  if (!pattern || positional.length > 1) return;
+  if (positional[0] === "-") return;
+  if (positional[0]?.startsWith("-")) return;
+  if (positional[0] !== undefined) searchPath = positional[0];
+
+  const translated = ["spekta", "grep", pattern];
+  if (searchPath !== undefined) translated.push(searchPath);
+  if (caseInsensitive) translated.push("--ignore-case");
+  if (globs.length > 0) translated.push("--glob", globs.join(","));
+  return translated;
 }
 
 export function rewriteEvent(value: unknown): string | undefined {
@@ -139,7 +200,12 @@ export function rewriteEvent(value: unknown): string | undefined {
   if (!words) return;
   const read = translateRead(words);
   if (["cat", "sed"].includes(words[0]) && !read) return;
-  const rewrittenCommand = (read ?? ["spekta", ...words])
+  const isSearch = words[0] === "rg" || words[0] === "rtk";
+  const search = isSearch
+    ? translateSearch(words[0] === "rtk" ? ["rg", ...words.slice(2)] : words)
+    : undefined;
+  if (isSearch && !search) return;
+  const rewrittenCommand = (read ?? search ?? ["spekta", ...words])
     .map(shellQuote)
     .join(" ");
   return JSON.stringify({

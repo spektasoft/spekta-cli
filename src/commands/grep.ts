@@ -5,9 +5,11 @@ export async function runGrep(args?: string[]) {
   try {
     // Basic argument parsing: spekta grep <pattern> [path] [--glob <glob>]...
     const safeArgs = args || [];
-    const pattern = safeArgs[0];
+    const caseInsensitive = safeArgs.includes("--ignore-case");
+    const positional = safeArgs.filter((arg) => arg !== "--ignore-case");
+    const pattern = positional[0];
     const path =
-      safeArgs[1] && !safeArgs[1].startsWith("-") ? safeArgs[1] : ".";
+      positional[1] && !positional[1].startsWith("-") ? positional[1] : ".";
 
     // Collect every --glob occurrence, not just the first, so multiple
     // --glob flags in one invocation are all honored.
@@ -27,6 +29,7 @@ export async function runGrep(args?: string[]) {
       pattern,
       path,
       globs: globs.length > 0 ? globs.join(",") : undefined,
+      ...(caseInsensitive ? { case_insensitive: true } : {}),
     });
     if (
       outcome.status === "engine_failure" ||

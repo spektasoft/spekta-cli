@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runGrep } from "../grep";
-import { getGrepContent } from "../grep-search";
+import { getGrepOutcome } from "../grep-search";
 
 vi.mock("../grep-search", () => ({
-  getGrepContent: vi.fn().mockResolvedValue("mocked result"),
+  getGrepOutcome: vi.fn().mockResolvedValue({
+    status: "success",
+    value: "mocked result",
+  }),
 }));
 
 describe("runGrep - multi --glob parsing", () => {
@@ -14,7 +17,7 @@ describe("runGrep - multi --glob parsing", () => {
   it("joins multiple --glob flags into a single comma-separated globs string", async () => {
     await runGrep(["pattern", ".", "--glob", "*test*.*", "--glob", "*spec*.*"]);
 
-    expect(getGrepContent).toHaveBeenCalledWith({
+    expect(getGrepOutcome).toHaveBeenCalledWith({
       pattern: "pattern",
       path: ".",
       globs: "*test*.*,*spec*.*",
@@ -24,7 +27,7 @@ describe("runGrep - multi --glob parsing", () => {
   it("passes globs as undefined when no --glob flag is present", async () => {
     await runGrep(["pattern"]);
 
-    expect(getGrepContent).toHaveBeenCalledWith({
+    expect(getGrepOutcome).toHaveBeenCalledWith({
       pattern: "pattern",
       path: ".",
       globs: undefined,

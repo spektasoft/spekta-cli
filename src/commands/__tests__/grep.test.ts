@@ -37,4 +37,20 @@ describe("runGrep", () => {
     expect(Logger.error).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
   });
+
+  it("passes the routed ignore-case option to the search operation", async () => {
+    const search = vi.spyOn(grepSearch, "getGrepOutcome").mockResolvedValue({
+      status: "success",
+      value: "No matches found.",
+    });
+
+    await runGrep(["needle", "src", "--ignore-case"]);
+
+    expect(search).toHaveBeenCalledWith({
+      pattern: "needle",
+      path: "src",
+      globs: undefined,
+      case_insensitive: true,
+    });
+  });
 });

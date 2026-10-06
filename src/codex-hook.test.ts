@@ -101,6 +101,29 @@ describe("Codex inspection hook parser", () => {
   );
 
   it.each([
+    ["rg needle", "'spekta' 'grep' 'needle'"],
+    ["rg 'a.b' src", "'spekta' 'grep' 'a.b' 'src'"],
+    ["rg -i needle", "'spekta' 'grep' 'needle' '--ignore-case'"],
+    [
+      "rg --glob '*.ts' needle src",
+      "'spekta' 'grep' 'needle' 'src' '--glob' '*.ts'",
+    ],
+    [
+      "rg -g '*.ts' -g '!*.test.ts' 'foo|bar' src",
+      "'spekta' 'grep' 'foo|bar' 'src' '--glob' '*.ts,!*.test.ts'",
+    ],
+    ["rg -e '-needle' -- path", "'spekta' 'grep' '-needle' 'path'"],
+    ["rg -- -needle", "'spekta' 'grep' '-needle'"],
+    ["rtk rg needle", "'spekta' 'grep' 'needle'"],
+    [
+      "rtk rg -g '*.ts' needle src",
+      "'spekta' 'grep' 'needle' 'src' '--glob' '*.ts'",
+    ],
+  ])("routes representable search %s", (input, expected) =>
+    expect(rewritten(input)).toBe(expected),
+  );
+
+  it.each([
     "ls -a",
     "cat",
     "cat -n README.md",
@@ -118,6 +141,18 @@ describe("Codex inspection hook parser", () => {
     "sed -n '1,4p'",
     "sed -n '1,4p' -",
     "cat 'README.md[2,4]'",
+    "rg",
+    "rg -n needle",
+    "rg -F needle",
+    "rg -l needle",
+    "rg --json needle",
+    "rg needle path other",
+    "rg needle -",
+    "rg --pre foo needle",
+    "rg --glob",
+    "rg --glob '*.ts'",
+    "rtk ls",
+    "rtk rg --no-config needle",
     "ls --",
     "ls a b",
     "ls;whoami",
