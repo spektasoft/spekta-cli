@@ -1,5 +1,6 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { isSupportedDiscoveryRequest } from "./commands/proxy/proxy-policy.js";
 
 const MAX_INPUT = 64 * 1024;
 const INPUT_TIMEOUT_MS = 2_000;
@@ -72,10 +73,8 @@ function parseLiteralCommand(command: string): string[] | undefined {
   }
   if (quote) return;
   if (started) words.push(word);
-  if (words.length < 1 || words.length > 2 || words[0] !== "ls") return;
-  const operand = words[1];
-  if (operand !== undefined && (operand === "" || operand.startsWith("-")))
-    return;
+  if (words.length < 1 || !["ls", "find"].includes(words[0])) return;
+  if (!isSupportedDiscoveryRequest(words[0], words.slice(1))) return;
   return words;
 }
 

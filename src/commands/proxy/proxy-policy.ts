@@ -59,6 +59,37 @@ export function validateProxyRequest(
   }
 }
 
+/** Classifies literal discovery requests that Spekta can safely receive. */
+export function isSupportedDiscoveryRequest(
+  command: string,
+  args: string[],
+): boolean {
+  if (command === "ls")
+    return args.length <= 1 && !args.some((arg) => arg.startsWith("-"));
+  if (command !== "find") return false;
+
+  let index = args.length > 0 && !args[0].startsWith("-") ? 1 : 0;
+  let seenType = false;
+  let seenName = false;
+  while (index < args.length) {
+    const token = args[index];
+    if (
+      token === "-type" &&
+      !seenType &&
+      ["f", "d"].includes(args[index + 1] ?? "")
+    ) {
+      seenType = true;
+      index += 2;
+    } else if (token === "-name" && !seenName && Boolean(args[index + 1])) {
+      seenName = true;
+      index += 2;
+    } else if (token === "-print" && index === args.length - 1) {
+      return true;
+    } else return false;
+  }
+  return true;
+}
+
 export function formatProxyFailure(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   return truncateOutput(redactSecrets(message)).content;

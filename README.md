@@ -16,7 +16,7 @@ Run `spekta` and follow the prompts.
 
 ### Codex inspection routing (experimental)
 
-`npm run deploy` also installs the standalone `spekta-codex-hook` binary. To enable it, add this synchronous hook manually to your Codex `config.toml`:
+`npm run deploy` also installs the standalone `spekta-codex-hook` binary. To enable the experimental integration, add this synchronous hook manually to your Codex `config.toml`:
 
 ```toml
 [features]
@@ -26,13 +26,16 @@ hooks = true
 
 [[hooks.PreToolUse]]
 matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
 command = "spekta-codex-hook"
 timeout = 3
 ```
 
-Review the hook in `/hooks` and trust the project before enabling project hooks. The hook reads one event (at most 64 KiB, with a two-second stdin deadline) and rewrites only literal standalone `ls` requests. Its response uses `hookSpecificOutput` with `hookEventName: "PreToolUse"`, `permissionDecision: "allow"`, and `updatedInput.command`. Codex then performs its usual approval and sandbox handling; the hook does not grant a `PermissionRequest` decision. Filesystem policy checks happen in Spekta during execution.
+Review and trust the exact hook in `/hooks`; project-local hooks are skipped for untrusted projects. The hook reads one event (at most 64 KiB, with a two-second stdin deadline) and rewrites supported literal standalone `ls` and `find` requests. Its response uses `hookSpecificOutput` with `hookEventName: "PreToolUse"`, `permissionDecision: "allow"`, and `updatedInput.command`. Hook failures are fail-open, so this is a routing convenience rather than a security boundary. Codex then performs its usual approval and sandbox handling. Filesystem policy checks happen in Spekta during execution.
 
-The intended target is Codex 0.160.0 on local Linux/WSL with Bash or Zsh. Hook events do not identify the effective shell, so the hook cannot safely infer support for other shells. The versioned unified-exec handler is expected to replace `cmd` while retaining execution settings, but shell and unified-execution behavior still needs real-runtime verification before integration support can be claimed. Untrusted project hooks are skipped by Codex. No configuration or project trust is installed automatically.
+The verified compatibility candidate is Codex CLI 0.160.1 on local Linux with Bash; prior ls routing was also verified on 0.160.0. Zsh, native Windows, and remote/cloud execution are not verified. Codex documents hooks for unified exec as `Bash`; preservation of unified-exec settings was verified on 0.160.0. No configuration or project trust is installed automatically.
 
 ### RTK Proxy Inspection
 

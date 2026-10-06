@@ -14,7 +14,7 @@ import { rewriteEvent } from "./codex-hook.js";
 const event = (command: string) => ({
   hook_event_name: "PreToolUse",
   tool_name: "Bash",
-  cwd: "/workspace",
+  cwd: process.cwd(),
   tool_input: { command },
   ignored: true,
 });
@@ -49,6 +49,16 @@ describe("Codex inspection hook parser", () => {
   it.each([
     ["ls", "'spekta' 'ls'"],
     ["ls src", "'spekta' 'ls' 'src'"],
+    ["find", "'spekta' 'find'"],
+    [
+      "find src -type f -name '*.ts'",
+      "'spekta' 'find' 'src' '-type' 'f' '-name' '*.ts'",
+    ],
+    ["find -name 'literal ; *.ts'", "'spekta' 'find' '-name' 'literal ; *.ts'"],
+    [
+      "find ../outside -name '*.ts'",
+      "'spekta' 'find' '../outside' '-name' '*.ts'",
+    ],
     ["ls 'a b'", "'spekta' 'ls' 'a b'"],
     ["ls '日本語'", "'spekta' 'ls' '日本語'"],
     ["ls 'a'\\''b'", "'spekta' 'ls' 'a'\\''b'"],
@@ -85,8 +95,11 @@ describe("Codex inspection hook parser", () => {
     "command ls",
     "bash -c ls",
     "spekta ls",
+    "spekta find .",
     "rtk ls",
-    "find .",
+    "rtk find .",
+    "find src -exec cat {} \\;",
+    "find src -maxdepth 2",
     "git status",
     "npm test",
     "npm run build",
