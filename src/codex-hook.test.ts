@@ -91,7 +91,33 @@ describe("Codex inspection hook parser", () => {
   );
 
   it.each([
+    ["cat README.md", "'spekta' 'read' 'README.md'"],
+    ["cat 'path with spaces.md'", "'spekta' 'read' 'path with spaces.md'"],
+    ["cat 'quote'\\''and;*.md'", "'spekta' 'read' 'quote'\\''and;*.md'"],
+    ["sed -n '2,4p' README.md", "'spekta' 'read' 'README.md[2,4]'"],
+    ["sed -n '7,$p' README.md", "'spekta' 'read' 'README.md[7,$]'"],
+  ])("routes representable read %s", (input, expected) =>
+    expect(rewritten(input)).toBe(expected),
+  );
+
+  it.each([
     "ls -a",
+    "cat",
+    "cat -n README.md",
+    "cat README.md other.md",
+    "cat -",
+    "cat README.md | head",
+    "cat $HOME",
+    "cat *.md",
+    "sed -n '1,4p' README.md extra.md",
+    "sed -e 'p' README.md",
+    "sed -n '0,4p' README.md",
+    "sed -n '5,4p' README.md",
+    "sed -n '2,4p' 'README.md[1,3]'",
+    "sed -n '1,4d' README.md",
+    "sed -n '1,4p'",
+    "sed -n '1,4p' -",
+    "cat 'README.md[2,4]'",
     "ls --",
     "ls a b",
     "ls;whoami",
@@ -110,6 +136,7 @@ describe("Codex inspection hook parser", () => {
     "command ls",
     "bash -c ls",
     "spekta ls",
+    "spekta read README.md",
     "spekta find .",
     "rtk ls",
     "rtk find .",
@@ -149,7 +176,7 @@ describe("Codex inspection hook parser", () => {
 
   it("preserves every execution setting while changing only the command", () => {
     const originalInput = {
-      command: "ls",
+      command: "cat README.md",
       cwd: "/other/worktree",
       env: { SPEKTA_TEST: "kept" },
       max_output_tokens: 1234,
@@ -157,7 +184,7 @@ describe("Codex inspection hook parser", () => {
       opaque_runtime_option: { nested: true },
     };
     const raw = rewriteEvent({
-      ...event("ls"),
+      ...event("cat README.md"),
       tool_input: originalInput,
     });
     expect(raw).toBe(
@@ -167,7 +194,7 @@ describe("Codex inspection hook parser", () => {
           permissionDecision: "allow",
           updatedInput: {
             ...originalInput,
-            command: "'spekta' 'ls'",
+            command: "'spekta' 'read' 'README.md'",
           },
         },
       }),

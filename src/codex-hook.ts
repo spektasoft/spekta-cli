@@ -82,6 +82,8 @@ function parseLiteralCommand(
   if (words.length < 1) return;
   if (words[0] === "git") {
     if (!isSupportedGitProxyRequest(words.slice(1), cwd)) return;
+  } else if (["cat", "sed"].includes(words[0])) {
+    // Read forms are classified and translated after tokenization.
   } else if (
     !["ls", "find"].includes(words[0]) ||
     !isSupportedDiscoveryRequest(words[0], words.slice(1))
@@ -92,6 +94,30 @@ function parseLiteralCommand(
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
+function translateRead(words: string[]): string[] | undefined {
+  const command = words[0];
+  if (command === "cat") {
+    if (words.length !== 2 || words[1] === "-" || words[1].startsWith("-"))
+      return;
+    // Spekta uses this suffix to encode ranges, so routing it would change a
+    // literal filename into a different read request.
+    if (/\[(?:\d+|\$)?(?:,(?:\d+|\$))?\]$/.test(words[1])) return;
+    return ["spekta", "read", words[1]];
+  }
+  if (command !== "sed" || words.length !== 4 || words[1] !== "-n") return;
+  const range = words[2].match(/^([1-9]\d*)(?:,(\d+|\$))?p$/);
+  const path = words[3];
+  if (!range || path === "-" || path.startsWith("-")) return;
+  if (range[2] !== undefined && range[2] !== "$") {
+    const end = Number.parseInt(range[2], 10);
+    if (end < Number.parseInt(range[1], 10)) return;
+  }
+  if (/\[(?:\d+|\$)?(?:,(?:\d+|\$))?\]$/.test(path)) return;
+  const start = range[1];
+  const end = range[2] ?? "$";
+  return ["spekta", "read", `${path}[${start},${end}]`];
 }
 
 export function rewriteEvent(value: unknown): string | undefined {
@@ -111,7 +137,11 @@ export function rewriteEvent(value: unknown): string | undefined {
   if (typeof command !== "string") throw new Error("invalid event");
   const words = parseLiteralCommand(command, event.cwd);
   if (!words) return;
-  const rewrittenCommand = ["spekta", ...words].map(shellQuote).join(" ");
+  const read = translateRead(words);
+  if (["cat", "sed"].includes(words[0]) && !read) return;
+  const rewrittenCommand = (read ?? ["spekta", ...words])
+    .map(shellQuote)
+    .join(" ");
   return JSON.stringify({
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
