@@ -105,7 +105,7 @@ export function rewriteEvent(value: unknown): string | undefined {
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "allow",
-      updatedInput: { command: rewrittenCommand },
+      updatedInput: { ...event.tool_input, command: rewrittenCommand },
     },
   });
 }

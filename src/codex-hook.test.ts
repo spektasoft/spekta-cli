@@ -115,6 +115,33 @@ describe("Codex inspection hook parser", () => {
     );
   });
 
+  it("preserves every execution setting while changing only the command", () => {
+    const originalInput = {
+      command: "ls",
+      cwd: "/other/worktree",
+      env: { SPEKTA_TEST: "kept" },
+      max_output_tokens: 1234,
+      yield_time_ms: 876,
+      opaque_runtime_option: { nested: true },
+    };
+    const raw = rewriteEvent({
+      ...event("ls"),
+      tool_input: originalInput,
+    });
+    expect(raw).toBe(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "allow",
+          updatedInput: {
+            ...originalInput,
+            command: "'spekta' 'ls'",
+          },
+        },
+      }),
+    );
+  });
+
   it.each([
     null,
     [],
