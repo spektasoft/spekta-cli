@@ -97,7 +97,7 @@ describe("readCodexStatus", () => {
     if (!instructions) throw new Error("Expected setup instructions");
     await writeFile(
       join(codex, "config.toml"),
-      `[mcp_servers.spekta]\ncommand = ${JSON.stringify(executable)}\n`,
+      `[mcp_servers.spekta]\ncommand = ${JSON.stringify(executable)}\nargs = ["mcp"]\n`,
     );
     await writeFile(
       join(codex, "hooks.json"),
@@ -128,6 +128,65 @@ describe("readCodexStatus", () => {
 });
 
 describe("previewCodexSetup", () => {
+  it("adds MCP only when explicitly requested and binds it to the Codex session cwd", async () => {
+    const root = await fixture();
+    const bin = join(root, "bin");
+    await mkdir(bin);
+    await writeFile(join(bin, "spekta-codex-hook"), "#!/bin/sh\n");
+    await chmod(join(bin, "spekta-codex-hook"), 0o755);
+    await writeFile(join(bin, "spekta"), "#!/bin/sh\n");
+    await chmod(join(bin, "spekta"), 0o755);
+    await writeFile(
+      join(bin, "codex"),
+      "#!/bin/sh\nprintf 'codex-cli 0.160.1\\n'\n",
+    );
+    await chmod(join(bin, "codex"), 0o755);
+
+    const defaults = await previewCodexSetup({ home: root, path: bin });
+    expect(defaults.files).toHaveLength(2);
+
+    const optedIn = await previewCodexSetup({
+      home: root,
+      path: bin,
+      mcp: true,
+    });
+    expect(optedIn.status).toBe("ready");
+    expect(optedIn.files).toHaveLength(3);
+    expect(optedIn.files[2]).toMatchObject({
+      path: join(root, ".codex", "config.toml"),
+      action: "create",
+    });
+    expect(optedIn.files[2].content).toContain(
+      `command = ${JSON.stringify(join(bin, "spekta"))}`,
+    );
+    expect(optedIn.files[2].content).toContain('args = ["mcp"]');
+    expect(optedIn.files[2].content).not.toContain("cwd =");
+  });
+
+  it("refuses MCP opt-in when the installed Codex runtime cannot be verified", async () => {
+    const root = await fixture();
+    const bin = join(root, "bin");
+    await mkdir(bin);
+    await writeFile(join(bin, "spekta-codex-hook"), "#!/bin/sh\n");
+    await chmod(join(bin, "spekta-codex-hook"), 0o755);
+    await writeFile(join(bin, "spekta"), "#!/bin/sh\n");
+    await chmod(join(bin, "spekta"), 0o755);
+    await writeFile(
+      join(bin, "codex"),
+      "#!/bin/sh\nprintf 'codex-cli 0.159.9\\n'\n",
+    );
+    await chmod(join(bin, "codex"), 0o755);
+
+    const plan = await previewCodexSetup({ home: root, path: bin, mcp: true });
+
+    expect(plan.status).toBe("refused");
+    expect(plan.files).toEqual([]);
+    expect(plan.diagnostics.join(" ")).toMatch(
+      /incompatible.*older than 0\.160\.1/i,
+    );
+    expect(await readdir(root)).toEqual(["bin"]);
+  });
+
   it("previews exact global hook and usage instructions without creating artifacts", async () => {
     const root = await fixture();
     const bin = join(root, "bin with spaces");
@@ -456,6 +515,38 @@ describe("previewCodexSetup", () => {
 });
 
 describe("applyCodexSetup", () => {
+  it("installs and updates opt-in MCP registration while preserving other servers", async () => {
+    const root = await fixture();
+    const codex = join(root, ".codex");
+    const bin = join(root, "bin");
+    await mkdir(codex);
+    await mkdir(bin);
+    for (const name of ["spekta-codex-hook", "spekta"]) {
+      await writeFile(join(bin, name), "#!/bin/sh\n");
+      await chmod(join(bin, name), 0o755);
+    }
+    await writeFile(
+      join(bin, "codex"),
+      "#!/bin/sh\nprintf 'codex-cli 0.160.1\\n'\n",
+    );
+    await chmod(join(bin, "codex"), 0o755);
+    const configPath = join(codex, "config.toml");
+    await writeFile(configPath, '[mcp_servers.other]\ncommand = "other"\n');
+    const options = { home: root, path: bin, mcp: true };
+
+    const installed = await applyCodexSetup(options);
+    expect(installed.status).toBe("configured");
+    expect(installed.files.at(-1)?.action).toBe("update");
+    const before = await readFile(configPath, "utf8");
+    expect(before).toContain("[mcp_servers.other]");
+    expect(before).toContain("[mcp_servers.spekta]");
+    expect(before).not.toContain("cwd =");
+
+    const repeated = await applyCodexSetup(options);
+    expect(repeated.files.at(-1)?.action).toBe("unchanged");
+    expect(await readFile(configPath, "utf8")).toBe(before);
+  });
+
   it("installs once and keeps repeated setup unchanged", async () => {
     const root = await fixture();
     const bin = join(root, "bin");
@@ -669,6 +760,25 @@ describe("previewCodexUninstall", () => {
     expect(plan.files[1].content).toBe("Keep this prose.\n");
     expect(await readFile(hooksPath, "utf8")).toBe(beforeHooks);
     expect(await readFile(instructionsPath, "utf8")).toBe(beforeInstructions);
+  });
+
+  it("removes only a recognized Spekta MCP section and preserves other servers", async () => {
+    const root = await fixture();
+    const codex = join(root, ".codex");
+    await mkdir(codex);
+    const config =
+      '[mcp_servers.keep]\ncommand = "keep"\n\n[mcp_servers.spekta]\ncommand = "/opt/bin/spekta"\nargs = ["mcp"]\n';
+    await writeFile(join(codex, "config.toml"), config);
+
+    const plan = await previewCodexUninstall({ home: root });
+
+    expect(plan).toMatchObject({
+      status: "ready",
+      files: [{ path: join(codex, "config.toml"), action: "update" }],
+    });
+    expect(plan.files[0].content).toBe(
+      '[mcp_servers.keep]\ncommand = "keep"\n',
+    );
   });
 
   it("preserves malformed or edited ownership and diagnoses it", async () => {

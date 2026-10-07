@@ -8,6 +8,10 @@ import {
 } from "node:fs/promises";
 import { constants } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFile = promisify(execFileCallback);
 
 export const CODEX_USAGE_START = "<!-- spekta:codex-usage:start -->";
 export const CODEX_USAGE_END = "<!-- spekta:codex-usage:end -->";
@@ -36,6 +40,7 @@ export interface CodexSetupOptions {
   home: string;
   path: string;
   cwd?: string;
+  mcp?: boolean;
 }
 
 export type CodexComponentState =
@@ -255,6 +260,7 @@ const ownedInstructions = `${CODEX_USAGE_START}
 Prefer the Spekta CLI for supported workspace inspection: use \`spekta ls\`, \`spekta read\`, \`spekta grep\`, and supported \`spekta git\` inspections. Use the configured Spekta MCP server only when the CLI is unavailable and MCP has been enabled.
 
 Use Spekta for eligible file discovery, reading, searching, and supported Git inspection. Retrieve only the files and ranges needed to answer the current question; narrow broad searches by symbol, path, pattern, or glob, then read selected files. Unsupported or compound commands continue through the normal shell path. If Spekta rejects an operation under policy, do not retry it through MCP or the original executable.
+MCP registration changes runtime setup only. Start a new Codex session to load an opt-in server; it does not dynamically add tools to an existing session.
 ${CODEX_USAGE_END}`;
 
 async function findHook(pathValue: string): Promise<string | undefined> {
@@ -268,6 +274,153 @@ async function findHook(pathValue: string): Promise<string | undefined> {
     }
   }
   return undefined;
+}
+
+async function findExecutable(
+  name: string,
+  pathValue: string,
+): Promise<string | undefined> {
+  for (const directory of pathValue.split(delimiter).filter(Boolean)) {
+    const candidate = resolve(directory, name);
+    try {
+      await access(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // Continue until a usable executable is found.
+    }
+  }
+  return undefined;
+}
+
+async function verifyCodexSessionCwdContract(
+  pathValue: string,
+): Promise<string | undefined> {
+  const codex = await findExecutable("codex", pathValue);
+  if (!codex)
+    return "Codex MCP opt-in is incompatible: Codex CLI 0.160.1 or newer is required to select the session workspace for stdio servers.";
+  try {
+    const { stdout } = await execFile(codex, ["--version"], { timeout: 3000 });
+    const match = stdout.match(/codex-cli\s+(\d+)\.(\d+)\.(\d+)/i);
+    if (!match) throw new Error("unrecognized version output");
+    const version = match.slice(1).map(Number);
+    const minimum = [0, 160, 1];
+    const older =
+      version.findIndex((part, index) => part !== minimum[index]) >= 0
+        ? version.reduce(
+            (result, part, index) =>
+              result ||
+              (part === minimum[index] ? 0 : part < minimum[index] ? -1 : 1),
+            0,
+          ) < 0
+        : false;
+    if (older) throw new Error("version is older than 0.160.1");
+    return undefined;
+  } catch (error) {
+    return `Codex MCP opt-in is incompatible: could not verify the session-workspace launch contract (${error instanceof Error ? error.message : String(error)}).`;
+  }
+}
+
+function buildMcpConfig(
+  original: string | undefined,
+  executable: string,
+): string {
+  const header = /^\s*\[mcp_servers\.spekta\]\s*(?:#.*)?$/;
+  const lines = (original ?? "").split(/\r?\n/);
+  const start = lines.findIndex((line) => header.test(line));
+  const sectionLines: string[] = [];
+  if (start >= 0) {
+    if (lines.filter((line) => header.test(line)).length !== 1)
+      throw new Error(
+        "config.toml has duplicate Spekta MCP sections; preserving it",
+      );
+    let end = lines.length;
+    for (let index = start + 1; index < lines.length; index += 1) {
+      if (/^\s*\[/.test(lines[index])) {
+        end = index;
+        break;
+      }
+    }
+    sectionLines.push(...lines.slice(start + 1, end));
+    const meaningful = sectionLines
+      .map((line) => line.replace(/#.*$/, "").trim())
+      .filter(Boolean);
+    if (
+      meaningful.length !== 2 ||
+      !meaningful.some((line) => /^command\s*=/.test(line)) ||
+      !meaningful.some((line) => /^args\s*=/.test(line))
+    )
+      throw new Error(
+        "config.toml has conflicting or malformed Spekta MCP ownership; preserving it",
+      );
+    let command: unknown;
+    let args: unknown;
+    try {
+      command = JSON.parse(
+        meaningful
+          .find((line) => /^command\s*=/.test(line))!
+          .split("=")
+          .slice(1)
+          .join("=")
+          .trim(),
+      );
+      args = JSON.parse(
+        meaningful
+          .find((line) => /^args\s*=/.test(line))!
+          .split("=")
+          .slice(1)
+          .join("=")
+          .trim(),
+      );
+    } catch {
+      throw new Error(
+        "config.toml has conflicting or malformed Spekta MCP ownership; preserving it",
+      );
+    }
+    if (
+      typeof command !== "string" ||
+      !command.split(/[\\/]/).at(-1)?.startsWith("spekta") ||
+      JSON.stringify(args) !== '["mcp"]'
+    )
+      throw new Error(
+        "config.toml has conflicting Spekta MCP ownership; preserving it",
+      );
+    const updated = lines.slice(start, end);
+    const commandIndex = updated.findIndex((line) =>
+      /^\s*command\s*=/.test(line),
+    );
+    updated[commandIndex] = `command = ${JSON.stringify(executable)}`;
+    lines.splice(start, end - start, ...updated);
+    return `${lines.join("\n").replace(/\n*$/, "\n")}`;
+  }
+  const prefix = (original ?? "").replace(/\s*$/, "");
+  return `${prefix}${prefix ? "\n\n" : ""}[mcp_servers.spekta]\ncommand = ${JSON.stringify(executable)}\nargs = ["mcp"]\n`;
+}
+
+function removeMcpConfig(original: string): string | undefined {
+  const lines = original.split(/\r?\n/);
+  const header = /^\s*\[mcp_servers\.spekta\]\s*(?:#.*)?$/;
+  const start = lines.findIndex((line) => header.test(line));
+  if (start < 0) return original;
+  if (lines.filter((line) => header.test(line)).length !== 1)
+    throw new Error(
+      "config.toml has duplicate Spekta MCP sections; preserving it",
+    );
+  let end = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (/^\s*\[/.test(lines[index])) {
+      end = index;
+      break;
+    }
+  }
+  // Reuse the ownership validator before deleting anything.
+  buildMcpConfig(original, "spekta");
+  let removeStart = start;
+  while (removeStart > 0 && lines[removeStart - 1].trim() === "")
+    removeStart -= 1;
+  const result = [...lines.slice(0, removeStart), ...lines.slice(end)]
+    .join("\n")
+    .replace(/\n*$/, "\n");
+  return /^\s*$/.test(result) ? undefined : result;
 }
 
 async function readOptional(path: string): Promise<string | undefined> {
@@ -490,6 +643,19 @@ async function inspectMcp(
     return value.slice(1, -1);
   };
   const command = decodeTomlString(commandValue);
+  const argsValue = body.match(/^\s*args\s*=\s*(\[[^\]]*\])\s*(?:#.*)?$/m)?.[1];
+  const cwdValue = body.match(/^\s*cwd\s*=/m);
+  let args: unknown;
+  try {
+    args = argsValue === undefined ? undefined : JSON.parse(argsValue);
+  } catch {
+    args = undefined;
+  }
+  if (cwdValue || JSON.stringify(args) !== '["mcp"]')
+    return componentStatus(
+      "conflicting",
+      "The Spekta MCP registration does not use the verified session-workspace launch contract.",
+    );
   if (!command && decodeTomlString(urlValue))
     return componentStatus(
       "configured",
@@ -708,6 +874,7 @@ export async function previewCodexUninstall(
   for (const [path, remove] of [
     [join(codexDirectory, "hooks.json"), removeOwnedHooks],
     [join(codexDirectory, "AGENTS.md"), removeOwnedInstructions],
+    [join(codexDirectory, "config.toml"), removeMcpConfig],
   ] as const) {
     let original: string | undefined;
     try {
@@ -821,6 +988,28 @@ export async function previewCodexSetup(
       "spekta-codex-hook was not found as an executable on PATH",
     );
 
+  let mcpContent: string | undefined;
+  let mcpOriginal: string | undefined;
+  let mcpPath: string | undefined;
+  if (options.mcp) {
+    const incompatibility = await verifyCodexSessionCwdContract(options.path);
+    if (incompatibility) diagnostics.push(incompatibility);
+    const mcpExecutable = await findExecutable("spekta", options.path);
+    if (!mcpExecutable)
+      diagnostics.push(
+        "spekta MCP opt-in is incompatible: spekta was not found as an executable on PATH",
+      );
+    mcpPath = join(codexDirectory, "config.toml");
+    try {
+      const original = await readOptional(mcpPath);
+      mcpOriginal = original;
+      if (!mcpExecutable) throw new Error("spekta executable is unavailable");
+      mcpContent = buildMcpConfig(original, mcpExecutable);
+    } catch (error) {
+      diagnostics.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   let hooksOriginal: string | undefined;
   let instructionsOriginal: string | undefined;
   try {
@@ -872,6 +1061,20 @@ export async function previewCodexSetup(
               : "update",
         content: instructionsContent,
       },
+      ...(options.mcp && mcpPath
+        ? [
+            {
+              path: mcpPath,
+              action:
+                mcpOriginal === undefined
+                  ? ("create" as const)
+                  : mcpContent === mcpOriginal
+                    ? ("unchanged" as const)
+                    : ("update" as const),
+              content: mcpContent ?? "",
+            },
+          ]
+        : []),
     ],
   };
 }
@@ -958,19 +1161,26 @@ export async function applyCodexSetup(
 }
 
 export async function runCodexSetup(args: string[] = []): Promise<void> {
-  const isApply = args[2] === "--apply";
+  const isApply = args.includes("--apply");
+  const isDryRun = args.includes("--dry-run");
+  const mcp = args.includes("--mcp");
   if (
-    args.length !== 3 ||
     args[0] !== "--global" ||
     args[1] !== "--codex" ||
-    (!isApply && args[2] !== "--dry-run")
-  ) {
-    throw new Error("Usage: spekta setup --global --codex --dry-run|--apply");
-  }
+    isApply === isDryRun ||
+    args.some(
+      (arg) =>
+        !["--global", "--codex", "--apply", "--dry-run", "--mcp"].includes(arg),
+    )
+  )
+    throw new Error(
+      "Usage: spekta setup --global --codex --dry-run|--apply [--mcp]",
+    );
   const options = {
     home: process.env.HOME ?? "",
     path: process.env.PATH ?? "",
     cwd: process.cwd(),
+    mcp,
   };
   if (isApply) {
     const result = await applyCodexSetup(options);
@@ -983,7 +1193,7 @@ export async function runCodexSetup(args: string[] = []): Promise<void> {
     for (const file of result.files)
       console.log(`${file.action.toUpperCase()} ${file.path}`);
     console.log(
-      "Codex configuration installed; runtime activation remains unverified.",
+      `Codex configuration installed${mcp ? " with optional MCP registration" : ""}; runtime activation remains unverified.`,
     );
     return;
   }
