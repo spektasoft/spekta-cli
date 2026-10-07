@@ -313,7 +313,8 @@ describe("spekta mcp process", () => {
       expect(succeeding.result?.isError).not.toBe(true);
       const result = await client.close();
       expect(result.code).toBe(0);
-      expect(result.stderr).toContain("MCP Tool Execution Error [spekta_read]");
+      // Tool failures are returned through MCP; do not duplicate them on stderr.
+      expect(result.stderr).toBe("");
       expect(
         result.messages.every((message) => message.jsonrpc === "2.0"),
       ).toBe(true);

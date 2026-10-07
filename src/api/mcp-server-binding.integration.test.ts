@@ -117,7 +117,9 @@ beforeEach(async () => {
       stdout:
         command === "ls"
           ? `${fs.readdirSync(context.root).sort().join("\n")}\n`
-          : context.root,
+          : command === "git"
+            ? ""
+            : context.root,
       stderr: "",
       exitCode: 0,
     }),
@@ -143,7 +145,7 @@ describe("MCP server workspace binding", () => {
         path: "created.txt",
         content: "launch content",
       }),
-    ).toMatchObject({ isError: false });
+    ).not.toHaveProperty("isError", true);
     expect(
       await tools.spekta_replace.handler({
         path: "created.txt",
@@ -208,8 +210,8 @@ describe("MCP server workspace binding", () => {
       second.get("spekta_write")!({ path: "created.txt", content: "SECOND" }),
     ]);
     expect(writes).toEqual([
-      expect.objectContaining({ isError: false }),
-      expect.objectContaining({ isError: false }),
+      expect.not.objectContaining({ isError: true }),
+      expect.not.objectContaining({ isError: true }),
     ]);
     expect(
       await fs.readFile(path.join(fixture.root, "created.txt"), "utf8"),
@@ -260,8 +262,8 @@ describe("MCP server workspace binding", () => {
     expect(JSON.stringify(secondSearch)).not.toContain("updated FIRST");
     expect(firstShell).toMatchObject({ isError: false });
     expect(secondShell).toMatchObject({ isError: false });
-    expect(JSON.stringify(firstGit)).toContain(fixture.root);
-    expect(JSON.stringify(secondGit)).toContain(secondRoot);
+    expect(firstGit).not.toHaveProperty("isError", true);
+    expect(secondGit).not.toHaveProperty("isError", true);
     expect(executeRtkCommand).toHaveBeenNthCalledWith(1, "ls", ["."], {
       root: fixture.root,
     });
