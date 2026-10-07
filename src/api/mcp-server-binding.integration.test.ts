@@ -177,6 +177,44 @@ describe("MCP server workspace binding", () => {
     expect(executeRtkCommand).toHaveBeenCalledOnce();
   });
 
+  it("binds a nested launch workspace and denies identically named parent and outside files", async () => {
+    const nestedRoot = path.join(fixture.root, "nested");
+    await fs.ensureDir(nestedRoot);
+    await fs.writeFile(
+      path.join(fixture.root, "identity.txt"),
+      "PARENT_WORKSPACE_SENTINEL\n",
+    );
+    await fs.writeFile(
+      path.join(nestedRoot, "identity.txt"),
+      "NESTED_WORKSPACE_SENTINEL\n",
+    );
+    const outsideTarget = path.join(fixture.outside, "secret.txt");
+
+    process.chdir(nestedRoot);
+    await runMcpServer();
+    const tools = registeredServers[0];
+    const nestedRead = await tools.get("spekta_read")!({
+      paths: ["identity.txt"],
+    });
+    const parentRead = await tools.get("spekta_read")!({
+      paths: ["../identity.txt"],
+    });
+    const outsideRead = await tools.get("spekta_read")!({
+      paths: [outsideTarget],
+    });
+
+    expect(JSON.stringify(nestedRead)).toContain("NESTED_WORKSPACE_SENTINEL");
+    expect(JSON.stringify(nestedRead)).not.toContain(
+      "PARENT_WORKSPACE_SENTINEL",
+    );
+    expect(parentRead).toHaveProperty("isError", true);
+    expect(JSON.stringify(parentRead)).not.toContain(
+      "PARENT_WORKSPACE_SENTINEL",
+    );
+    expect(outsideRead).toHaveProperty("isError", true);
+    expect(JSON.stringify(outsideRead)).not.toContain("EXTERNAL");
+  });
+
   it("keeps two launched servers bound through concurrent read, write, replace, search, and shell calls", async () => {
     const secondRoot = path.join(fixture.base, "second-repo");
     await fs.ensureDir(secondRoot);
