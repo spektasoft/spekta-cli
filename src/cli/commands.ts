@@ -17,7 +17,11 @@ import { runDiagnosticInteractive } from "../commands/diagnostic-interactive";
 import { runRtkProxy } from "../commands/proxy";
 import { searchableSelect } from "../ui/ui";
 import { parseFilePathWithRange } from "../utils/read-utils";
-import { runCodexSetup, runCodexUninstall } from "../commands/codex-setup";
+import {
+  runCodexSetup,
+  runCodexStatus,
+  runCodexUninstall,
+} from "../commands/codex-setup";
 
 export interface CommandDefinition {
   name: string;
@@ -114,6 +118,11 @@ export const COMMANDS: Record<string, CommandDefinition> = {
   uninstall: {
     name: "Uninstall Codex Integration",
     run: runCodexUninstall,
+    hidden: true,
+  },
+  status: {
+    name: "Show Codex Integration Status",
+    run: runCodexStatus,
     hidden: true,
   },
 };

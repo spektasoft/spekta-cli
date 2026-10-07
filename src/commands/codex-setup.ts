@@ -38,6 +38,25 @@ export interface CodexSetupOptions {
   cwd?: string;
 }
 
+export type CodexComponentState =
+  "absent" | "configured" | "conflicting" | "broken" | "verified";
+
+export interface CodexComponentStatus {
+  state: CodexComponentState;
+  details: string[];
+}
+
+export interface CodexStatus {
+  components: {
+    hooks: CodexComponentStatus;
+    instructions: CodexComponentStatus;
+    mcp: CodexComponentStatus;
+  };
+  trust: "unknown";
+  activation: "unknown";
+  verificationSteps: string[];
+}
+
 export interface CodexSetupApplyResult {
   status: "configured" | "refused" | "failed";
   activation: "unverified";
@@ -291,6 +310,238 @@ function isRecognizedOwnedHook(value: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+function componentStatus(
+  state: CodexComponentState,
+  ...details: string[]
+): CodexComponentStatus {
+  return { state, details };
+}
+
+async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
+  let content: string | undefined;
+  try {
+    content = await readOptional(path);
+  } catch (error) {
+    return componentStatus(
+      "broken",
+      `Unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (content === undefined) return componentStatus("absent");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return componentStatus("conflicting", `${path} contains malformed JSON.`);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    return componentStatus(
+      "conflicting",
+      `${path} has an ambiguous structure.`,
+    );
+  const hooks = (parsed as Record<string, unknown>).hooks;
+  if (
+    hooks === undefined ||
+    !hooks ||
+    typeof hooks !== "object" ||
+    Array.isArray(hooks)
+  )
+    return componentStatus("absent");
+  const entries = (hooks as Record<string, unknown>).PreToolUse;
+  if (entries === undefined) return componentStatus("absent");
+  if (!Array.isArray(entries))
+    return componentStatus(
+      "conflicting",
+      `${path} has an ambiguous PreToolUse definition.`,
+    );
+  const owned = entries.filter((entry) =>
+    JSON.stringify(entry).includes("spekta-codex-hook"),
+  );
+  if (owned.length === 0) return componentStatus("absent");
+  if (owned.length !== 1 || !isRecognizedOwnedHook(owned[0]))
+    return componentStatus(
+      "conflicting",
+      `${path} has malformed or duplicate Spekta hook ownership.`,
+    );
+  const command = JSON.parse(
+    String((owned[0] as { hooks: { command: string }[] }).hooks[0].command),
+  ) as string;
+  try {
+    await access(command, constants.X_OK);
+  } catch {
+    return componentStatus(
+      "broken",
+      `Configured hook executable is missing or not executable: ${command}`,
+    );
+  }
+  return componentStatus("configured", `Owned hook is configured in ${path}.`);
+}
+
+async function inspectInstructions(
+  path: string,
+): Promise<CodexComponentStatus> {
+  let content: string | undefined;
+  try {
+    content = await readOptional(path);
+  } catch (error) {
+    return componentStatus(
+      "broken",
+      `Unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (content === undefined) return componentStatus("absent");
+  const starts = content.split(CODEX_USAGE_START).length - 1;
+  const ends = content.split(CODEX_USAGE_END).length - 1;
+  if (starts === 0 && ends === 0) return componentStatus("absent");
+  if (starts !== 1 || ends !== 1)
+    return componentStatus(
+      "conflicting",
+      `${path} has malformed or duplicate Spekta ownership markers.`,
+    );
+  try {
+    const owned = buildInstructions(content);
+    return owned === content
+      ? componentStatus(
+          "configured",
+          `Owned usage instructions are present in ${path}.`,
+        )
+      : componentStatus(
+          "conflicting",
+          `${path} contains unfamiliar changes to the Spekta instructions.`,
+        );
+  } catch (error) {
+    return componentStatus(
+      "conflicting",
+      `${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function executableIsAvailable(
+  command: string,
+  pathValue: string,
+): Promise<boolean> {
+  const candidates = command.includes("/")
+    ? [resolve(command)]
+    : pathValue
+        .split(delimiter)
+        .filter(Boolean)
+        .map((directory) => resolve(directory, command));
+  for (const candidate of candidates) {
+    try {
+      await access(candidate, constants.X_OK);
+      return true;
+    } catch {
+      // Keep looking through PATH entries.
+    }
+  }
+  return false;
+}
+
+async function inspectMcp(
+  path: string,
+  pathValue: string,
+): Promise<CodexComponentStatus> {
+  let content: string | undefined;
+  try {
+    content = await readOptional(path);
+  } catch (error) {
+    return componentStatus(
+      "broken",
+      `Unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (content === undefined) return componentStatus("absent");
+  const lines = content.split(/\r?\n/);
+  const sections = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => /^\s*\[/.test(line));
+  const mcpHeader =
+    /^\s*\[mcp_servers\.(?:spekta|"spekta"|'spekta')\]\s*(?:#.*)?$/;
+  const section = sections.find(({ line }) => mcpHeader.test(line));
+  if (!section) {
+    if (/\[mcp_servers\.(?:spekta|"spekta"|'spekta')\b/.test(content))
+      return componentStatus(
+        "conflicting",
+        `${path} has an ambiguous spekta MCP section; inspect it manually.`,
+      );
+    return componentStatus("absent");
+  }
+  const end =
+    sections.find(({ index }) => index > section.index)?.index ?? lines.length;
+  const body = lines.slice(section.index + 1, end).join("\n");
+  const commandValue = body.match(
+    /^\s*command\s*=\s*("(?:\\.|[^"\\])*"|'[^']*')\s*(?:#.*)?$/m,
+  )?.[1];
+  const urlValue = body.match(
+    /^\s*url\s*=\s*("(?:\\.|[^"\\])*"|'[^']*')\s*(?:#.*)?$/m,
+  )?.[1];
+  const decodeTomlString = (value: string | undefined): string | undefined => {
+    if (!value) return undefined;
+    if (value.startsWith('"')) {
+      try {
+        return JSON.parse(value) as string;
+      } catch {
+        return undefined;
+      }
+    }
+    return value.slice(1, -1);
+  };
+  const command = decodeTomlString(commandValue);
+  if (!command && decodeTomlString(urlValue))
+    return componentStatus(
+      "configured",
+      "A remote spekta MCP server is configured; runtime connectivity and session binding are unverified.",
+    );
+  if (!command)
+    return componentStatus(
+      "conflicting",
+      "The spekta MCP section has no interpretable command or URL.",
+    );
+  if (!(await executableIsAvailable(command, pathValue))) {
+    return componentStatus(
+      "broken",
+      `Configured MCP executable is missing or not executable: ${command}`,
+    );
+  }
+  return componentStatus(
+    "configured",
+    "A spekta MCP server is configured; runtime workspace binding is unverified.",
+  );
+}
+
+export async function readCodexStatus(
+  options: CodexSetupOptions,
+): Promise<CodexStatus> {
+  const codexDirectory = join(options.home, ".codex");
+  const hooksPath = join(codexDirectory, "hooks.json");
+  const instructionsPath = join(codexDirectory, "AGENTS.md");
+  let hooks = await inspectOwnedHook(hooksPath);
+  const conflicts = await findRewriteConflicts(options);
+  if (conflicts.length && hooks.state !== "conflicting") {
+    hooks = componentStatus(
+      "conflicting",
+      ...conflicts
+        .slice(0, 20)
+        .map(({ source, message }) => `${source}: ${message}`),
+    );
+  }
+  return {
+    components: {
+      hooks,
+      instructions: await inspectInstructions(instructionsPath),
+      mcp: await inspectMcp(join(codexDirectory, "config.toml"), options.path),
+    },
+    trust: "unknown",
+    activation: "unknown",
+    verificationSteps: [
+      "Start a new supported Codex session with this workspace open.",
+      "Run a supported standalone inspection command and confirm the Spekta hook runs exactly once.",
+      "Confirm Codex has trusted and loaded the configured hook and usage instructions; configuration alone does not prove activation.",
+    ],
+  };
 }
 
 function buildHooks(original: string | undefined, executable: string): string {
@@ -791,4 +1042,23 @@ export async function runCodexUninstall(args: string[] = []): Promise<void> {
   if (plan.files.length === 0)
     console.log("No Spekta Codex artifacts were found.");
   console.log("Preview only; no Codex configuration or files were changed.");
+}
+
+export async function runCodexStatus(args: string[] = []): Promise<void> {
+  if (args.length !== 2 || args[0] !== "--global" || args[1] !== "--codex") {
+    throw new Error("Usage: spekta status --global --codex");
+  }
+  const status = await readCodexStatus({
+    home: process.env.HOME ?? "",
+    path: process.env.PATH ?? "",
+    cwd: process.cwd(),
+  });
+  for (const [name, component] of Object.entries(status.components)) {
+    console.log(`${name}: ${component.state}`);
+    for (const detail of component.details) console.log(`  ${detail}`);
+  }
+  console.log(`trust: ${status.trust}`);
+  console.log(`activation: ${status.activation}`);
+  console.log("Runtime verification steps:");
+  for (const step of status.verificationSteps) console.log(`- ${step}`);
 }

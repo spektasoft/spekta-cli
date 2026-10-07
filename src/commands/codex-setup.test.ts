@@ -15,6 +15,7 @@ import {
   CODEX_USAGE_START,
   applyCodexSetup,
   applyCodexUninstall,
+  readCodexStatus,
   previewCodexUninstall,
   previewCodexSetup,
 } from "./codex-setup.js";
@@ -40,6 +41,90 @@ afterEach(async () => {
       .splice(0)
       .map((root) => rm(root, { recursive: true, force: true })),
   );
+});
+
+describe("readCodexStatus", () => {
+  it("reports absent integration components without creating Codex configuration", async () => {
+    const root = await fixture();
+
+    const status = await readCodexStatus({ home: root, path: "", cwd: root });
+
+    expect(status.components).toMatchObject({
+      hooks: { state: "absent" },
+      instructions: { state: "absent" },
+      mcp: { state: "absent" },
+    });
+    expect(status.verificationSteps.length).toBeGreaterThan(0);
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  it("keeps setup configuration unverified and reports a missing hook executable as broken", async () => {
+    const root = await fixture();
+    const bin = join(root, "bin");
+    await mkdir(bin);
+    await writeFile(join(bin, "spekta-codex-hook"), "#!/bin/sh\n");
+    await chmod(join(bin, "spekta-codex-hook"), 0o755);
+    await applyCodexSetup({ home: root, path: bin, cwd: root });
+    await rm(join(bin, "spekta-codex-hook"));
+
+    const status = await readCodexStatus({ home: root, path: bin, cwd: root });
+
+    expect(status.components).toMatchObject({
+      hooks: { state: "broken" },
+      instructions: { state: "configured" },
+      mcp: { state: "absent" },
+    });
+    expect(status.verificationSteps.join(" ")).toMatch(
+      /new supported Codex session/i,
+    );
+  });
+
+  it("reports hook ownership conflicts independently from configured instructions and MCP", async () => {
+    const root = await fixture();
+    const codex = join(root, ".codex");
+    const bin = join(root, "bin");
+    await mkdir(codex, { recursive: true });
+    await mkdir(bin);
+    const executable = join(bin, "spekta-mcp");
+    await writeFile(executable, "#!/bin/sh\n");
+    await chmod(executable, 0o755);
+    await writeFile(join(bin, "spekta-codex-hook"), "#!/bin/sh\n");
+    await chmod(join(bin, "spekta-codex-hook"), 0o755);
+    const setup = await previewCodexSetup({ home: root, path: bin });
+    const instructions = setup.files.find(({ path }) =>
+      path.endsWith("AGENTS.md"),
+    );
+    if (!instructions) throw new Error("Expected setup instructions");
+    await writeFile(
+      join(codex, "config.toml"),
+      `[mcp_servers.spekta]\ncommand = ${JSON.stringify(executable)}\n`,
+    );
+    await writeFile(
+      join(codex, "hooks.json"),
+      JSON.stringify({
+        hooks: {
+          PreToolUse: [
+            {
+              matcher: "^(Bash)$",
+              hooks: [
+                { type: "command", command: '"/missing/spekta-codex-hook"' },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    await writeFile(join(codex, "AGENTS.md"), instructions.content);
+
+    const status = await readCodexStatus({ home: root, path: bin, cwd: root });
+
+    expect(status.components).toMatchObject({
+      hooks: { state: "conflicting" },
+      instructions: { state: "configured" },
+      mcp: { state: "configured" },
+    });
+    expect(status).toMatchObject({ trust: "unknown", activation: "unknown" });
+  });
 });
 
 describe("previewCodexSetup", () => {
