@@ -51,10 +51,24 @@ async function invoke(args: string[], seeded = false, operational = false) {
   const workspace = path.join(root, "workspace");
   const home = path.join(root, "home");
   const tmp = path.join(root, "tmp");
+  const backendBin = path.join(root, "backend-bin");
+  const backendMarker = path.join(root, "backend-invocations.txt");
   const stdoutPath = path.join(root, "stdout.txt");
   const stderrPath = path.join(root, "stderr.txt");
   await fs.ensureDir(workspace);
   await fs.ensureDir(tmp);
+  if (!operational) {
+    await fs.ensureDir(backendBin);
+    for (const backend of ["rtk", "git", "find"]) {
+      const executable = path.join(backendBin, backend);
+      await fs.writeFile(
+        executable,
+        `#!/bin/sh\nprintf '%s\\n' '${backend}' >> "$SPEKTA_BACKEND_MARKER"\nexit 0\n`,
+        { mode: 0o755 },
+      );
+      await fs.chmod(executable, 0o755);
+    }
+  }
   if (operational) {
     await fs.writeFile(path.join(workspace, "--help"), "literal-help-file\n");
     await fs.writeFile(path.join(workspace, "-h"), "literal-short-help-file\n");
@@ -105,9 +119,10 @@ async function invoke(args: string[], seeded = false, operational = false) {
       SPEKTA_ASSET_ROOT_OVERRIDE: operational
         ? path.dirname(entry)
         : path.join(root, "missing-assets"),
-      PATH: "",
+      PATH: operational ? "" : backendBin,
       TMPDIR: tmp,
       NO_COLOR: "1",
+      SPEKTA_BACKEND_MARKER: backendMarker,
     },
     // Regular files also capture output on hosts where Node treats child
     // process socket descriptors as an unsupported stdout handle.
@@ -139,6 +154,8 @@ async function invoke(args: string[], seeded = false, operational = false) {
     fs.closeSync(stderrFd);
   }
   expect(await fs.pathExists(home)).toBe(seeded);
+  expect(path.isAbsolute(process.execPath)).toBe(true);
+  if (!operational) expect(await fs.pathExists(backendMarker)).toBe(false);
   expect(await snapshotTree(home)).toEqual(homeBefore);
   expect(await snapshotTree(workspace)).toEqual(workspaceBefore);
   expect(await fs.readdir(tmp)).toEqual([]);
@@ -261,10 +278,139 @@ describe("CLI help before initialization", () => {
         expect(result.stdout).toContain(`${topic} —`);
         expect(result.stdout).toContain(`Usage: spekta ${topic}`);
         expect(result.stdout).toContain("Usage:");
+        expect(result.stdout).toContain("Examples:");
+        expect(result.stdout).not.toContain(
+          "overview; detailed command help is not yet complete",
+        );
       }
     },
     15000,
   );
+
+  it.each([
+    [
+      "ls",
+      [
+        "existing directory relative to the workspace",
+        "defaults to .",
+        "no operational options",
+        "eligible entries",
+        "1,000-token response budget",
+        "spekta ls src",
+      ],
+    ],
+    [
+      "find",
+      [
+        "defaults to .",
+        "-type f",
+        "-type d",
+        "-name pattern",
+        "-print",
+        "Use -type and -name together",
+        "Quote shell globs",
+        "interpreted by find as a name pattern",
+        "does not follow directory symlinks",
+        "1,000-token response budget",
+        "spekta find . -type f -name '*.ts'",
+      ],
+    ],
+    [
+      "git",
+      [
+        "Supported subcommands",
+        "status lists",
+        "log lists",
+        "show inspects",
+        "diff inspects",
+        "branch lists",
+        "Unsupported native Git options",
+        "mutating commands",
+      ],
+    ],
+    [
+      "git status",
+      [
+        "--short",
+        "--branch",
+        "--porcelain=v1",
+        "--porcelain=v2",
+        "--untracked-files=no|normal|all",
+        "Path operands follow --",
+        "eligible paths",
+        "1,000-token response budget",
+        "spekta git status --short -- 'src/file name.ts'",
+      ],
+    ],
+    [
+      "git log",
+      [
+        "-n <positive-count>",
+        "--max-count=<positive-count>",
+        "--patch",
+        "--stat",
+        "--name-only",
+        "--name-status",
+        "A log revision may also use one .. or ... range",
+        "path operands follow --",
+        "defaults to 10 commits",
+        "1,000-token response budget",
+        "spekta git log --stat main..HEAD -- 'src/file name.ts'",
+      ],
+    ],
+    [
+      "git show",
+      [
+        "at most one revision",
+        "revision:path",
+        "--patch",
+        "--stat",
+        "--name-only",
+        "--name-status",
+        "workspace paths follow it",
+        "Eligible files",
+        "1,000-token response budget",
+        "spekta git show HEAD:src/file.ts",
+      ],
+    ],
+    [
+      "git diff",
+      [
+        "--cached",
+        "--staged",
+        "--patch",
+        "--stat",
+        "--name-only",
+        "--name-status",
+        "accepts up to two revisions",
+        "range is allowed only as the sole revision operand",
+        "Optional path operands follow --",
+        "Eligible files",
+        "1,000-token response budget",
+        "spekta git diff main...HEAD -- 'src/file name.ts'",
+      ],
+    ],
+    [
+      "git branch",
+      [
+        "listing-only",
+        "--list",
+        "--all",
+        "--remotes",
+        "--verbose",
+        "A pattern requires explicit --list",
+        "separates options from patterns",
+        "branch names only",
+        "1,000-token response budget",
+        "spekta git branch --list 'feature/*'",
+      ],
+    ],
+  ])("documents accepted syntax and policy for %s", async (topic, required) => {
+    const result = await invoke(["help", ...topic.split(" ")]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    for (const text of required) expect(result.stdout).toContain(text);
+  });
 
   it.each([
     ["setup", "--global", "--codex", "--apply", "--mcp", "--help"],
