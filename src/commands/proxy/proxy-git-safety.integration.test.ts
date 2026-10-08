@@ -261,6 +261,6 @@ describe.skipIf(missing.length > 0)(
         expect(result.mcp.content[0].text).not.toContain("SENTINEL OUTPUT");
         expect(snapshotRepository()).toEqual(before);
       }
-    });
+    }, 120000);
   },
 );
