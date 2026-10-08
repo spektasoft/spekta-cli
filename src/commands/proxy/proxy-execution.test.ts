@@ -59,7 +59,25 @@ describe("executeRtkCommand", () => {
   });
 
   it.each([
-    ...acceptedBranchRequests.map((args) => ({ args, expected: [...args] })),
+    ...acceptedBranchRequests.map((args) => {
+      const list = args
+        .slice(1)
+        .filter((arg) => arg !== "--verbose" && arg !== "-v");
+      const insertion = list.findIndex(
+        (arg) => arg === "--" || !arg.startsWith("-"),
+      );
+      const split = insertion < 0 ? list.length : insertion;
+      return {
+        args,
+        expected: [
+          "branch",
+          "--no-color",
+          ...list.slice(0, split),
+          "--format=%(if)%(HEAD)%(then)* %(end)%(refname:short)",
+          ...list.slice(split),
+        ],
+      };
+    }),
     {
       args: ["status", "--porcelain=v2", "--", "-file"],
       expected: [
@@ -102,8 +120,10 @@ describe("executeRtkCommand", () => {
         "show",
         "--no-ext-diff",
         "--no-textconv",
-        "--stat",
         "HEAD",
+        "--format=",
+        "--name-status",
+        "-z",
         "--",
         "file.txt",
       ],
@@ -120,23 +140,41 @@ describe("executeRtkCommand", () => {
       ["diff", "--"],
     ].map((args) => ({
       args,
-      expected: [
-        "diff",
-        "--no-ext-diff",
-        "--no-textconv",
-        "--submodule=short",
-        ...(args.includes("--stat")
-          ? [
-              ...args.slice(1).filter((arg) => arg !== "--stat"),
-              "--numstat",
-              "-z",
-              "-M",
-              "--",
-              ".",
-            ]
-          : args.slice(1)),
-        ...(args.includes("--") || args.includes("--stat") ? [] : ["--"]),
-      ],
+      expected:
+        args[0] === "branch"
+          ? (() => {
+              const list = args
+                .slice(1)
+                .filter((arg) => arg !== "--verbose" && arg !== "-v");
+              const insertion = list.findIndex(
+                (arg) => arg === "--" || !arg.startsWith("-"),
+              );
+              const split = insertion < 0 ? list.length : insertion;
+              return [
+                "branch",
+                "--no-color",
+                ...list.slice(0, split),
+                "--format=%(if)%(HEAD)%(then)* %(end)%(refname:short)",
+                ...list.slice(split),
+              ];
+            })()
+          : [
+              "diff",
+              "--no-ext-diff",
+              "--no-textconv",
+              "--submodule=short",
+              ...(args.includes("--stat")
+                ? [
+                    ...args.slice(1).filter((arg) => arg !== "--stat"),
+                    "--numstat",
+                    "-z",
+                    "-M",
+                    "--",
+                    ".",
+                  ]
+                : args.slice(1)),
+              ...(args.includes("--") || args.includes("--stat") ? [] : ["--"]),
+            ],
     })),
   ])("preserves tokens and controls $args", async ({ args, expected }) => {
     vi.mocked(execa).mockResolvedValueOnce({
@@ -158,7 +196,7 @@ describe("executeRtkCommand", () => {
           "proxy",
           "git",
           "--no-pager",
-          "--literal-pathspecs",
+          ...(args[0] === "branch" ? [] : ["--literal-pathspecs"]),
           ...(args[0] === "diff"
             ? ["-c", "diff.autoRefreshIndex=false"]
             : args[0] === "status"
