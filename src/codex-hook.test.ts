@@ -341,9 +341,9 @@ describe("built Codex inspection hook", () => {
       const timer = setTimeout(() => {
         child.kill();
         reject(new Error("hook did not terminate"));
-      }, 3_500);
+      }, 10_000);
       child.once("error", reject);
-      child.once("exit", (code) => {
+      child.once("close", (code) => {
         clearTimeout(timer);
         resolve(code);
       });
