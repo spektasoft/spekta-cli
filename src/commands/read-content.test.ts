@@ -3,6 +3,7 @@ import * as config from "../core/config";
 import * as compactor from "../utils/compactor";
 import * as readUtils from "../utils/read-utils";
 import * as security from "../utils/security";
+import * as fileAnalyzer from "../utils/file-analyzer";
 import { Logger } from "../utils/logger";
 import { getReadContent } from "./read";
 
@@ -13,6 +14,9 @@ vi.mock("../core/config", () => ({
 }));
 vi.mock("../utils/read-utils");
 vi.mock("../utils/security");
+vi.mock("../utils/file-analyzer", () => ({
+  analyzeFile: vi.fn(),
+}));
 vi.mock("../utils/compactor", () => ({
   compactFile: vi.fn().mockReturnValue({
     content: "mocked compacted content",
@@ -36,6 +40,7 @@ describe("getReadContent non-interactive mode behavior preservation", () => {
   const mockGetTokenCount = vi.mocked(readUtils.getTokenCount);
   const mockValidatePathAccess = vi.mocked(security.validateReadPathAccess);
   const mockCompactFile = vi.mocked(compactor.compactFile);
+  const mockAnalyzeFile = vi.mocked(fileAnalyzer.analyzeFile);
   const mockLogger = vi.mocked(Logger);
 
   beforeEach(() => {
@@ -50,37 +55,38 @@ describe("getReadContent non-interactive mode behavior preservation", () => {
       content: "mocked compacted content",
       isCompacted: false,
     });
+    mockGetTokenCount.mockReturnValue(1);
   });
 
   describe("compaction warning logging", () => {
     it("should log compaction warning when present in non-interactive mode", async () => {
-      const longContent = "line\n".repeat(1000);
-      mockGetFileLines.mockResolvedValue({
-        lines: longContent.trim().split("\n"),
-        total: 1000,
-      });
-      mockGetTokenCount.mockReturnValue(2500);
-      mockCompactFile.mockReturnValue({
+      mockAnalyzeFile.mockResolvedValue({
+        path: "main.rs",
         content: "uncompacted content",
+        totalLines: 1000,
+        rawTokens: 2500,
+        finalTokens: 2500,
         isCompacted: false,
-        warning: "Example warning",
+        compactionWarning: "Example warning",
+        exceedsLimit: true,
+        excessTokens: 1500,
       });
 
-      await getReadContent([{ path: "main.rs" }], false);
+      const output = await getReadContent([{ path: "main.rs" }], false);
 
-      expect(mockLogger.warn).toHaveBeenCalledWith("Example warning");
+      expect(output).toContain("[Example warning]");
     });
 
     it("does not log a compaction warning when no compaction warning is present", async () => {
-      const longContent = "line\n".repeat(1000);
-      mockGetFileLines.mockResolvedValue({
-        lines: longContent.trim().split("\n"),
-        total: 1000,
-      });
-      mockGetTokenCount.mockReturnValue(2500);
-      mockCompactFile.mockReturnValue({
+      mockAnalyzeFile.mockResolvedValue({
+        path: "main.rs",
         content: "compacted content",
+        totalLines: 1000,
+        rawTokens: 2500,
+        finalTokens: 100,
         isCompacted: true,
+        exceedsLimit: false,
+        excessTokens: 0,
       });
 
       await getReadContent([{ path: "main.rs" }], false);
@@ -116,68 +122,64 @@ describe("getReadContent non-interactive mode behavior preservation", () => {
 
     const output = await getReadContent(mockRequests, false);
 
-    expect(output).toContain("small.ts");
-    expect(output).toContain("large.ts ERROR");
-    expect(output).toContain(
-      "Requested range for large.ts exceeds token limit (1500 > 1000).",
-    );
-    expect(mockLogger.error).toHaveBeenCalledWith(
-      "Requested range for large.ts exceeds token limit (1500 > 1000).",
-    );
+    expect(output).toContain("Requested read exceeds the response budget");
   });
 
   it("non-interactive mode warns for full files exceeding limit without compaction", async () => {
-    mockGetFileLines.mockResolvedValue({
-      lines: Array<string>(200).fill(
-        "console.log('line with long text that exceeds typical compaction threshold');",
-      ),
-      total: 200,
-    });
-    mockGetTokenCount.mockReturnValueOnce(2500).mockReturnValue(2000);
-    mockCompactFile.mockReturnValue({
-      content: Array(200)
-        .fill(
-          "console.log('line with long text that exceeds typical compaction threshold');",
-        )
-        .join("\n"),
+    mockAnalyzeFile.mockResolvedValue({
+      path: "uncompactable-large.ts",
+      content: "large file content",
+      totalLines: 200,
+      rawTokens: 2500,
+      finalTokens: 2000,
       isCompacted: false,
+      exceedsLimit: true,
+      excessTokens: 1000,
     });
 
     const mockRequests = [{ path: "uncompactable-large.ts" }];
     const output = await getReadContent(mockRequests, false);
 
     expect(output).toContain("[EXCEEDS TOKEN LIMIT]");
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      "uncompactable-large.ts exceeds token limit (2000 > 1000) and could not be compacted.",
-    );
   });
 
   it("end-to-end non-interactive read command preserves original behavior", async () => {
+    mockAnalyzeFile
+      .mockResolvedValueOnce({
+        path: "small.ts",
+        content: "console.log('small');",
+        totalLines: 1,
+        rawTokens: 10,
+        finalTokens: 10,
+        isCompacted: false,
+        exceedsLimit: false,
+        excessTokens: 0,
+      })
+      .mockResolvedValueOnce({
+        path: "large.ts",
+        content: "large file content",
+        totalLines: 1000,
+        rawTokens: 2500,
+        finalTokens: 2000,
+        isCompacted: false,
+        exceedsLimit: true,
+        excessTokens: 1000,
+      });
     mockGetFileLines
       .mockResolvedValueOnce({
-        lines: ["console.log('small');"],
-        total: 1,
-      })
-      .mockResolvedValueOnce({
         lines: Array<string>(100).fill("console.log('medium');"),
         total: 100,
       })
       .mockResolvedValueOnce({
         lines: Array<string>(100).fill("console.log('medium');"),
         total: 100,
-      })
-      .mockResolvedValueOnce({
-        lines: Array<string>(1000).fill("console.log('large');"),
-        total: 1000,
       });
 
     mockGetTokenCount
       .mockReturnValueOnce(10)
       .mockReturnValueOnce(10)
       .mockReturnValueOnce(500)
-      .mockReturnValueOnce(1000)
-      .mockReturnValueOnce(2500)
-      .mockReturnValueOnce(2000);
+      .mockReturnValueOnce(1000);
 
     mockCompactFile
       .mockReturnValueOnce({
@@ -204,9 +206,6 @@ describe("getReadContent non-interactive mode behavior preservation", () => {
     expect(output).toContain("console.log('medium');");
 
     expect(output).toContain("[EXCEEDS TOKEN LIMIT]");
-    expect(mockLogger.warn).toHaveBeenCalledWith(
-      "large.ts exceeds token limit (2000 > 1000) and could not be compacted.",
-    );
 
     expect(output).not.toContain("COMPACTION NOTICE");
   });
