@@ -91,7 +91,11 @@ describe("getGrepContent - truncation", () => {
   });
 
   it("reports no eligible matches through MCP when all candidates are ignored", async () => {
-    vi.mocked(isPathIgnored).mockResolvedValue(true);
+    vi.mocked(validateReadPathAccess).mockImplementation((target, workspace) =>
+      target.includes("ignored.ts")
+        ? Promise.reject(new Error("Path is ineligible"))
+        : Promise.resolve(path.resolve(workspace.canonicalRoot, target)),
+    );
     vi.mocked(execa).mockImplementation(() =>
       mockExecaStream(createRgMatch("ignored.ts", 1, 0, "needle")),
     );

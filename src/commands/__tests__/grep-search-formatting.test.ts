@@ -102,10 +102,14 @@ describe("getGrepContent - formatting", () => {
   });
 
   it("omits matches from files that are determined to be ignored", async () => {
-    const { isPathIgnored } = await import("../../utils/path-ignore");
-    vi.mocked(isPathIgnored).mockImplementation((targetPath) => {
-      return Promise.resolve(targetPath.includes("ignored.ts"));
-    });
+    vi.mocked(validateReadPathAccess).mockImplementation(
+      (target, workspace) => {
+        if (target.includes("ignored.ts")) {
+          return Promise.reject(new Error("Path is ineligible"));
+        }
+        return Promise.resolve(path.resolve(workspace.canonicalRoot, target));
+      },
+    );
 
     const matches = [
       createRgMatch("ignored.ts", 10, 0, "ignored match"),
