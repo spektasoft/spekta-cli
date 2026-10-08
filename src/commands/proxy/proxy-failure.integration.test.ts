@@ -151,10 +151,10 @@ describe.sequential("real subprocess proxy failure reporting", () => {
     installRtk("failure");
     const { cli, mcp } = await both();
     expect(cli.exitCode).toBe(7);
-    expect(cli.stdout).toBe("");
-    expect(cli.stderr).toMatch(/status 7/);
+    expect(cli.stdout).toContain("[FAILED: Exit 7]");
+    expect(cli.stderr).toBe("");
     expect(mcp.isError).toBe(true);
-    for (const output of [cli.stderr, mcp.content[0].text]) {
+    for (const output of [cli.stdout, mcp.content[0].text]) {
       expect(output).toMatch(/status 7/);
       expect(output).not.toContain("USEFUL");
       expect(output).not.toContain(secret);

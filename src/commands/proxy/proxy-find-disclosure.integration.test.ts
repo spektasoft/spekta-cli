@@ -61,8 +61,13 @@ it("withholds child failure output and preserves status", async () => {
   expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toMatch(
     /\.env|restricted-alias/,
   );
-  expect(console.log).not.toHaveBeenCalled();
-});
+  expect(console.log).toHaveBeenCalledWith(
+    expect.stringContaining("[FAILED: Exit 7]"),
+  );
+  expect(JSON.stringify(vi.mocked(console.log).mock.calls)).not.toMatch(
+    /\.env|restricted-alias|cannot read restricted-alias/,
+  );
+}, 15000);
 
 it("bounds the complete response using only eligible results", async () => {
   const names = Array.from(

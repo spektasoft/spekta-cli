@@ -271,7 +271,7 @@ describe("restricted find CLI and MCP parity", () => {
     expect(confirm).not.toHaveBeenCalled();
   });
 
-  it("propagates backend failure status and useful output in both adapters", async () => {
+  it("propagates backend failure status without child output in either adapter", async () => {
     vi.mocked(execa).mockResolvedValue({
       stdout: "",
       stderr: "native find failed",
@@ -284,10 +284,13 @@ describe("restricted find CLI and MCP parity", () => {
       args: ["."],
     });
 
-    expect(console.log).not.toHaveBeenCalled();
-    expect(console.error).toHaveBeenCalledWith(
-      expect.stringMatching(/status 7/i),
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining("[FAILED: Exit 7]"),
     );
+    expect(JSON.stringify(vi.mocked(console.log).mock.calls)).not.toContain(
+      "native find failed",
+    );
+    expect(console.error).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(7);
     expect(mcp).toEqual({
       isError: true,
