@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { execa } from "execa";
 import { spawn } from "node:child_process";
+import { COMMANDS } from "./commands";
+import { NATIVE_HELP } from "./help-native";
 
 const projectRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -148,6 +150,15 @@ async function invoke(args: string[], seeded = false, operational = false) {
 }
 
 describe("CLI help before initialization", () => {
+  it("has complete help for every registered native command", () => {
+    expect(Object.keys(NATIVE_HELP).sort()).toEqual(
+      Object.keys(COMMANDS).sort(),
+    );
+    expect(Object.values(NATIVE_HELP).every((topic) => topic.complete)).toBe(
+      true,
+    );
+  });
+
   it.each([
     ["./--help", "literal-help-file"],
     ["./-h", "literal-short-help-file"],
@@ -203,23 +214,30 @@ describe("CLI help before initialization", () => {
     expect(result.stdout).toContain("Examples:");
   });
 
+  it.each(Object.keys(COMMANDS).filter((command) => command !== "read"))(
+    "resolves all aliases for complete %s help without executing it",
+    async (topic) => {
+      for (const args of [
+        [topic, "--help"],
+        [topic, "-h"],
+        ["help", topic],
+      ]) {
+        const result = await invoke(args);
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toBe("");
+        expect(result.stdout).toContain(`${topic} —`);
+        expect(result.stdout).toContain(`Usage: spekta ${topic}`);
+        expect(result.stdout).toContain("Examples:");
+        expect(result.stdout).not.toContain(
+          "overview; detailed command help is not yet complete",
+        );
+      }
+    },
+    15000,
+  );
+
   it.each([
-    "commit",
-    "repl",
-    "prompt",
-    "review",
     "grep",
-    "diagnostic",
-    "pr",
-    "commit-range",
-    "summarize",
-    "sync",
-    "replace",
-    "write",
-    "mcp",
-    "setup",
-    "uninstall",
-    "status",
     "ls",
     "find",
     "git",
@@ -229,7 +247,7 @@ describe("CLI help before initialization", () => {
     "git diff",
     "git branch",
   ])(
-    "resolves all aliases for the %s overview without executing it",
+    "resolves all aliases for %s help without executing it",
     async (topic) => {
       const parts = topic.split(" ");
       for (const args of [
@@ -242,7 +260,7 @@ describe("CLI help before initialization", () => {
         expect(result.stderr).toBe("");
         expect(result.stdout).toContain(`${topic} —`);
         expect(result.stdout).toContain(`Usage: spekta ${topic}`);
-        expect(result.stdout).toContain("overview");
+        expect(result.stdout).toContain("Usage:");
       }
     },
     15000,
@@ -252,6 +270,7 @@ describe("CLI help before initialization", () => {
     ["setup", "--global", "--codex", "--apply", "--mcp", "--help"],
     ["uninstall", "--global", "--codex", "--apply", "-h"],
     ["commit", "--commit", "--model", "missing-model", "--help"],
+    ["prompt", "--output", "must-not-be-written.md", "--help"],
     ["mcp", "--help"],
   ])("preserves seeded configuration for %j", async (...args) => {
     const result = await invoke(args, true);
@@ -305,6 +324,84 @@ describe("CLI help before initialization", () => {
       "./--help",
     ])
       expect(result.stdout).toContain(text);
+  });
+
+  it.each([
+    [
+      "commit",
+      [
+        "prompt-only",
+        "--message",
+        "--commit",
+        "--model",
+        "--stdout",
+        "--no-editor",
+        "--interactive",
+        "temporary file",
+        "without opening an editor",
+      ],
+    ],
+    [
+      "prompt",
+      [
+        "--include-partial",
+        "--exclude-partial",
+        "--output",
+        "--stdout",
+        "--no-editor",
+      ],
+    ],
+    [
+      "grep",
+      [
+        "<pattern>",
+        "ripgrep regular expression",
+        "smart-case",
+        "--glob",
+        "--ignore-case",
+        "SPEKTA_GREP_TOKEN_LIMIT",
+        "2000",
+        "all matches are withheld",
+      ],
+    ],
+    [
+      "write",
+      ["stdin", "never overwritten", "Help exits before reading stdin"],
+    ],
+    [
+      "replace",
+      [
+        "SEARCH/REPLACE",
+        "stdin",
+        "50 blocks",
+        "Help exits before reading stdin",
+      ],
+    ],
+    [
+      "setup",
+      ["--global --codex", "--dry-run|--apply", "--mcp", "runtime activation"],
+    ],
+    [
+      "uninstall",
+      [
+        "--global --codex",
+        "--dry-run|--apply",
+        "does not uninstall the Spekta CLI",
+      ],
+    ],
+    [
+      "mcp",
+      [
+        "long-lived",
+        "standard input and output",
+        "Help exits before initialization",
+      ],
+    ],
+  ])("documents actual %s behavior", async (command, requiredText) => {
+    const result = await invoke([command, "--help"]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    for (const text of requiredText) expect(result.stdout).toContain(text);
   });
 
   it("prints all native commands and proxy families without assets, credentials or backends", async () => {

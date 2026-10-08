@@ -90,7 +90,7 @@ export function handleHelp(
     .map(([key, command]) => `  ${key.padEnd(14)} ${command.name}`)
     .join("\n");
   process.stdout.write(
-    `Spekta — workspace operations and AI workflows\n\nUsage: spekta [command] [arguments]\n       spekta help <command>\n       spekta <command> --help\n\nWith no arguments, open the interactive menu.\n\nBuilt-in commands:\n${native}\n\nSupported proxy families:\n  ls             List eligible workspace entries\n  find           Discover eligible workspace paths\n  git            Inspect status, log, show, diff and branch\n\nDetailed help is currently complete for read. Other topics provide an overview.\n`,
+    `Spekta — workspace operations and AI workflows\n\nUsage: spekta [command] [arguments]\n       spekta help <command>\n       spekta <command> --help\n\nWith no arguments, open the interactive menu.\n\nBuilt-in commands:\n${native}\n\nSupported proxy families:\n  ls             List eligible workspace entries\n  find           Discover eligible workspace paths\n  git            Inspect status, log, show, diff and branch\n\nEvery built-in command has detailed help. Use spekta help <command> to read it.\n`,
   );
   return true;
 }
