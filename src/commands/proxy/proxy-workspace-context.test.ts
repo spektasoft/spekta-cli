@@ -131,7 +131,6 @@ describe("explicit proxy workspace context", () => {
       ["proxy", "ls", "-1Ab", "--", "."],
       expect.objectContaining({ cwd: workspace }),
     );
-
     vi.mocked(execa).mockResolvedValueOnce({
       stdout: "",
       stderr: "failed",
@@ -144,6 +143,10 @@ describe("explicit proxy workspace context", () => {
       expect.objectContaining({ cwd: workspace }),
     );
     expect(process.exitCode).toBe(7);
+    expect(logs).toHaveBeenCalledTimes(1);
+    expect(logs).toHaveBeenCalledWith(
+      expect.stringContaining("[FAILED: Exit 7]"),
+    );
 
     process.exitCode = 0;
     vi.mocked(execa).mockRejectedValueOnce(
@@ -156,7 +159,7 @@ describe("explicit proxy workspace context", () => {
       expect.objectContaining({ cwd: workspace }),
     );
     expect(errors).toHaveBeenCalled();
-    expect(logs).not.toHaveBeenCalled();
+    expect(logs).toHaveBeenCalledTimes(1);
   });
 
   it("does not launch a command rejected by context validation", async () => {

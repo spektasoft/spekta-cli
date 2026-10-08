@@ -141,13 +141,14 @@ describe("RTK execution", () => {
 
       await expect(runRtkProxy("ls", [], workspace)).resolves.toBeUndefined();
 
-      expect(console.log).not.toHaveBeenCalled();
-      expect(console.error).toHaveBeenCalledTimes(1);
-      const diagnostic = vi.mocked(console.error).mock.calls[0][0] as string;
-      expect(diagnostic).toMatch(/status 7/i);
-      expect(diagnostic).not.toContain(secret);
-      expect(diagnostic).not.toContain("USEFUL_STDERR");
-      expect(diagnostic).not.toContain(".env");
+      expect(console.log).toHaveBeenCalledTimes(1);
+      const output = vi.mocked(console.log).mock.calls[0][0] as string;
+      expect(output).toContain("[FAILED: Exit 7]");
+      expect(output).toContain("RTK command failed with exit status 7.");
+      expect(output).not.toContain(secret);
+      expect(output).not.toContain("USEFUL_STDERR");
+      expect(output).not.toContain(".env");
+      expect(console.error).not.toHaveBeenCalled();
       expect(process.exitCode).toBe(7);
     },
   );
