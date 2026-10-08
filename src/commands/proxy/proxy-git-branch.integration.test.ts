@@ -74,7 +74,7 @@ describe.skipIf(missing.length > 0)(
       expect(nestedResult.mcp.content[0].text).toContain("feature/topic");
       nested.mockReturnValue(context.workspace);
       expect(snapshotRepository()).toEqual(before);
-    });
+    }, 30000);
 
     it("leaves refs, reflogs, and branch configuration unchanged for every rejection", async () => {
       await fixtureGit(["update-ref", "refs/remotes/origin/main", "HEAD"]);

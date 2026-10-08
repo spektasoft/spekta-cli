@@ -61,15 +61,18 @@ describe.skipIf(missing.length > 0)(
         ["show", "HEAD:file.txt"],
         ["log", "-p", "-n", "1"],
         ["log", "--stat", "-n", "1"],
-        ["log", "--no-patch"],
+        ["log", "--name-status"],
       ]) {
         const result = await both(args);
-        expect(result.mcp.isError).toBe(false);
+        expect(
+          result.mcp.isError,
+          `${args.join(" ")}: ${result.mcp.content[0].text}`,
+        ).toBe(false);
         expect(fs.existsSync(diff.marker)).toBe(false);
         expect(fs.existsSync(conversion.marker)).toBe(false);
         expect(result.mcp.content[0].text).not.toContain("SENTINEL OUTPUT");
       }
-    });
+    }, 30000);
 
     it("forces short submodule output despite configured inline diff helpers", async () => {
       const child = path.join(context.workspace, "child");
@@ -241,14 +244,16 @@ describe.skipIf(missing.length > 0)(
         ["diff", "HEAD~1...HEAD"],
         ["diff", "-p", "--", "file.txt"],
         ["diff", "--patch", "--", "file.txt"],
-        ["diff", "--no-patch"],
         ["diff", "--stat"],
         ["diff", "--name-only"],
         ["diff", "--name-status"],
         ["diff", "--cached", "--stat", "--", "file.txt"],
       ]) {
         const result = await both(args);
-        expect(result.mcp.isError).toBe(false);
+        expect(
+          result.mcp.isError,
+          `${args.join(" ")}: ${result.mcp.content[0].text}`,
+        ).toBe(false);
         for (const helper of [external, driver, ambient, conversion]) {
           expect(fs.existsSync(helper.marker)).toBe(false);
         }

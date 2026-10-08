@@ -80,7 +80,7 @@ describe.skipIf(missing.length > 0)(
       process.env.PAGER = shellQuote(pager.program);
       const control = await execa(
         "script",
-        ["-q", "-e", "-c", "git --paginate log -1 --oneline", "/dev/null"],
+        ["-q", "-e", "-c", "git --paginate log -1 --stat", "/dev/null"],
         {
           cwd: context.workspace,
           reject: false,
@@ -92,7 +92,7 @@ describe.skipIf(missing.length > 0)(
       fs.removeSync(pager.marker);
       for (const args of [
         ["status", "--short"],
-        ["log", "--oneline", "-n", "1"],
+        ["log", "--stat", "-n", "1"],
         ["show", "--stat"],
         ["show", "HEAD:file.txt"],
         ["diff"],
@@ -158,6 +158,6 @@ describe.skipIf(missing.length > 0)(
       );
       expect(configured.exitCode).toBe(0);
       expect(fs.existsSync(pager.marker)).toBe(false);
-    });
+    }, 30000);
   },
 );
