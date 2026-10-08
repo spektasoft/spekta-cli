@@ -1,6 +1,7 @@
 import fs from "fs-extra";
 import path from "node:path";
 import { getAssetPaths, HOME_IGNORE } from "../core/config";
+import { RESTRICTED_FILES } from "../utils/security";
 
 export interface GrepOptions {
   pattern: string;
@@ -9,12 +10,50 @@ export interface GrepOptions {
   case_insensitive?: boolean;
 }
 
-export async function buildGrepArgs(options: GrepOptions): Promise<string[]> {
-  const { pattern, path: searchPath = ".", globs, case_insensitive } = options;
+async function buildIgnoreArgs(
+  options: GrepOptions,
+  workspaceRoot: string,
+): Promise<string[]> {
+  const args: string[] = [];
+  const { globs } = options;
+
+  if (globs) {
+    for (const glob of globs.split(",")) {
+      if (glob) args.push("-g", glob);
+    }
+  }
+
+  const { ASSET_DEFAULT_IGNORE } = getAssetPaths();
+  if (await fs.pathExists(ASSET_DEFAULT_IGNORE)) {
+    args.push("--ignore-file", ASSET_DEFAULT_IGNORE);
+  }
+  if (await fs.pathExists(HOME_IGNORE)) {
+    args.push("--ignore-file", HOME_IGNORE);
+  }
+
+  const workspaceIgnore = path.join(workspaceRoot, ".spektaignore");
+  if (await fs.pathExists(workspaceIgnore)) {
+    args.push("--ignore-file", workspaceIgnore);
+  }
+
+  // Mandatory exclusions follow user globs so a positive glob cannot override them.
+  for (const restricted of RESTRICTED_FILES) {
+    args.push("-g", `!**/${restricted}`);
+  }
+  return args;
+}
+
+export async function buildGrepArgs(
+  options: GrepOptions,
+  workspaceRoot = process.cwd(),
+): Promise<string[]> {
+  const { pattern, path: searchPath = ".", case_insensitive } = options;
 
   const args = [
+    "--no-config",
+    "--no-follow",
+    "--regexp",
     pattern,
-    searchPath,
     "--line-number",
     "--column",
     "--color=never",
@@ -34,24 +73,27 @@ export async function buildGrepArgs(options: GrepOptions): Promise<string[]> {
     args.push("--case-sensitive");
   }
 
-  if (globs) {
-    for (const g of globs.split(",")) {
-      if (g) args.push("-g", g);
-    }
-  }
-
-  const { ASSET_DEFAULT_IGNORE } = getAssetPaths();
-  if (await fs.pathExists(ASSET_DEFAULT_IGNORE)) {
-    args.push("--ignore-file", ASSET_DEFAULT_IGNORE);
-  }
-  if (await fs.pathExists(HOME_IGNORE)) {
-    args.push("--ignore-file", HOME_IGNORE);
-  }
-
-  const workspaceIgnore = path.join(process.cwd(), ".spektaignore");
-  if (await fs.pathExists(workspaceIgnore)) {
-    args.push("--ignore-file", workspaceIgnore);
-  }
-
+  args.push(...(await buildIgnoreArgs(options, workspaceRoot)));
+  args.push("--", searchPath);
   return args;
+}
+
+/** Builds the filename-only rg invocation used to find whitelisted Git-ignored paths. */
+export async function buildGrepFileListArgs(
+  options: GrepOptions,
+  workspaceRoot = process.cwd(),
+  searchPath = ".",
+  includeGitIgnored = true,
+): Promise<string[]> {
+  return [
+    "--files",
+    "--null",
+    ...(includeGitIgnored ? ["--no-ignore-vcs"] : []),
+    "--no-config",
+    "--no-follow",
+    "--no-require-git",
+    ...(await buildIgnoreArgs(options, workspaceRoot)),
+    "--",
+    searchPath,
+  ];
 }

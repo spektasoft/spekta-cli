@@ -1,4 +1,4 @@
-import { getTokenCount } from "../utils/read-utils";
+import { getTokenCount } from "../../utils/read-utils";
 import { redactSecrets } from "./proxy-security";
 
 const MAX_OUTPUT_TOKENS = 1000;

@@ -3,6 +3,13 @@ import fs from "fs-extra";
 import ignore from "ignore";
 import path from "path";
 import { assertPathNotIgnored } from "./path-ignore";
+import {
+  isPathWithin,
+  resolveWorkspace,
+  resolveWorkspaceMutationTarget,
+  resolveWorkspaceTarget,
+  type ResolvedWorkspace,
+} from "./workspace";
 
 export const RESTRICTED_FILES = [".env", ".gitignore", ".spektaignore"];
 const MAX_FILE_SIZE_MB = 10;
@@ -46,33 +53,50 @@ export const isWhitelisted = (path: string, patterns: string[]): boolean => {
   return ig.ignores(path);
 };
 
-export const validatePathAccess = async (targetPath: string): Promise<void> => {
-  const absolutePath = path.resolve(targetPath);
+export const validatePathAccess = async (
+  targetPath: string,
+  options: {
+    gitNoIndex?: boolean;
+    workspaceRoot?: string;
+    displayPath?: string;
+  } = {},
+): Promise<void> => {
+  const root = options.workspaceRoot ?? process.cwd();
+  const displayPath = options.displayPath ?? targetPath;
+  const absolutePath = path.resolve(root, targetPath);
   const fileName = path.basename(absolutePath);
-  const relativePath = path.relative(process.cwd(), absolutePath);
+  const relativePath = path.relative(root, absolutePath);
 
-  // 1. System File Block
   if (RESTRICTED_FILES.includes(fileName)) {
     throw new Error(`Access Denied: ${fileName} is a restricted system file.`);
   }
 
-  // 2. Out-of-bounds Block: Prevent reading outside project root
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+  const outside =
+    options.workspaceRoot === undefined
+      ? relativePath.startsWith("..") || path.isAbsolute(relativePath)
+      : !isPathWithin(root, absolutePath);
+  if (outside) {
     throw new Error(
-      `Access Denied: ${targetPath} is outside the project directory.`,
+      `Access Denied: ${displayPath} is outside the project directory.`,
     );
   }
 
-  // 3. Ignore Checks (Skip for project root '.')
   if (relativePath !== "") {
-    await assertPathNotIgnored(relativePath, targetPath);
+    const ignoreOptions = { gitNoIndex: options.gitNoIndex };
+    if (options.workspaceRoot === undefined) {
+      await assertPathNotIgnored(relativePath, displayPath, ignoreOptions);
+    } else {
+      await assertPathNotIgnored(
+        relativePath,
+        displayPath,
+        ignoreOptions,
+        root,
+      );
+    }
   }
 
-  // 4. Existence and Type-Specific Checks
   try {
     const stats = await fs.stat(absolutePath);
-
-    // Only apply size limits to files, not directories
     if (stats.isFile() && stats.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
       throw new Error(
         `Access Denied: File exceeds size limit (${MAX_FILE_SIZE_MB}MB).`,
@@ -81,7 +105,7 @@ export const validatePathAccess = async (targetPath: string): Promise<void> => {
   } catch (error: unknown) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       throw new Error(
-        `Access Denied: The path '${targetPath}' does not exist.`,
+        `Access Denied: The path '${displayPath}' does not exist.`,
         { cause: error },
       );
     }
@@ -89,36 +113,70 @@ export const validatePathAccess = async (targetPath: string): Promise<void> => {
   }
 };
 
-export const validatePathAccessForWrite = async (
+export const validateReadPathAccess = async (
   targetPath: string,
-): Promise<void> => {
-  const absolutePath = path.resolve(targetPath);
-  const fileName = path.basename(absolutePath);
-  const relativePath = path.relative(process.cwd(), absolutePath);
-
-  const displayPath = relativePath || ".";
-
-  // 1. System File Block
-  if (RESTRICTED_FILES.includes(fileName)) {
-    throw new Error(`Access Denied: ${fileName} is a restricted system file.`);
-  }
-
-  // 2. Out-of-bounds Block: Prevent reading outside project root
-  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+  workspace: ResolvedWorkspace,
+): Promise<string> => {
+  const requestedName = path.basename(path.resolve(workspace.root, targetPath));
+  if (RESTRICTED_FILES.includes(requestedName)) {
     throw new Error(
-      `Access Denied: ${targetPath} is outside the project directory.`,
+      `Access Denied: ${requestedName} is a restricted system file.`,
     );
   }
+  const { absolutePath, canonicalPath } = await resolveWorkspaceTarget(
+    targetPath,
+    workspace,
+  );
+  const requestedRoot = isPathWithin(workspace.root, absolutePath)
+    ? workspace.root
+    : workspace.canonicalRoot;
+  await validatePathAccess(absolutePath, {
+    workspaceRoot: requestedRoot,
+    displayPath: targetPath,
+  });
+  if (
+    canonicalPath !== absolutePath ||
+    requestedRoot !== workspace.canonicalRoot
+  ) {
+    await validatePathAccess(canonicalPath, {
+      workspaceRoot: workspace.canonicalRoot,
+      displayPath: targetPath,
+    });
+  }
+  return canonicalPath;
+};
 
-  // 3. Ignore Check (spekta + git, with whitelist bypass)
-  await assertPathNotIgnored(displayPath, targetPath, { git: "would be" });
+export const validatePathAccessForWrite = async (
+  targetPath: string,
+  workspace?: ResolvedWorkspace,
+): Promise<string> => {
+  const resolvedWorkspace = workspace ?? (await resolveWorkspace());
+  const { absolutePath, canonicalPath } = await resolveWorkspaceMutationTarget(
+    targetPath,
+    resolvedWorkspace,
+    true,
+  );
 
-  // Note: File size check is intentionally omitted since file doesn't exist
+  validateMutationRestrictedPaths(
+    [absolutePath, canonicalPath],
+    resolvedWorkspace,
+    true,
+  );
+  await validateMutationIgnorePaths(
+    [absolutePath, canonicalPath],
+    resolvedWorkspace,
+    targetPath,
+    { git: "would be" },
+  );
+
+  // Note: File size check is intentionally omitted since this API validates
+  // paths that may not exist yet.
+  return canonicalPath;
 };
 
 /**
  * Validates that a file is tracked by git.
- * Edit operations should only be performed on tracked files to ensure safety.
+ * Retained for callers that explicitly require Git tracking.
  */
 export const validateGitTracked = async (targetPath: string): Promise<void> => {
   const absolutePath = path.resolve(targetPath);
@@ -136,13 +194,93 @@ export const validateGitTracked = async (targetPath: string): Promise<void> => {
 };
 
 /**
- * Combined validation for edit operations.
- * Ensures file passes both access and git tracking checks.
+ * Validates access to an existing file for replacement, regardless of Git tracking.
  */
-export const validateEditAccess = async (targetPath: string): Promise<void> => {
-  await validatePathAccess(targetPath);
-  await validateGitTracked(targetPath);
+export const validateEditAccess = async (
+  targetPath: string,
+  workspace?: ResolvedWorkspace,
+): Promise<string> => {
+  const resolvedWorkspace = workspace ?? (await resolveWorkspace());
+  const { absolutePath, canonicalPath } = await resolveWorkspaceMutationTarget(
+    targetPath,
+    resolvedWorkspace,
+    false,
+  );
+
+  validateMutationRestrictedPaths(
+    [absolutePath, canonicalPath],
+    resolvedWorkspace,
+  );
+  await validateMutationIgnorePaths(
+    [absolutePath, canonicalPath],
+    resolvedWorkspace,
+    targetPath,
+    { gitNoIndex: true },
+  );
+
+  // Preserve the existing file-size limit while checking the canonical file.
+  const stats = await fs.stat(canonicalPath);
+  if (stats.isFile() && stats.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+    throw new Error(
+      `Access Denied: File exceeds size limit (${MAX_FILE_SIZE_MB}MB).`,
+    );
+  }
+  return canonicalPath;
 };
+
+function workspaceRelativePath(
+  absolutePath: string,
+  workspace: ResolvedWorkspace,
+): string {
+  if (isPathWithin(workspace.root, absolutePath)) {
+    return path.relative(workspace.root, absolutePath);
+  }
+  return path.relative(workspace.canonicalRoot, absolutePath);
+}
+
+function validateMutationRestrictedPaths(
+  absolutePaths: string[],
+  workspace: ResolvedWorkspace,
+  forCreation = false,
+): void {
+  for (const absolutePath of absolutePaths) {
+    const relative = workspaceRelativePath(absolutePath, workspace);
+    const segments = relative.split(path.sep).filter(Boolean);
+    const restricted = segments.find((segment) =>
+      RESTRICTED_FILES.includes(segment),
+    );
+    if (restricted) {
+      if (forCreation) {
+        throw new Error(
+          `Cannot create file or directories under restricted path segment: ${restricted}`,
+        );
+      }
+      throw new Error(
+        `Access Denied: ${restricted} is a restricted system file.`,
+      );
+    }
+  }
+}
+
+async function validateMutationIgnorePaths(
+  absolutePaths: string[],
+  workspace: ResolvedWorkspace,
+  displayPath: string,
+  verb: { git?: string; gitNoIndex?: boolean },
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const absolutePath of absolutePaths) {
+    const relative = workspaceRelativePath(absolutePath, workspace);
+    if (!relative || seen.has(relative)) continue;
+    seen.add(relative);
+    await assertPathNotIgnored(
+      relative,
+      displayPath,
+      verb,
+      workspace.canonicalRoot,
+    );
+  }
+}
 
 /**
  * Validates that a file can be safely created at the given path.
@@ -168,31 +306,41 @@ export const validateEditAccess = async (targetPath: string): Promise<void> => {
  */
 export const validateParentDirForCreate = async (
   filePath: string,
+  workspace?: ResolvedWorkspace,
 ): Promise<void> => {
-  const absolutePath = path.resolve(filePath);
-  const parentDir = path.dirname(absolutePath);
-  const relativeParent = path.relative(process.cwd(), parentDir);
-
-  // 1. Must be inside project root
-  if (relativeParent.startsWith("..") || path.isAbsolute(relativeParent)) {
-    throw new Error(`Parent directory is outside project root: ${parentDir}`);
+  const resolvedWorkspace = workspace ?? (await resolveWorkspace());
+  const requestedAbsolutePath = path.resolve(resolvedWorkspace.root, filePath);
+  const requestedParent = path.dirname(requestedAbsolutePath);
+  if (
+    !isPathWithin(resolvedWorkspace.root, requestedParent) &&
+    !isPathWithin(resolvedWorkspace.canonicalRoot, requestedParent)
+  ) {
+    throw new Error(
+      `Parent directory is outside project root: ${requestedParent}`,
+    );
   }
+  const { absolutePath, canonicalPath } = await resolveWorkspaceMutationTarget(
+    filePath,
+    resolvedWorkspace,
+    true,
+  );
+  validateMutationRestrictedPaths(
+    [absolutePath, canonicalPath],
+    resolvedWorkspace,
+    true,
+  );
 
-  // 2. Find the deepest existing ancestor directory
+  // The resolver has already checked the deepest existing ancestor. Locate
+  // that ancestor again to verify the destination remains inside a Git worktree.
+  const parentDir = path.dirname(absolutePath);
   const existingAncestor = await findExistingAncestor(parentDir);
-
-  // 3. Resolve the real (physical) path to handle symlinks safely
   const realAncestor = await fs.realpath(existingAncestor);
-  const relativeReal = path.relative(process.cwd(), realAncestor);
-
-  // 4. Verify the real ancestor is within project bounds
-  if (relativeReal.startsWith("..") || path.isAbsolute(relativeReal)) {
+  if (!isPathWithin(resolvedWorkspace.canonicalRoot, realAncestor)) {
     throw new Error(
       `Real path of ancestor (after symlink resolution) is outside project root: ${realAncestor}`,
     );
   }
 
-  // 5. Verify we are inside a git repository using the real path
   try {
     await execa("git", ["rev-parse", "--is-inside-work-tree"], {
       cwd: realAncestor,
@@ -201,17 +349,5 @@ export const validateParentDirForCreate = async (
     throw new Error(
       `Not in a git repository. Real ancestor directory: ${realAncestor}`,
     );
-  }
-
-  // 6. Check for restricted directory names in the path
-  const relativePathForCheck = path.relative(process.cwd(), parentDir);
-  const segments = relativePathForCheck.split(path.sep).filter(Boolean);
-
-  for (const segment of segments) {
-    if (RESTRICTED_FILES.includes(segment)) {
-      throw new Error(
-        `Cannot create file or directories under restricted path segment: ${segment}`,
-      );
-    }
   }
 };

@@ -3,12 +3,15 @@
     "version": "1.0.0",
     "type": "module",
     "bin": {
-        "spekta": "./dist/index.js"
+        "spekta": "./dist/index.js",
+        "spekta-codex-hook": "./dist/codex-hook.js"
     },
     "scripts": {
         "build": "vite build",
-        "deploy": "npm run build && chmod +x dist/index.js && npm link .",
+        "deploy": "npm run build && chmod +x dist/index.js dist/codex-hook.js && npm link .",
         "test": "vitest",
+        "test:codex-hook": "npm run build && chmod +x dist/codex-hook.js && vitest run src/codex-hook.test.ts",
+        "test:find-backend": "SPEKTA_FIND_BACKEND_TESTS=1 vitest run src/commands/proxy/proxy-find.backend.test.ts",
         "test:json": "vitest --reporter=json --outputFile=./spekta/test-results.json",
         "update": "npx npm-check-updates --interactive --format group",
         "lint": "eslint .",

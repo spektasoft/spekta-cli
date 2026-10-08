@@ -1,7 +1,8 @@
 import { getCompactThreshold, getReadTokenLimit } from "../core/config";
 import { compactFile } from "./compactor";
 import { getFileLines, getTokenCount } from "./read-utils";
-import { validatePathAccess } from "./security";
+import { validatePathAccess, validateReadPathAccess } from "./security";
+import type { ResolvedWorkspace } from "./workspace";
 
 export interface FileAnalysis {
   path: string;
@@ -15,9 +16,17 @@ export interface FileAnalysis {
   excessTokens: number;
 }
 
-export async function analyzeFile(filePath: string): Promise<FileAnalysis> {
-  await validatePathAccess(filePath);
-  const { lines, total } = await getFileLines(filePath, {
+export async function analyzeFile(
+  filePath: string,
+  workspace?: ResolvedWorkspace,
+): Promise<FileAnalysis> {
+  let readPath = filePath;
+  if (workspace) {
+    readPath = await validateReadPathAccess(filePath, workspace);
+  } else {
+    await validatePathAccess(filePath);
+  }
+  const { lines, total } = await getFileLines(readPath, {
     start: 1,
     end: "$",
   });

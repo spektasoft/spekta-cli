@@ -27,7 +27,20 @@ describe("write command integration", () => {
     expect(writtenContent).toContain("test");
   });
 
-  it("should fail if file already exists", async () => {
+  it("reports a saved file when Prettier cannot parse its contents", async () => {
+    const targetFile = path.join(testDir, "invalid.ts");
+    const content = "const value = ;\n";
+
+    const result = await getWriteContent(targetFile, content);
+
+    expect(result.success).toBe(true);
+    expect(result.message).toContain(`Content was saved to "${targetFile}"`);
+    expect(result.message).toContain("formatting failed:");
+    expect(result.message).toContain("Retrying the mutation is unnecessary.");
+    expect(await fs.readFile(targetFile, "utf-8")).toBe(content);
+  });
+
+  it("rejects an existing file without changing its bytes", async () => {
     const targetFile = path.join(testDir, "existing.ts");
     await fs.writeFile(targetFile, "original content");
 
@@ -35,6 +48,23 @@ describe("write command integration", () => {
 
     expect(result.success).toBe(false);
     expect(result.message).toContain("already exists");
+    expect(await fs.readFile(targetFile, "utf-8")).toBe("original content");
+  });
+
+  it("allows exactly one concurrent creator without overwriting the winner", async () => {
+    const targetFile = path.join(testDir, "concurrent.txt");
+    const contents = Array.from(
+      { length: 12 },
+      (_, index) => `writer ${index}`,
+    );
+
+    const results = await Promise.all(
+      contents.map((content) => getWriteContent(targetFile, content)),
+    );
+
+    expect(results.filter((result) => result.success)).toHaveLength(1);
+    expect(results.filter((result) => !result.success)).toHaveLength(11);
+    expect(contents).toContain(await fs.readFile(targetFile, "utf-8"));
   });
 
   it("should handle deeply nested paths", async () => {

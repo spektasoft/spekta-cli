@@ -1,5 +1,6 @@
 import { execa } from "execa";
 import fs from "fs-extra";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import { getIgnorePatterns } from "../core/config";
 import {
@@ -47,6 +48,31 @@ vi.mock("execa", () => ({
 vi.mock("../core/config", () => ({
   getIgnorePatterns: vi.fn(),
 }));
+
+vi.mock("./workspace", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./workspace")>();
+  return {
+    ...actual,
+    resolveWorkspace: vi.fn(() => ({
+      root: process.cwd(),
+      canonicalRoot: process.cwd(),
+    })),
+    resolveWorkspaceMutationTarget: vi.fn(
+      (target: string, workspace: { root: string; canonicalRoot: string }) => {
+        const absolutePath = path.resolve(workspace.root, target);
+        if (
+          !actual.isPathWithin(workspace.root, absolutePath) &&
+          !actual.isPathWithin(workspace.canonicalRoot, absolutePath)
+        ) {
+          throw new Error(
+            `Access Denied: ${target} is outside the project directory.`,
+          );
+        }
+        return { absolutePath, canonicalPath: absolutePath };
+      },
+    ),
+  };
+});
 
 describe("isWhitelisted", () => {
   it("should return false when no patterns are provided", () => {
@@ -236,12 +262,14 @@ describe("Security Validation", () => {
   });
 
   describe("validateEditAccess", () => {
-    it("should pass all checks for valid tracked file", async () => {
-      vi.mocked(execa)
-        .mockRejectedValueOnce({ exitCode: 1 }) // check-ignore
-        .mockResolvedValueOnce(createMockExecaResult("valid-file.ts")); // ls-files
-
+    it("should pass access checks for an eligible file without requiring tracking", async () => {
+      vi.mocked(execa).mockRejectedValueOnce({ exitCode: 1 }); // check-ignore
       await expect(validateEditAccess("valid-file.ts")).resolves.not.toThrow();
+      expect(execa).toHaveBeenCalledWith(
+        "git",
+        ["check-ignore", "-q", "--no-index", "--", "valid-file.ts"],
+        { cwd: process.cwd() },
+      );
     });
 
     it("should reject restricted files even if tracked", async () => {

@@ -11,12 +11,14 @@ import {
 
 export interface BootstrapOptions {
   writeUserHome?: boolean;
+  workspaceRoot?: string;
 }
 
 export const bootstrap = async ({
   writeUserHome = true,
+  workspaceRoot,
 }: BootstrapOptions = {}) => {
-  await getEnv();
+  await getEnv(workspaceRoot);
   refreshPaths();
 
   const { ASSET_TOOLS } = getAssetPaths();

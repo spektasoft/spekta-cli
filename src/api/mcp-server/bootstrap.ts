@@ -4,11 +4,18 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { bootstrap as initializeProject } from "../../core/config";
 import { loadToolDefinitions } from "../../core/config";
 import { Logger } from "../../utils/logger";
-import { TOOL_REGISTRY } from "./registry";
+import { createToolRegistry } from "./registry";
 import { validateToolDefinitions } from "./validate";
+import { resolveWorkspace } from "../../utils/workspace";
 
 export async function runMcpServer() {
-  await initializeProject();
+  // Capture the launch directory before any await; other servers or callers
+  // may change process.cwd() while this server is initializing.
+  const startupCwd = process.cwd();
+  const resolvedWorkspace = await resolveWorkspace({ root: startupCwd });
+  const workspace = Object.freeze({ root: resolvedWorkspace.canonicalRoot });
+
+  await initializeProject({ writeUserHome: false, workspaceRoot: startupCwd });
 
   const server = new McpServer({
     name: "spekta-mcp-server",
@@ -17,6 +24,7 @@ export async function runMcpServer() {
 
   const tools = await loadToolDefinitions();
   validateToolDefinitions(tools);
+  const registry = createToolRegistry(workspace);
 
   const registeredNames = new Set<string>();
 
@@ -26,7 +34,7 @@ export async function runMcpServer() {
       continue;
     }
 
-    const implementation = TOOL_REGISTRY[tool.name];
+    const implementation = registry[tool.name];
 
     if (!implementation) {
       Logger.warn(`No implementation found for tool: ${tool.name}`);
@@ -40,17 +48,23 @@ export async function runMcpServer() {
           description: tool.description,
           inputSchema: implementation.schema(tool.params).shape,
         },
-        async (args: Record<string, unknown>) => {
+        async (args: Record<string, unknown>, extra) => {
           try {
-            return await implementation.handler(args);
-          } catch (error: unknown) {
-            Logger.error(`MCP Tool Execution Error [${tool.name}]:`, error);
+            return await implementation.handler(
+              args,
+              undefined,
+              extra?.requestId,
+            );
+          } catch {
+            // Exception messages can contain denied paths, file content, or
+            // child stderr. Keep diagnostics useful without forwarding them.
+            Logger.error(`MCP tool ${tool.name} failed.`);
             return {
               isError: true,
               content: [
                 {
                   type: "text",
-                  text: `Execution failed: ${String(error)}`,
+                  text: "Operation failed. Check workspace policy and retry with a narrower request.",
                 },
               ],
             };
@@ -59,8 +73,8 @@ export async function runMcpServer() {
       );
 
       registeredNames.add(tool.name);
-    } catch (err: unknown) {
-      Logger.error(`Failed to register tool ${tool.name}:`, err);
+    } catch {
+      Logger.error(`Failed to register MCP tool ${tool.name}.`);
     }
   }
 

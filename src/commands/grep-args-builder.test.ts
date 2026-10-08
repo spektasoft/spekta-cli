@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { buildGrepArgs } from "./grep-args-builder";
+import { RESTRICTED_FILES } from "../utils/security";
 
 describe("buildGrepArgs", () => {
   it("always disables git-requirement so nested blanket .gitignore files are honored regardless of git detection", async () => {
@@ -9,13 +10,14 @@ describe("buildGrepArgs", () => {
 
   it("includes the pattern and default search path", async () => {
     const args = await buildGrepArgs({ pattern: "foo" });
-    expect(args[0]).toBe("foo");
-    expect(args[1]).toBe(".");
+    expect(args[args.indexOf("--regexp") + 1]).toBe("foo");
+    expect(args.slice(-2)).toEqual(["--", "."]);
   });
 
   it("respects an explicit search path", async () => {
     const args = await buildGrepArgs({ pattern: "foo", path: "src" });
-    expect(args[1]).toBe("src");
+    expect(args[args.indexOf("--regexp") + 1]).toBe("foo");
+    expect(args.slice(-2)).toEqual(["--", "src"]);
   });
 
   it("applies case sensitivity flags only when explicitly requested", async () => {
@@ -41,12 +43,14 @@ describe("buildGrepArgs", () => {
       pattern: "foo",
       globs: "*test*.*,*spec*.*",
     });
-    const gIndices = args.reduce<number[]>((acc, val, idx) => {
-      if (val === "-g") acc.push(idx);
+    const globValues = args.reduce<string[]>((acc, val, idx) => {
+      if (val === "-g") acc.push(args[idx + 1]);
       return acc;
     }, []);
-    expect(gIndices.length).toBe(2);
-    expect(args[gIndices[0] + 1]).toBe("*test*.*");
-    expect(args[gIndices[1] + 1]).toBe("*spec*.*");
+    expect(globValues).toEqual([
+      "*test*.*",
+      "*spec*.*",
+      ...RESTRICTED_FILES.map((restricted) => `!**/${restricted}`),
+    ]);
   });
 });

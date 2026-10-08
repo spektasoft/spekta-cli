@@ -9,7 +9,9 @@ const parseIgnoreContent = (content: string): string[] => {
     .filter((line) => line && !line.startsWith("#"));
 };
 
-export const getIgnorePatterns = async (): Promise<string[]> => {
+export const getIgnorePatterns = async (
+  workspaceRoot = process.cwd(),
+): Promise<string[]> => {
   const patterns: string[] = [];
 
   // 1. Managed Defaults
@@ -26,7 +28,7 @@ export const getIgnorePatterns = async (): Promise<string[]> => {
   }
 
   // 3. Workspace
-  const workspaceIgnore = path.join(process.cwd(), ".spektaignore");
+  const workspaceIgnore = path.join(workspaceRoot, ".spektaignore");
   if (await fs.pathExists(workspaceIgnore)) {
     const workspaceContent = await fs.readFile(workspaceIgnore, "utf-8");
     patterns.push(...parseIgnoreContent(workspaceContent));

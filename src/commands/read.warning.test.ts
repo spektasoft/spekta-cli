@@ -18,7 +18,9 @@ describe("compaction warning surfacing", () => {
   beforeEach(() => {
     vi.mocked(config.getReadTokenLimit).mockReturnValue(100000);
     vi.mocked(config.getCompactThreshold).mockReturnValue(10);
-    vi.mocked(security.validatePathAccess).mockResolvedValue(undefined);
+    vi.mocked(security.validateReadPathAccess).mockImplementation((target) =>
+      Promise.resolve(target),
+    );
     vi.mocked(readUtils.getFileLines).mockResolvedValue({
       lines: Array.from({ length: 200 }, (_, i) => `line ${i}`),
       total: 200,
@@ -30,7 +32,7 @@ describe("compaction warning surfacing", () => {
     vi.clearAllMocks();
   });
 
-  it("logs and labels a compaction warning without marking the file as compacted", async () => {
+  it("includes a compaction warning in the bounded response without marking the file as compacted", async () => {
     vi.mocked(compactor.compactFile).mockReturnValue({
       content: "unchanged content",
       isCompacted: false,
@@ -40,9 +42,7 @@ describe("compaction warning surfacing", () => {
 
     const output = await getReadContent([{ path: "main.rs" }], false);
 
-    expect(Logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining("not yet verified"),
-    );
+    expect(Logger.warn).not.toHaveBeenCalled();
     expect(output).toContain("Compaction skipped");
   });
 });

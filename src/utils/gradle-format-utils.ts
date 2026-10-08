@@ -2,6 +2,12 @@ import fs from "fs-extra";
 import os from "os";
 import path from "path";
 import { execa } from "execa";
+import {
+  isPathWithin,
+  resolveWorkspace,
+  resolveWorkspaceTarget,
+  type WorkspaceContext,
+} from "./workspace";
 
 const FORMAT_TASKS = [
   "spotlessApply",
@@ -23,7 +29,10 @@ function getGradleWrapperName(platform = os.platform()): string {
   return platform === "win32" ? "gradlew.bat" : "gradlew";
 }
 
-async function findGradleProjectRoot(filePath: string): Promise<string | null> {
+async function findGradleProjectRoot(
+  filePath: string,
+  workspaceRoot?: string,
+): Promise<string | null> {
   let current = path.dirname(path.resolve(filePath));
 
   while (true) {
@@ -34,11 +43,31 @@ async function findGradleProjectRoot(filePath: string): Promise<string | null> {
       (await fs.pathExists(wrapperPath)) &&
       (await fs.pathExists(wrapperDirectory))
     ) {
+      if (workspaceRoot) {
+        const canonicalProject = await fs.realpath(current);
+        const canonicalWrapper = await fs.realpath(wrapperPath);
+        const canonicalWrapperDirectory = await fs.realpath(wrapperDirectory);
+        if (
+          !isPathWithin(workspaceRoot, canonicalProject) ||
+          !isPathWithin(workspaceRoot, canonicalWrapper) ||
+          !isPathWithin(workspaceRoot, canonicalWrapperDirectory)
+        ) {
+          throw new Error(
+            "Gradle project or wrapper is outside the workspace.",
+          );
+        }
+        return canonicalProject;
+      }
       return current;
     }
 
+    if (workspaceRoot && current === workspaceRoot) return null;
     const parent = path.dirname(current);
-    if (parent === current) return null;
+    if (
+      parent === current ||
+      (workspaceRoot && !isPathWithin(workspaceRoot, parent))
+    )
+      return null;
     current = parent;
   }
 }
@@ -113,8 +142,18 @@ async function findFormattingTask(
 
 export async function formatKotlinFileInPlace(
   filePath: string,
+  workspace?: WorkspaceContext,
 ): Promise<boolean> {
-  const projectRoot = await findGradleProjectRoot(filePath);
+  const resolvedWorkspace = workspace
+    ? await resolveWorkspace(workspace)
+    : undefined;
+  const canonicalFile = resolvedWorkspace
+    ? (await resolveWorkspaceTarget(filePath, resolvedWorkspace)).canonicalPath
+    : filePath;
+  const projectRoot = await findGradleProjectRoot(
+    canonicalFile,
+    resolvedWorkspace?.canonicalRoot,
+  );
 
   if (!projectRoot) {
     return false;

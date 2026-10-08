@@ -15,13 +15,42 @@ describe("runGrep", () => {
   });
 
   it("logs error and sets exitCode to 1 when search fails", async () => {
-    vi.spyOn(grepSearch, "getGrepContent").mockRejectedValue(
-      new Error("Ripgrep execution failed"),
-    );
+    vi.spyOn(grepSearch, "getGrepOutcome").mockResolvedValue({
+      status: "engine_failure",
+      message: "Ripgrep execution failed",
+    });
 
     await runGrep(["pattern", "src"]);
 
     expect(Logger.error).toHaveBeenCalledWith("Ripgrep execution failed");
     expect(process.exitCode).toBe(1);
+  });
+
+  it("suppresses an empty failure message while preserving the failing exit code", async () => {
+    vi.spyOn(grepSearch, "getGrepOutcome").mockResolvedValue({
+      status: "engine_failure",
+      message: "",
+    });
+
+    await runGrep(["pattern"]);
+
+    expect(Logger.error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("passes the routed ignore-case option to the search operation", async () => {
+    const search = vi.spyOn(grepSearch, "getGrepOutcome").mockResolvedValue({
+      status: "success",
+      value: "No matches found.",
+    });
+
+    await runGrep(["needle", "src", "--ignore-case"]);
+
+    expect(search).toHaveBeenCalledWith({
+      pattern: "needle",
+      path: "src",
+      globs: undefined,
+      case_insensitive: true,
+    });
   });
 });

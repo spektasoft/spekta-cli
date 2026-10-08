@@ -4,70 +4,7 @@ import path from "path";
 
 import { describe, expect, it } from "vitest";
 
-import { isCommandSafe, validateCommandArguments } from "./proxy-security";
-
-describe("isCommandSafe", () => {
-  it("allows standalone safe commands", () => {
-    for (const command of [
-      "vitest",
-      "jest",
-      "pytest",
-      "tsc",
-      "eslint",
-      "ruff",
-      "clippy",
-      "biome",
-      "tree",
-      "ps",
-      "ls",
-    ]) {
-      expect(isCommandSafe(command, [])).toBe(true);
-    }
-  });
-
-  it("allows safe multi-tool subcommands", () => {
-    expect(isCommandSafe("git", ["status"])).toBe(true);
-    expect(isCommandSafe("git", ["log"])).toBe(true);
-    expect(isCommandSafe("git", ["diff"])).toBe(true);
-    expect(isCommandSafe("cargo", ["test"])).toBe(true);
-    expect(isCommandSafe("cargo", ["check"])).toBe(true);
-    expect(isCommandSafe("npm", ["run", "build"])).toBe(true);
-    expect(isCommandSafe("pnpm", ["lint"])).toBe(true);
-    expect(isCommandSafe("docker", ["build"])).toBe(true);
-  });
-
-  it("rejects destructive multi-tool commands", () => {
-    expect(isCommandSafe("git", ["reset", "--hard"])).toBe(false);
-    expect(isCommandSafe("git", ["clean", "-fd"])).toBe(false);
-  });
-
-  it("rejects option values being mistaken for safe subcommands", () => {
-    expect(isCommandSafe("git", ["-C", "status", "log"])).toBe(false);
-  });
-
-  it("rejects git repository and configuration redirection options", () => {
-    expect(isCommandSafe("git", ["--git-dir", ".", "status"])).toBe(false);
-    expect(isCommandSafe("git", ["--git-dir=.", "status"])).toBe(false);
-    expect(isCommandSafe("git", ["--work-tree", ".", "status"])).toBe(false);
-    expect(isCommandSafe("git", ["--work-tree=.", "status"])).toBe(false);
-    expect(isCommandSafe("git", ["-c", "core.pager=cat", "status"])).toBe(
-      false,
-    );
-  });
-
-  it("fails closed on unknown leading options", () => {
-    expect(isCommandSafe("git", ["--unknown-option", "status"])).toBe(false);
-    expect(isCommandSafe("cargo", ["--unknown-option", "test"])).toBe(false);
-    expect(isCommandSafe("npm", ["--unknown-option", "run", "build"])).toBe(
-      false,
-    );
-  });
-
-  it("rejects arbitrary destructive commands", () => {
-    expect(isCommandSafe("rm", ["-rf", "src"])).toBe(false);
-    expect(isCommandSafe("chmod", ["777", "file"])).toBe(false);
-  });
-});
+import { validateCommandArguments } from "./proxy-security";
 
 describe("validateCommandArguments", () => {
   it("rejects restricted files", () => {

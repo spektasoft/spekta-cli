@@ -1,10 +1,14 @@
 import { execa } from "execa";
 import fs from "fs-extra";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getGrepTokenLimit } from "../../core/config";
-import { validatePathAccess } from "../../utils/security";
+import { getGrepTokenLimit, getIgnorePatterns } from "../../core/config";
+import { validateReadPathAccess } from "../../utils/security";
+import { resolveWorkspace } from "../../utils/workspace";
+import path from "node:path";
 import { getGrepContent } from "../grep-search";
 import { mockExecaStream } from "./grep-search.test.helpers";
+import { getGrepOutcome } from "../grep-search";
+import { getGrepResponseTokenCount } from "../grep-output-parser";
 
 vi.mock("execa");
 vi.mock("fs-extra");
@@ -12,20 +16,30 @@ vi.mock("../../utils/path-ignore", () => ({
   isPathIgnored: vi.fn().mockResolvedValue(false),
 }));
 vi.mock("../../utils/security", () => ({
-  validatePathAccess: vi.fn().mockResolvedValue(undefined),
+  validateReadPathAccess: vi.fn(),
+  RESTRICTED_FILES: [".env", ".gitignore", ".spektaignore"],
 }));
+vi.mock("../../utils/workspace", () => ({ resolveWorkspace: vi.fn() }));
 vi.mock("../../core/config", () => ({
   HOME_IGNORE: "/mock/home/.spektaignore",
   getAssetPaths: () => ({
     ASSET_DEFAULT_IGNORE: "/mock/assets/default.ignore",
   }),
   getGrepTokenLimit: vi.fn().mockReturnValue(2000),
+  getIgnorePatterns: vi.fn().mockResolvedValue([]),
 }));
 
 describe("getGrepContent - flags", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    vi.mocked(validatePathAccess).mockResolvedValue(undefined);
+    vi.mocked(getIgnorePatterns).mockResolvedValue([]);
+    vi.mocked(resolveWorkspace).mockImplementation((context) => {
+      const root = path.resolve(context?.root ?? process.cwd());
+      return Promise.resolve({ root, canonicalRoot: root });
+    });
+    vi.mocked(validateReadPathAccess).mockImplementation((target, workspace) =>
+      Promise.resolve(path.resolve(workspace.canonicalRoot, target)),
+    );
     vi.mocked(fs.pathExists).mockResolvedValue(false as never);
     vi.mocked(getGrepTokenLimit).mockReturnValue(2000);
   });
@@ -33,7 +47,59 @@ describe("getGrepContent - flags", () => {
   it("verifies path access before execution", async () => {
     vi.mocked(execa).mockImplementation(() => mockExecaStream(""));
     await getGrepContent({ pattern: "test", path: "src" });
-    expect(validatePathAccess).toHaveBeenCalledWith("src");
+    expect(validateReadPathAccess).toHaveBeenCalledWith("src", {
+      root: process.cwd(),
+      canonicalRoot: process.cwd(),
+    });
+  });
+
+  it("does not execute rg when root validation fails", async () => {
+    vi.mocked(validateReadPathAccess).mockRejectedValueOnce(
+      new Error("Access Denied: outside"),
+    );
+    const result = await getGrepContent({
+      pattern: "needle",
+      path: "../outside",
+    });
+    expect(result).toContain("Search rejected");
+    expect(result).not.toContain("outside");
+    expect(execa).not.toHaveBeenCalled();
+  });
+
+  it("bounds policy failures including the MCP error envelope", async () => {
+    vi.mocked(getGrepTokenLimit).mockReturnValue(1);
+    vi.mocked(validateReadPathAccess).mockRejectedValueOnce(
+      new Error("Access Denied: /private/secret.env"),
+    );
+    const outcome = await getGrepOutcome(
+      { pattern: "needle", path: "/private/secret.env" },
+      undefined,
+      "id",
+    );
+    expect(outcome.status).toBe("policy_rejection");
+    if (outcome.status !== "policy_rejection") return;
+    expect(outcome.message).toBe("");
+    expect(
+      getGrepResponseTokenCount(outcome.message, "id", true),
+    ).toBeLessThanOrEqual(
+      Math.max(getGrepTokenLimit(), getGrepResponseTokenCount("", "id", true)),
+    );
+    expect(outcome.message).not.toContain("secret.env");
+  });
+
+  it("reports backend launch and execution failures", async () => {
+    vi.mocked(execa).mockImplementationOnce(() => {
+      throw new Error("ENOENT");
+    });
+    await expect(getGrepContent({ pattern: "needle" })).rejects.toThrow(
+      "ripgrep is unavailable",
+    );
+    vi.mocked(execa)
+      .mockImplementationOnce(() => mockExecaStream("version"))
+      .mockImplementationOnce(() => mockExecaStream("", 2));
+    await expect(getGrepContent({ pattern: "needle" })).rejects.toThrow(
+      "Ripgrep error",
+    );
   });
 
   it("correctly applies glob and case sensitivity flags", async () => {

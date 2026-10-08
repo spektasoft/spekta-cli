@@ -9,6 +9,12 @@ import {
 } from "../utils/replace-utils";
 import { resolveCommandInput } from "../utils/cli-input";
 import { validateEditAccess } from "../utils/security";
+import { resolveWorkspace, type WorkspaceContext } from "../utils/workspace";
+import {
+  boundMutationSuccess,
+  mutationFailure,
+  type MutationOutcome,
+} from "./mutation-outcomes";
 
 const MAX_BLOCKS_PER_REPLACE = 50;
 
@@ -19,6 +25,22 @@ const MAX_BLOCKS_PER_REPLACE = 50;
 export async function getReplaceContent(
   request: ReplaceRequest,
   blocksInput?: string,
+  workspace?: WorkspaceContext,
+): Promise<{
+  content: string;
+  appliedCount: number;
+  message: string;
+  totalLines: number;
+}> {
+  const resolvedWorkspace = await resolveWorkspace(workspace);
+  const filePath = await validateEditAccess(request.path, resolvedWorkspace);
+  return getReplaceContentForPath(request, blocksInput, filePath);
+}
+
+async function getReplaceContentForPath(
+  request: ReplaceRequest,
+  blocksInput: string | undefined,
+  filePath: string,
 ): Promise<{
   content: string;
   appliedCount: number;
@@ -26,9 +48,6 @@ export async function getReplaceContent(
   totalLines: number;
 }> {
   try {
-    // Validate file access and git tracking
-    await validateEditAccess(request.path);
-
     // Use provided blocks or parse from input
     const blocks = blocksInput
       ? parseReplaceBlocks(blocksInput)
@@ -45,7 +64,7 @@ export async function getReplaceContent(
     }
 
     // Apply replacements
-    const result = await applyReplacements(request.path, blocks);
+    const result = await applyReplacements(filePath, blocks);
 
     let message = "";
     const MAX_RANGES_TO_DISPLAY = 5;
@@ -101,13 +120,15 @@ const getFileHash = (content: string) =>
 export async function executeSafeReplace(
   request: ReplaceRequest,
   blocksInput?: string,
+  workspace?: WorkspaceContext,
 ): Promise<{ message: string; appliedCount: number }> {
   try {
     // 1. Validate access
-    await validateEditAccess(request.path);
+    const resolvedWorkspace = await resolveWorkspace(workspace);
+    const filePath = await validateEditAccess(request.path, resolvedWorkspace);
 
     // 2. Read original content + hash
-    const originalContent = await fs.readFile(request.path, "utf-8");
+    const originalContent = await fs.readFile(filePath, "utf-8");
     const initialHash = getFileHash(originalContent);
 
     // 3. Ensure we have blocks (parse if provided as string)
@@ -126,7 +147,7 @@ export async function executeSafeReplace(
       content: replacedContent,
       message,
       appliedCount,
-    } = await getReplaceContent(request, "");
+    } = await getReplaceContentForPath(request, "", filePath);
 
     if (appliedCount === 0) {
       return {
@@ -136,22 +157,99 @@ export async function executeSafeReplace(
     }
 
     // 5. Stale-write check (Performed BEFORE writing unformatted content)
-    const currentContent = await fs.readFile(request.path, "utf-8");
+    const currentContent = await fs.readFile(filePath, "utf-8");
     if (getFileHash(currentContent) !== initialHash) {
       throw new Error("File was modified by another process during execution.");
     }
 
     // 6. Write unformatted content
-    await fs.writeFile(request.path, replacedContent, "utf-8");
+    await fs.writeFile(filePath, replacedContent, "utf-8");
 
-    // 7. Format in-place
-    await formatFileInPlace(request.path);
+    // 7. Formatting is best-effort after the content has been saved.
+    try {
+      if (workspace) await formatFileInPlace(filePath, workspace);
+      else await formatFileInPlace(filePath);
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return {
+        message:
+          `${message}\n` +
+          `Warning: Content was saved to "${request.path}", but formatting failed: ${reason}. Retrying the mutation is unnecessary.`,
+        appliedCount,
+      };
+    }
 
     return { message, appliedCount };
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     const errMsg = `Replacement failed for "${request.path}": ${message}`;
     throw new Error(errMsg, { cause: error });
+  }
+}
+
+export async function executeSafeReplaceOutcome(
+  request: ReplaceRequest,
+  blocksInput?: string,
+  workspace?: WorkspaceContext,
+  requestId?: string | number,
+): Promise<MutationOutcome> {
+  try {
+    const result = await executeSafeReplace(request, blocksInput, workspace);
+    const message = result.message.replace(
+      /(formatting failed: ).*(\. Retrying)/s,
+      "$1formatter could not process the saved content$2",
+    );
+    const cliOutput =
+      result.appliedCount > 0
+        ? `${message}[INFO] Successfully applied ${result.appliedCount} replacement(s) to ${request.path}\n`
+        : message;
+    return boundMutationSuccess(
+      {
+        message,
+        changed: result.appliedCount > 0,
+        appliedCount: result.appliedCount,
+        cliOutput,
+      },
+      requestId,
+    );
+  } catch (error: unknown) {
+    const raw = error instanceof Error ? error.message : "";
+    if (raw.includes("File was modified by another process")) {
+      return mutationFailure(
+        "policy_rejection",
+        "The file changed during preparation; no replacement was saved.",
+        requestId,
+      );
+    }
+    if (
+      raw.includes("could not be found") ||
+      raw.includes("search block was not found")
+    ) {
+      return mutationFailure(
+        "policy_rejection",
+        "The SEARCH block could not be found. Ensure it matches the file content exactly, including indentation.",
+        requestId,
+      );
+    }
+    if (raw.includes("ignored by git")) {
+      return mutationFailure(
+        "policy_rejection",
+        "Replacement rejected: target is ignored by git.",
+        requestId,
+      );
+    }
+    if (raw.includes("restricted system file")) {
+      return mutationFailure(
+        "policy_rejection",
+        "Replacement rejected: target is a restricted system file.",
+        requestId,
+      );
+    }
+    return mutationFailure(
+      "policy_rejection",
+      "Mutation rejected by workspace policy.",
+      requestId,
+    );
   }
 }
 
@@ -171,15 +269,18 @@ export async function runReplace(args?: string[]): Promise<void> {
 
     const request: ReplaceRequest = { path: resolved.filePath, blocks: [] };
 
-    const { message, appliedCount } = await executeSafeReplace(
-      request,
-      resolved.content,
-    );
+    const outcome = await executeSafeReplaceOutcome(request, resolved.content);
+    if (outcome.status !== "success") {
+      Logger.error(outcome.message);
+      process.exitCode = 1;
+      return;
+    }
+    const { message } = outcome.value;
 
     process.stdout.write(message);
-    if (appliedCount > 0) {
+    if (outcome.value.changed) {
       Logger.info(
-        `Successfully applied ${appliedCount} replacement(s) to ${resolved.filePath}`,
+        `Successfully applied ${outcome.value.appliedCount} replacement(s) to ${resolved.filePath}`,
       );
     }
   } catch (error: unknown) {

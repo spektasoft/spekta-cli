@@ -4,9 +4,9 @@ export const Logger = {
   info: (msg: string, ...args: unknown[]) =>
     process.stdout.write(`[INFO] ${msg}${formatArgs(args)}\n`),
   warn: (msg: string, ...args: unknown[]) =>
-    process.stdout.write(`[WARN] ${msg}${formatArgs(args)}\n`),
+    process.stderr.write(`[WARN] ${msg}${formatArgs(args)}\n`),
   error: (msg: string, ...args: unknown[]) =>
-    process.stdout.write(`[ERROR] ${msg}${formatArgs(args)}\n`),
+    process.stderr.write(`[ERROR] ${msg}${formatArgs(args)}\n`),
   log: (msg: string, ...args: unknown[]) =>
     process.stdout.write(`${msg}${formatArgs(args)}\n`),
 };
