@@ -2,11 +2,13 @@ import fs from "fs-extra";
 import { syncFreeModels } from "./adapters/sync/freeModels";
 import { bootstrap, getEnv, HOME_PROVIDERS_FREE } from "./core/config";
 import { COMMANDS, dispatchCommand, runInteractiveMenu } from "./cli/commands";
+import { handleHelp } from "./cli/help";
 
 export { COMMANDS };
 
 async function main() {
   const args = process.argv.slice(2);
+  if (handleHelp(args, COMMANDS)) return;
   const commandArg = args[0];
   const isInteractiveMenu = args.length === 0;
   await bootstrap({ writeUserHome: isInteractiveMenu });

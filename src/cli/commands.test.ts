@@ -49,6 +49,27 @@ describe("dispatchCommand", () => {
     expect(runRtkProxy).toHaveBeenCalledTimes(1);
     expect(runRtkProxy).toHaveBeenCalledWith("unknown-cmd", ["--arg"]);
   });
+
+  it.each([
+    ["write", ["notes.md", "--help"]],
+    ["replace", ["notes.md", "-h"]],
+    ["grep", ["--help", "src"]],
+    ["read", ["./--help"]],
+  ])(
+    "preserves ordinary %s arguments at native dispatch",
+    async (name, args) => {
+      const run = vi.fn().mockResolvedValue(undefined);
+      const original = COMMANDS[name].run;
+      COMMANDS[name].run = run;
+      try {
+        await dispatchCommand(name, args);
+        expect(run).toHaveBeenCalledWith(args);
+        expect(runRtkProxy).not.toHaveBeenCalled();
+      } finally {
+        COMMANDS[name].run = original;
+      }
+    },
+  );
 });
 
 describe("runInteractiveMenu", () => {
