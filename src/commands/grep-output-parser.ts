@@ -28,6 +28,7 @@ export interface GrepProcessMatchMessage {
 
 export interface GrepChildProcess extends PromiseLike<unknown> {
   stdout?: NodeJS.ReadableStream | null;
+  pid?: number;
   kill?: () => unknown;
 }
 
@@ -116,6 +117,16 @@ export async function parseGrepOutput(
   const stopForLimit = () => {
     exceeded = true;
     cancellationRequested = true;
+    if (child.pid && process.platform !== "win32") {
+      try {
+        // RTK may launch ripgrep as a descendant. The detached process group
+        // lets a response-budget cancellation stop both processes together.
+        process.kill(-child.pid, "SIGTERM");
+        return;
+      } catch {
+        // Fall through to the direct child handle if the group has exited.
+      }
+    }
     child.kill?.();
   };
 

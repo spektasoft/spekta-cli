@@ -9,6 +9,7 @@ import { Readable } from "node:stream";
 import { getGrepContent, MAX_MATCHES } from "../grep-search";
 import { getGrepResponseTokenCount } from "../grep-output-parser";
 import { runGrep } from "../grep";
+import { runRg } from "../rg";
 import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 import { createRgMatch, mockExecaStream } from "./grep-search.test.helpers";
 import { isPathIgnored } from "../../utils/path-ignore";
@@ -177,6 +178,26 @@ describe("getGrepContent - truncation", () => {
     expect(cliText).toContain("exit code 2");
     expect(cliText).not.toContain("WITHHELD_SECRET");
     expect(cliText).not.toContain("needle 0");
+
+    configureFailingRipgrep();
+    const rgMcp = await TOOL_REGISTRY.spekta_rg.handler({ pattern: "needle" });
+    expect(rgMcp.isError).toBe(true);
+    expect(rgMcp.content[0].text).toContain("exit code 2");
+    expect(rgMcp.content[0].text).not.toContain("WITHHELD_SECRET");
+    expect(rgMcp.content[0].text).not.toContain("needle 0");
+
+    configureFailingRipgrep();
+    const rgCliError = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    await runRg(["needle"]);
+    const rgCliText = rgCliError.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    rgCliError.mockRestore();
+    expect(rgCliText).toContain("exit code 2");
+    expect(rgCliText).not.toContain("WITHHELD_SECRET");
+    expect(rgCliText).not.toContain("needle 0");
   });
 
   it("withholds all results when complete formatted output exceeds the token limit", async () => {

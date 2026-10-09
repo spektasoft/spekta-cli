@@ -33,6 +33,7 @@ function spawnRtkRg(args: string[], cwd: string, reject = true) {
   return execa("rtk", ["proxy", "rg", ...args], {
     cwd,
     env: { ...env, NO_COLOR: "1", TERM: "dumb" },
+    detached: process.platform !== "win32",
     reject,
   });
 }
