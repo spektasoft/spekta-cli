@@ -41,6 +41,20 @@ describe("dispatchCommand", () => {
     COMMANDS.commit.run = original;
   });
 
+  it("dispatches rg as a visible native command", async () => {
+    const run = vi.fn().mockResolvedValue(undefined);
+    const original = COMMANDS.rg.run;
+    COMMANDS.rg.run = run;
+    try {
+      await dispatchCommand("rg", ["needle"]);
+      expect(run).toHaveBeenCalledWith(["needle"]);
+      expect(COMMANDS.rg.hidden).toBeUndefined();
+      expect(runRtkProxy).not.toHaveBeenCalled();
+    } finally {
+      COMMANDS.rg.run = original;
+    }
+  });
+
   it("delegates unknown commands to the RTK proxy", async () => {
     vi.mocked(runRtkProxy).mockResolvedValueOnce(undefined);
 

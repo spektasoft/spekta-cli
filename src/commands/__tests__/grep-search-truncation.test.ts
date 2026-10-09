@@ -145,7 +145,7 @@ describe("getGrepContent - truncation", () => {
     const configureFailingRipgrep = () => {
       vi.mocked(execa).mockImplementation((_command, args) => {
         if (Array.isArray(args) && args.includes("--version")) {
-          return Promise.resolve({ stdout: "ripgrep 1" }) as never;
+          return Promise.resolve({ stdout: "ripgrep 1", exitCode: 0 }) as never;
         }
         return Object.assign(Promise.reject(independentFailure), {
           stdout: Readable.from(
@@ -243,7 +243,7 @@ describe("getGrepContent - truncation", () => {
     const configureRipgrep = () => {
       vi.mocked(execa).mockImplementation((_command, args) => {
         if (Array.isArray(args) && args.includes("--version")) {
-          return Promise.resolve({ stdout: "ripgrep 1" }) as never;
+          return Promise.resolve({ stdout: "ripgrep 1", exitCode: 0 }) as never;
         }
         return mockExecaStream(match);
       });

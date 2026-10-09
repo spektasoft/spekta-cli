@@ -195,6 +195,29 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
       "spekta grep 'export function' src --glob '*.ts' --glob '!*.test.ts'",
     ],
   ),
+  rg: topic(
+    "rg — Search eligible workspace files",
+    "Search eligible workspace files through RTK with ripgrep's basic case-sensitive interface.",
+    ["spekta rg <pattern> [path]"],
+    [
+      {
+        heading: "Arguments and behavior",
+        lines: [
+          "pattern is one nonempty ripgrep regular expression. path is an optional file or directory; when omitted, the workspace root (.) is searched recursively.",
+          "Search uses native case-sensitive matching by default. This basic command does not accept additional ripgrep options.",
+          "Search is limited to eligible workspace files and applies Git and Spekta ignore rules. Restricted paths and symlink escapes are rejected.",
+        ],
+      },
+      {
+        heading: "Execution and response budget",
+        lines: [
+          "Search runs through rtk proxy rg. Missing RTK or ripgrep is reported as an engine failure.",
+          "Search results use the existing bounded response and cancellation behavior.",
+        ],
+      },
+    ],
+    ["spekta rg 'TODO'", "spekta rg 'timeout' src"],
+  ),
   diagnostic: topic(
     "diagnostic — Scan files for policy and optimization findings",
     "Generate a report about eligible files in one file or directory.",

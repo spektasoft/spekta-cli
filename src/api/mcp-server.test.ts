@@ -14,7 +14,7 @@ import {
 } from "./mcp-server/registry";
 import { getReadOutcome } from "../commands/read";
 import { executeSafeReplaceOutcome } from "../commands/replace";
-import { getGrepOutcome } from "../commands/grep-search";
+import { getGrepOutcome, getRgOutcome } from "../commands/grep-search";
 import { getWriteOutcome } from "../commands/write";
 import { executeRtkCommand } from "../commands/proxy/proxy-execution";
 import { getTokenCount } from "../utils/read-utils";
@@ -27,7 +27,10 @@ import path from "node:path";
 vi.mock("../commands/read", () => ({ getReadOutcome: vi.fn() }));
 vi.mock("../commands/replace", () => ({ executeSafeReplaceOutcome: vi.fn() }));
 vi.mock("../commands/write", () => ({ getWriteOutcome: vi.fn() }));
-vi.mock("../commands/grep-search", () => ({ getGrepOutcome: vi.fn() }));
+vi.mock("../commands/grep-search", () => ({
+  getGrepOutcome: vi.fn(),
+  getRgOutcome: vi.fn(),
+}));
 vi.mock("../commands/proxy/proxy-execution", () => ({
   executeRtkCommand: vi.fn(),
 }));
@@ -163,6 +166,37 @@ describe("TOOL_REGISTRY", () => {
       {
         pattern: "test",
         path: "src",
+      },
+      undefined,
+      undefined,
+    );
+  });
+
+  it("defines spekta_rg with the basic case-sensitive request contract", async () => {
+    const tool = TOOL_REGISTRY.spekta_rg;
+    expect(tool).toBeDefined();
+    const parsed = tool
+      .schema({
+        pattern: { description: "regex" },
+        path: { description: "path" },
+      })
+      .parse({ pattern: "needle", path: "nested" });
+    expect(parsed).toEqual({ pattern: "needle", path: "nested" });
+
+    vi.mocked(getRgOutcome).mockResolvedValueOnce({
+      status: "success",
+      value: "rg result",
+    });
+    const result = await tool.handler({ pattern: "needle", path: "nested" });
+    expect(result).toEqual({
+      content: [{ type: "text", text: "rg result" }],
+    });
+    expect(getRgOutcome).toHaveBeenCalledWith(
+      {
+        patterns: ["needle"],
+        paths: ["nested"],
+        globs: [],
+        case_mode: "sensitive",
       },
       undefined,
       undefined,

@@ -19,14 +19,71 @@ import {
   type ResolvedWorkspace,
   type WorkspaceContext,
 } from "../utils/workspace";
+import { isRtkAvailable } from "./proxy/proxy-execution";
 import {
   boundFailureOutcome,
   type FailureOutcome,
   type OperationOutcome,
 } from "../core/operation-outcome";
 
+function spawnRtkRg(args: string[], cwd: string, reject = true) {
+  const env = { ...process.env };
+  delete env.RG_CONFIG_PATH;
+  delete env.RIPGREP_CONFIG_PATH;
+  return execa("rtk", ["proxy", "rg", ...args], {
+    cwd,
+    env: { ...env, NO_COLOR: "1", TERM: "dumb" },
+    reject,
+  });
+}
+
 export type { GrepOptions };
 export { MAX_MATCHES };
+
+/** Stable transport-neutral request shape for the incremental `spekta rg` interface.
+ * Arrays preserve repeated patterns, multiple paths and ordered globs without
+ * flattening; case mode is an explicit native ripgrep choice.
+ */
+export type SearchCaseMode = "sensitive" | "insensitive" | "smart";
+export interface SearchRequest {
+  patterns: string[];
+  paths: string[];
+  globs: string[];
+  case_mode: SearchCaseMode;
+}
+
+/** Current basic slice: exactly one pattern, zero or one path, no globs. */
+export async function getRgOutcome(
+  request: SearchRequest,
+  workspace?: WorkspaceContext,
+  responseId?: string | number,
+): Promise<OperationOutcome<string>> {
+  if (
+    request.patterns.length !== 1 ||
+    request.paths.length > 1 ||
+    request.globs.length > 0
+  ) {
+    return failureOutcome(
+      "policy_rejection",
+      "This search interface currently supports one pattern, one path, and no globs.",
+      responseId,
+    );
+  }
+  return getGrepOutcome(
+    {
+      pattern: request.patterns[0],
+      path: request.paths[0] ?? ".",
+      case_insensitive:
+        request.case_mode === "insensitive"
+          ? true
+          : request.case_mode === "sensitive"
+            ? false
+            : undefined,
+    },
+    workspace,
+    responseId,
+  );
+}
 
 function failureOutcome(
   status: FailureOutcome["status"],
@@ -71,9 +128,11 @@ async function findWhitelistedGitIgnoredFiles(
   );
   const listFiles = async (args: string[]): Promise<string[]> => {
     try {
-      const { stdout } = await execa("rg", args, {
-        cwd: workspace.canonicalRoot,
-      });
+      const result = await spawnRtkRg(args, workspace.canonicalRoot, false);
+      if (result.exitCode !== 0 && result.exitCode !== 1) {
+        throw new Error("Ripgrep file listing failed.");
+      }
+      const stdout = result.stdout;
       return stdout.split("\0").filter(Boolean);
     } catch (error: unknown) {
       if ((error as { exitCode?: number }).exitCode === 1) return [];
@@ -178,7 +237,25 @@ export async function getGrepOutcome(
   }
 
   try {
-    await execa("rg", ["--version"]);
+    if (!(await isRtkAvailable())) {
+      return failureOutcome(
+        "engine_failure",
+        "Search failed: RTK is unavailable.",
+        responseId,
+      );
+    }
+    const result = await spawnRtkRg(
+      ["--version"],
+      resolvedWorkspace.canonicalRoot,
+      false,
+    );
+    if (result.exitCode !== 0) {
+      return failureOutcome(
+        "engine_failure",
+        "Search failed: ripgrep is unavailable.",
+        responseId,
+      );
+    }
   } catch {
     return failureOutcome(
       "engine_failure",
@@ -204,7 +281,7 @@ export async function getGrepOutcome(
     if (additionalPaths.length > 0) {
       args.splice(args.length - 1, 0, ...additionalPaths);
     }
-    const child = execa("rg", args, { cwd: resolvedWorkspace.canonicalRoot });
+    const child = spawnRtkRg(args, resolvedWorkspace.canonicalRoot);
 
     return parseGrepOutput(child, {
       workspace: resolvedWorkspace,

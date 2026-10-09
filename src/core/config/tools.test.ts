@@ -51,4 +51,16 @@ xml_example: "<read />"
 
     expect(readTool?.description).toBe("Custom Override Description");
   });
+
+  it("bundles the basic rg MCP tool", async () => {
+    const tools = await loadToolDefinitions();
+    const rgTool = tools.find((tool) => tool.name === "spekta_rg");
+
+    expect(rgTool?.params).toEqual({
+      pattern: { description: "The ripgrep regular expression." },
+      path: {
+        description: "File or directory to search (default: workspace root).",
+      },
+    });
+  });
 });
