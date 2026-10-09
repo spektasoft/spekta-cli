@@ -87,7 +87,7 @@ export const loadToolDefinitions = async (
   tools.push({
     name: "spekta_rg",
     description:
-      "Search eligible workspace files with ripgrep. Supply one or more regex patterns and optional workspace paths and globs. Repeated patterns use alternative matching; when patterns are omitted, the first positional CLI operand is the pattern and later operands are paths. CLI supports -e/--regexp and -- option termination; unsupported flags are rejected.",
+      "Search eligible workspace files with ripgrep and Spekta-owned output formatting. Supply one or more regex patterns, optional workspace paths, ordered inclusion or exclusion globs, and a case mode. CLI supports -e/--regexp, -g/--glob, -i/--ignore-case, -s/--case-sensitive, -S/--smart-case, and -- option termination; unsupported flags are rejected explicitly. Mandatory Spekta restrictions remain in force.",
     params: {
       patterns: {
         description:
@@ -99,10 +99,11 @@ export const loadToolDefinitions = async (
       },
       globs: {
         description:
-          "Ordered ripgrep glob filters, supplied as separate values.",
+          "Ordered ripgrep glob filters, supplied as separate values; values retain commas and later filters follow native ripgrep precedence.",
       },
       case_mode: {
-        description: "Case mode: sensitive (default), insensitive, or smart.",
+        description:
+          "Case mode: sensitive (default), insensitive (-i/--ignore-case), or smart (-S/--smart-case).",
       },
     },
     xml_example:

@@ -60,6 +60,45 @@ describe("runRg", () => {
     });
   });
 
+  it("parses native case flags with the last selected mode taking precedence", async () => {
+    const search = vi.spyOn(grepSearch, "getRgOutcome").mockResolvedValue({
+      status: "no_matches",
+      message: "No matches found.",
+    });
+    await runRg(["-i", "-S", "-s", "needle"]);
+    expect(search).toHaveBeenCalledWith({
+      patterns: ["needle"],
+      paths: [],
+      globs: [],
+      case_mode: "sensitive",
+    });
+  });
+
+  it("preserves repeated glob filters and comma-containing values", async () => {
+    const search = vi.spyOn(grepSearch, "getRgOutcome").mockResolvedValue({
+      status: "no_matches",
+      message: "No matches found.",
+    });
+    await runRg(["-g", "*.ts,*.tsx", "--glob=!*.test.ts", "needle"]);
+    expect(search).toHaveBeenCalledWith({
+      patterns: ["needle"],
+      paths: [],
+      globs: ["*.ts,*.tsx", "!*.test.ts"],
+      case_mode: "sensitive",
+    });
+  });
+
+  it("rejects missing case and glob values", async () => {
+    const search = vi.spyOn(grepSearch, "getRgOutcome");
+    await runRg(["needle", "-g"]);
+    expect(search).not.toHaveBeenCalled();
+    expect(Logger.error).toHaveBeenCalledWith("Option -g requires a glob.");
+
+    await runRg(["needle", "--glob="]);
+    expect(search).not.toHaveBeenCalled();
+    expect(Logger.error).toHaveBeenCalledWith("Option --glob requires a glob.");
+  });
+
   it("accepts dash-prefixed patterns and paths after the option terminator", async () => {
     const search = vi.spyOn(grepSearch, "getRgOutcome").mockResolvedValue({
       status: "no_matches",
@@ -84,12 +123,10 @@ describe("runRg", () => {
   });
 
   it("passes standard input paths to the search policy for explicit rejection", async () => {
-    const search = vi
-      .spyOn(grepSearch, "getRgOutcome")
-      .mockResolvedValue({
-        status: "policy_rejection",
-        message: "Standard input search paths are not supported.",
-      });
+    const search = vi.spyOn(grepSearch, "getRgOutcome").mockResolvedValue({
+      status: "policy_rejection",
+      message: "Standard input search paths are not supported.",
+    });
     await runRg(["-e", "needle", "--", "-"]);
     expect(search).toHaveBeenCalledWith({
       patterns: ["needle"],

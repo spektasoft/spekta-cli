@@ -67,10 +67,11 @@ xml_example: "<read />"
       },
       globs: {
         description:
-          "Ordered ripgrep glob filters, supplied as separate values.",
+          "Ordered ripgrep glob filters, supplied as separate values; values retain commas and later filters follow native ripgrep precedence.",
       },
       case_mode: {
-        description: "Case mode: sensitive (default), insensitive, or smart.",
+        description:
+          "Case mode: sensitive (default), insensitive (-i/--ignore-case), or smart (-S/--smart-case).",
       },
     });
   });

@@ -81,12 +81,7 @@ export async function getRgOutcome(
       patterns: request.patterns,
       paths: request.paths.length ? request.paths : ["."],
       globs: request.globs,
-      case_insensitive:
-        request.case_mode === "insensitive"
-          ? true
-          : request.case_mode === "sensitive"
-            ? false
-            : undefined,
+      case_mode: request.case_mode,
     },
     workspace,
     responseId,

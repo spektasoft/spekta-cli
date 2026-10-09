@@ -10,6 +10,7 @@ export interface GrepOptions {
   paths?: string[];
   globs?: string | string[];
   case_insensitive?: boolean;
+  case_mode?: "insensitive" | "sensitive" | "smart";
 }
 
 async function buildIgnoreArgs(
@@ -53,6 +54,7 @@ export async function buildGrepArgs(
     pattern,
     patterns = pattern === undefined ? [] : [pattern],
     case_insensitive,
+    case_mode,
   } = options;
   const searchPaths = options.paths ?? [options.path ?? "."];
 
@@ -64,7 +66,6 @@ export async function buildGrepArgs(
     "--column",
     "--color=never",
     "--heading",
-    "--smart-case",
     "--json",
     // Force ignore-file processing even when rg cannot confirm a git root
     // (e.g. via a linked bin, an unusual cwd, or a nested search path).
@@ -73,9 +74,15 @@ export async function buildGrepArgs(
     "--no-require-git",
   ];
 
-  if (case_insensitive === true) {
+  if (case_mode === "insensitive" || case_insensitive === true) {
     args.push("--ignore-case");
-  } else if (case_insensitive === false) {
+  } else if (case_mode === "smart") {
+    args.push("--smart-case");
+  } else if (
+    case_mode === "sensitive" ||
+    case_insensitive === false ||
+    case_mode === undefined
+  ) {
     args.push("--case-sensitive");
   }
 

@@ -204,7 +204,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Arguments and behavior",
         lines: [
           "Without -e or --regexp, the first positional operand is the regex and later operands are paths. With explicit patterns, every positional operand is a path. Omitted paths search the workspace root recursively.",
-          "Repeat -e or --regexp for alternative patterns. Use --regexp=PATTERN or -- before literal dash-prefixed patterns and paths. The MCP tool accepts patterns, paths, globs, and case_mode as separate arrays and values.",
+          "Repeat -e/--regexp for alternative patterns and -g/--glob for ordered inclusion or exclusion filters; glob values retain commas. Use -i/--ignore-case, -s/--case-sensitive, or -S/--smart-case (case-sensitive by default). Use -- before literal dash-prefixed operands. Spekta keeps eligible-file restrictions and its own output formatting; unsupported options are rejected. MCP accepts patterns, paths, globs, and case_mode as separate values.",
           "Only the documented options are supported; other ripgrep flags, stdin, and empty or whitespace-only patterns are rejected. Spekta applies workspace eligibility and response limits, so this is not full native ripgrep compatibility.",
           "Search is limited to eligible workspace files and applies Git and Spekta ignore rules. Restricted paths and symlink escapes are rejected.",
         ],
@@ -221,6 +221,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
       "spekta rg 'TODO'",
       "spekta rg 'timeout' src docs",
       "spekta rg -e TODO -e FIXME src",
+      "spekta rg -i -g '*.ts,*.tsx' -g '!*.test.ts' TODO src",
     ],
   ),
   diagnostic: topic(

@@ -35,10 +35,10 @@ describe("buildGrepArgs", () => {
 
     const unset = await buildGrepArgs({ pattern: "foo" });
     expect(unset).not.toContain("--ignore-case");
-    expect(unset).not.toContain("--case-sensitive");
+    expect(unset).toContain("--case-sensitive");
   });
 
-  it("expands a comma-separated globs string into multiple -g flags", async () => {
+  it("keeps legacy comma-delimited glob strings working", async () => {
     const args = await buildGrepArgs({
       pattern: "foo",
       globs: "*test*.*,*spec*.*",
@@ -54,6 +54,15 @@ describe("buildGrepArgs", () => {
     ]);
   });
 
+  it("passes the selected case mode to ripgrep and defaults to case-sensitive", async () => {
+    const smart = await buildGrepArgs({ pattern: "foo", case_mode: "smart" });
+    expect(smart).toContain("--smart-case");
+
+    const sensitive = await buildGrepArgs({ pattern: "foo" });
+    expect(sensitive).toContain("--case-sensitive");
+    expect(sensitive).not.toContain("--smart-case");
+  });
+
   it("preserves repeated patterns, paths, and glob values as separate native arguments", async () => {
     const args = await buildGrepArgs({
       patterns: ["first", "second"],
@@ -65,5 +74,10 @@ describe("buildGrepArgs", () => {
     ).toEqual(["--regexp", "first", "--regexp", "second"]);
     expect(args.slice(-3)).toEqual(["--", "src", "-literal-path"]);
     expect(args).toContain("*.ts,*.tsx");
+    const globValues = args.reduce<string[]>((acc, val, idx) => {
+      if (val === "-g") acc.push(args[idx + 1]);
+      return acc;
+    }, []);
+    expect(globValues).toContain("*.ts,*.tsx");
   });
 });
