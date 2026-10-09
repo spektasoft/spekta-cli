@@ -23,7 +23,7 @@ export const loadToolDefinitions = async (
     return cachedTools;
   }
 
-  const toolNames = ["read", "replace", "write", "grep"] as const;
+  const toolNames = ["read", "replace", "write", "rg"] as const;
   const tools: ToolDefinition[] = [];
 
   for (const name of toolNames) {
@@ -81,34 +81,6 @@ export const loadToolDefinitions = async (
       Logger.warn(`Failed to load tool ${name} from ${filePath}: ${message}`);
     }
   }
-
-  // The loader enumerates the installed YAML templates above, so register
-  // the new basic search tool here to keep it in bundled MCP deployments.
-  tools.push({
-    name: "spekta_rg",
-    description:
-      "Search eligible workspace files with ripgrep and Spekta-owned output formatting. Supply one or more regex patterns, optional workspace paths, ordered inclusion or exclusion globs, and a case mode. CLI supports -e/--regexp, -g/--glob, -i/--ignore-case, -s/--case-sensitive, -S/--smart-case, and -- option termination; unsupported flags are rejected explicitly. Mandatory Spekta restrictions remain in force.",
-    params: {
-      patterns: {
-        description:
-          "Regex patterns to search; repeated patterns match as alternatives. At least one is required.",
-      },
-      paths: {
-        description:
-          "File and directory paths to search. Empty or omitted searches the workspace root recursively.",
-      },
-      globs: {
-        description:
-          "Ordered ripgrep glob filters, supplied as separate values; values retain commas and later filters follow native ripgrep precedence.",
-      },
-      case_mode: {
-        description:
-          "Case mode: sensitive (default), insensitive (-i/--ignore-case), or smart (-S/--smart-case).",
-      },
-    },
-    xml_example:
-      '<rg patterns="[&quot;class ReplSession&quot;,&quot;interface ReplSession&quot;]" paths="[&quot;src&quot;,&quot;docs&quot;]" />',
-  });
 
   cachedTools = tools;
   cachedToolsKey = cacheKey;

@@ -13,7 +13,7 @@ import {
 import { z } from "zod";
 import path from "node:path";
 
-import { getGrepOutcome, getRgOutcome } from "../../commands/grep-search";
+import { getRgOutcome } from "../../commands/grep-search";
 import { getReadOutcome } from "../../commands/read";
 import { executeSafeReplaceOutcome } from "../../commands/replace";
 import { getWriteOutcome } from "../../commands/write";
@@ -152,45 +152,6 @@ const registry: Record<string, ToolRegistryEntry> = {
                 : outcome.message,
           },
         ],
-      };
-    },
-  },
-
-  spekta_grep: {
-    schema: (params) =>
-      z.object({
-        pattern: z.string().describe(params.pattern?.description || ""),
-        path: z
-          .string()
-          .optional()
-          .describe(params.path?.description || ""),
-        globs: z
-          .string()
-          .optional()
-          .describe(params.globs?.description || ""),
-        case_insensitive: z
-          .boolean()
-          .optional()
-          .describe(params.case_insensitive?.description || ""),
-      }),
-    handler: async (rawArgs, context, requestId) => {
-      const args = {
-        pattern: rawArgs.pattern as string,
-        ...(typeof rawArgs.path === "string" ? { path: rawArgs.path } : {}),
-        ...(typeof rawArgs.globs === "string" ? { globs: rawArgs.globs } : {}),
-        ...(typeof rawArgs.case_insensitive === "boolean"
-          ? { case_insensitive: rawArgs.case_insensitive }
-          : {}),
-      };
-      const outcome = await getGrepOutcome(args, context, requestId);
-      const text =
-        outcome.status === "success" ? outcome.value : outcome.message;
-      return {
-        ...(outcome.status === "engine_failure" ||
-        outcome.status === "policy_rejection"
-          ? { isError: true }
-          : {}),
-        content: [{ type: "text", text }],
       };
     },
   },

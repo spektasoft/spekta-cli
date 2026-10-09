@@ -35,8 +35,8 @@ export async function seedAssetFixtures(rootDir: string): Promise<void> {
     MINIMAL_TOOL_YAML.replace("spekta_read", "spekta_write"),
   );
   await fs.writeFile(
-    path.join(toolsDir, "grep.yaml"),
-    MINIMAL_TOOL_YAML.replace("spekta_read", "spekta_grep"),
+    path.join(toolsDir, "rg.yaml"),
+    MINIMAL_TOOL_YAML.replace("spekta_read", "spekta_rg"),
   );
 
   await fs.writeFile(path.join(promptsDir, "repl.md"), MINIMAL_REPL_MD);

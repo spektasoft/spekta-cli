@@ -5,14 +5,16 @@ import { getWriteContent } from "../commands/write";
 import { Logger } from "./logger";
 import { parseFilePathWithRange, tokenizeQuotedPaths } from "./read-utils";
 import { ReplaceRequest } from "./replace-utils";
-import { getGrepContent } from "../commands/grep-search";
+import { getRgOutcome } from "../commands/grep-search";
 
 export interface ToolCall {
-  type: "read" | "write" | "replace" | "grep";
+  type: "read" | "write" | "replace" | "rg";
   path: string;
   content?: string;
-  pattern?: string;
-  globs?: string;
+  patterns?: string[];
+  paths?: string[];
+  globs?: string[];
+  case_mode?: "sensitive" | "insensitive" | "smart";
   raw: string;
 }
 
@@ -21,7 +23,7 @@ export function parseToolCalls(text: string): ToolCall[] {
 
   // More flexible parsing for multiple attributes
   const toolRegex =
-    /<(read|write|replace|grep)\s+([^>]+?)\s*(?:\/>|>([\s\S]*?)<\/\1>)/g;
+    /<(read|write|replace|rg)\s+([^>]+?)\s*(?:\/>|>([\s\S]*?)<\/\1>)/g;
 
   let match;
   while ((match = toolRegex.exec(text)) !== null) {
@@ -39,6 +41,20 @@ export function parseToolCalls(text: string): ToolCall[] {
     }
 
     const filePath = attrs.path || "";
+    const parseArray = (value: string | undefined): string[] | undefined => {
+      if (!value) return undefined;
+      try {
+        const parsed: unknown = JSON.parse(
+          value.replaceAll("&quot;", '"').replaceAll("&amp;", "&"),
+        );
+        return Array.isArray(parsed) &&
+          parsed.every((item) => typeof item === "string")
+          ? parsed
+          : undefined;
+      } catch {
+        return undefined;
+      }
+    };
 
     // Validate path if present
     if (
@@ -51,14 +67,35 @@ export function parseToolCalls(text: string): ToolCall[] {
       continue;
     }
 
-    calls.push({
+    const call: ToolCall = {
       type,
       path: filePath,
       content,
-      pattern: attrs.pattern,
-      globs: attrs.globs,
       raw: fullMatch,
-    });
+    };
+    if (type === "rg") {
+      const patterns = parseArray(attrs.patterns);
+      const paths = parseArray(attrs.paths);
+      const globs = parseArray(attrs.globs);
+      const caseMode = attrs.case_mode;
+      if (
+        !patterns?.length ||
+        (paths ?? []).some((item) => !validateFilePath(item))
+      ) {
+        continue;
+      }
+      Object.assign(call, {
+        patterns,
+        paths: paths ?? [],
+        globs: globs ?? [],
+        ...(caseMode === "insensitive" ||
+        caseMode === "smart" ||
+        caseMode === "sensitive"
+          ? { case_mode: caseMode }
+          : {}),
+      });
+    }
+    calls.push(call);
   }
 
   return calls;
@@ -114,7 +151,7 @@ export async function executeTool(call: ToolCall): Promise<string> {
   }
 
   // Validate path before any operation for non-read tools
-  if (!validateFilePath(call.path)) {
+  if (call.type !== "rg" && !validateFilePath(call.path)) {
     throw new Error(`Invalid file path: ${call.path}`);
   }
 
@@ -138,13 +175,14 @@ export async function executeTool(call: ToolCall): Promise<string> {
     return `${message}`;
   }
 
-  if (call.type === "grep") {
-    return await getGrepContent({
-      pattern: call.pattern || "",
-      path: call.path || undefined,
-      globs: call.globs,
-      // Default to case_insensitive as per GrepOptions
+  if (call.type === "rg") {
+    const outcome = await getRgOutcome({
+      patterns: call.patterns ?? [],
+      paths: call.paths ?? [],
+      globs: call.globs ?? [],
+      case_mode: call.case_mode ?? "sensitive",
     });
+    return outcome.status === "success" ? outcome.value : outcome.message;
   }
 
   throw new Error("Unknown tool");

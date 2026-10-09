@@ -210,6 +210,23 @@ describe("CLI help before initialization", () => {
     expect(result.stderr).not.toContain("Critical Error");
   });
 
+  it.each([
+    ["grep", "needle"],
+    ["grep", "--help"],
+    ["help", "grep"],
+  ])(
+    "rejects removed grep entry points with migration guidance for %j",
+    async (...args) => {
+      const result = await invoke(args);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout + result.stderr).toContain("spekta rg");
+      expect(result.stdout + result.stderr).not.toContain("grep — Search");
+      expect(
+        await fs.pathExists(path.join(tempRoot, "backend-invocations.txt")),
+      ).toBe(false);
+    },
+  );
+
   it.each(["-h", "help"])("supports the global %s alias", async (alias) => {
     const result = await invoke([alias]);
     expect(result.exitCode).toBe(0);

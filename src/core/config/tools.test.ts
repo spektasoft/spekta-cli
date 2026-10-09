@@ -75,4 +75,17 @@ xml_example: "<read />"
       },
     });
   });
+
+  it("does not load an old grep definition as the rg tool", async () => {
+    await fs.writeFile(
+      path.join(testHome, "tools", "grep.yaml"),
+      "name: spekta_grep\ndescription: legacy search\nparams: {}\nxml_example: <grep />\n",
+    );
+    const tools = await loadToolDefinitions(true);
+
+    expect(tools.some((tool) => tool.name === "spekta_grep")).toBe(false);
+    expect(
+      tools.find((tool) => tool.name === "spekta_rg")?.description,
+    ).not.toBe("legacy search");
+  });
 });

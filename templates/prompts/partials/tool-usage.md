@@ -17,11 +17,14 @@ The `spekta` CLI tools are installed on the **user's machine**. You do not have 
 - **Syntax:** `spekta read path/to/file.ts[start,end]`
 - **Line Ranges:** Use `[start,end]` to target specific sections. Omit for full file contents.
 
-#### `spekta grep` – Search with ripgrep
+#### `spekta rg` – Search eligible workspace files
 
-- **Syntax:** `spekta grep <pattern> [path] [--glob <glob>]`
-- **Implementation:** `spekta grep` uses ripgrep (`rg`) semantics, not traditional GNU `grep`.
-- **Pattern:** Regex or string pattern accepted by ripgrep.
+- **Syntax:** `spekta rg [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]...`
+- Without `-e`/`--regexp`, the first operand is a regex pattern and later operands are paths. With explicit patterns, operands are paths. Omitted paths search the workspace root recursively.
+- Repeat `-e`/`--regexp` for alternative patterns and `-g`/`--glob` for ordered filters. Use `-i`, `-s`, or `-S` for insensitive, sensitive (the default), or smart case; use `--` before a literal dash-prefixed path.
+- Search runs through RTK and retains Spekta's formatting, eligible-file restrictions, and complete response budget. Unsupported options, stdin, empty patterns, outside paths, restricted filenames, and symlink escapes are rejected. This is a documented native subset, not full ripgrep compatibility.
+- The MCP tool is `spekta_rg`; it accepts separate `patterns`, `paths`, `globs`, and `case_mode` values.
+- Existing custom `~/.spekta/tools/grep.yaml` definitions are no longer loaded. To customize the search tool, migrate the definition to `rg.yaml`, use the `spekta_rg` name and the new parameters, then restart Spekta. Existing MCP clients should replace `spekta_grep` and its single `pattern`/`path` fields with `spekta_rg` and the array fields.
 
 ### RTK Proxy
 
@@ -57,7 +60,7 @@ Please run the following commands on your machine and paste the result:
 
 ```bash
 echo "### Searching for Connection Logic" > result.md
-spekta grep "connect" src/lib --glob "**/*.ts" >> result.md
+spekta rg -e "connect" src/lib --glob "**/*.ts" >> result.md
 
 echo "### Database Config File" >> result.md
 spekta read src/config/database.ts >> result.md

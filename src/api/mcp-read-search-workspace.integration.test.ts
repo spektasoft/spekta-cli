@@ -28,7 +28,7 @@ afterEach(async () => {
 });
 
 describe("CLI and existing MCP workspace boundaries", () => {
-  it.each(["read", "grep"])(
+  it.each(["read", "rg"])(
     "CLI %s limits access to invocation cwd",
     async (command) => {
       const output: string[] = [];
@@ -63,7 +63,7 @@ describe("CLI and existing MCP workspace boundaries", () => {
       return true;
     });
     vi.spyOn(Logger, "error").mockImplementation(() => true);
-    for (const command of ["read", "grep"]) {
+    for (const command of ["read", "rg"]) {
       process.exitCode = undefined;
       await dispatchCommand(
         command,
@@ -81,7 +81,7 @@ describe("CLI and existing MCP workspace boundaries", () => {
         .content[0].text,
     ).toContain("INTERNAL");
     expect(
-      (await TOOL_REGISTRY.spekta_grep.handler({ pattern: "needle" }))
+      (await TOOL_REGISTRY.spekta_rg.handler({ patterns: ["needle"] }))
         .content[0].text,
     ).toContain("INTERNAL");
     for (const target of [
@@ -90,9 +90,9 @@ describe("CLI and existing MCP workspace boundaries", () => {
       "external-dir/secret.txt",
     ]) {
       const read = await TOOL_REGISTRY.spekta_read.handler({ paths: [target] });
-      const search = await TOOL_REGISTRY.spekta_grep.handler({
-        pattern: "needle",
-        path: target,
+      const search = await TOOL_REGISTRY.spekta_rg.handler({
+        patterns: ["needle"],
+        paths: [target],
       });
       for (const response of [read, search]) {
         const fields = JSON.stringify(response);
@@ -171,8 +171,8 @@ describe("CLI and existing MCP workspace boundaries", () => {
       await Promise.all([
         firstServer.spekta_read.handler({ paths: ["real.txt"] }),
         secondServer.spekta_read.handler({ paths: ["real.txt"] }),
-        firstServer.spekta_grep.handler({ pattern: "needle" }),
-        secondServer.spekta_grep.handler({ pattern: "needle" }),
+        firstServer.spekta_rg.handler({ patterns: ["needle"] }),
+        secondServer.spekta_rg.handler({ patterns: ["needle"] }),
       ]);
 
     expect(firstRead.content[0].text).toContain("INTERNAL");

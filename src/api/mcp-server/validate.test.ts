@@ -12,7 +12,7 @@ vi.mock("../../utils/logger", () => ({
 
 vi.mock("./registry", () => ({
   TOOL_REGISTRY: {
-    spekta_grep: {},
+    spekta_rg: {},
   },
 }));
 
@@ -38,26 +38,29 @@ describe("validateToolDefinitions", () => {
   it("warns when a defined parameter has no description", () => {
     validateToolDefinitions([
       {
-        name: "spekta_grep",
+        name: "spekta_rg",
         description: "Search",
         params: {
-          pattern: { description: "" },
+          patterns: { description: "" },
         },
       },
     ]);
 
     expect(Logger.warn).toHaveBeenCalledWith(
-      "Documentation Gap: Parameter 'pattern' for tool 'spekta_grep' lacks a description in YAML.",
+      "Documentation Gap: Parameter 'patterns' for tool 'spekta_rg' lacks a description in YAML.",
     );
   });
 
   it("does not warn for implemented tools with documented parameters", () => {
     validateToolDefinitions([
       {
-        name: "spekta_grep",
+        name: "spekta_rg",
         description: "Search",
         params: {
-          pattern: { description: "search pattern" },
+          patterns: { description: "search patterns" },
+          paths: { description: "workspace paths" },
+          globs: { description: "ordered glob filters" },
+          case_mode: { description: "case behavior" },
         },
       },
     ]);

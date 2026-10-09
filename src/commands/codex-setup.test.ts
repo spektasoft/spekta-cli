@@ -636,9 +636,14 @@ describe("applyCodexSetup", () => {
       "update",
       "create",
     ]);
-    expect(await readFile(join(codex, "AGENTS.md"), "utf8")).toContain(
-      CODEX_USAGE_START,
+    const generatedInstructions = await readFile(
+      join(codex, "AGENTS.md"),
+      "utf8",
     );
+    expect(generatedInstructions).toContain(CODEX_USAGE_START);
+    expect(generatedInstructions).toContain("spekta rg");
+    expect(generatedInstructions).toContain("spekta_rg");
+    expect(generatedInstructions).toContain("eligible-file restrictions");
     expect(
       installedHookCommand(await readFile(join(codex, "hooks.json"), "utf8")),
     ).toBe(JSON.stringify(join(newBin, "spekta-codex-hook")));

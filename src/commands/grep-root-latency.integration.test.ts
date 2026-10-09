@@ -5,7 +5,7 @@ import * as execaModule from "execa";
 import type { Options as ExecaOptions } from "execa";
 import * as security from "../utils/security";
 import * as grepOutputParser from "./grep-output-parser";
-import { runGrep } from "./grep";
+import { runRg } from "./rg";
 import {
   createWorkspaceFixture,
   type WorkspaceFixture,
@@ -281,7 +281,7 @@ async function search(
 ): Promise<{ elapsedMs: number; output: string; phases: typeof telemetry }> {
   const before = performance.now();
   const telemetryBefore = snapshotTelemetry();
-  await runGrep(args);
+  await runRg(args);
   return {
     elapsedMs: performance.now() - before,
     output: outputs.splice(0).join(""),

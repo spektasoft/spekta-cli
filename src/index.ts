@@ -8,6 +8,13 @@ export { COMMANDS };
 
 async function main() {
   const args = process.argv.slice(2);
+  if (args[0] === "grep" || (args[0] === "help" && args[1] === "grep")) {
+    process.stderr.write(
+      "The 'grep' command was removed. Use 'spekta rg' instead.\n",
+    );
+    process.exitCode = 1;
+    return;
+  }
   if (handleHelp(args, COMMANDS)) return;
   const commandArg = args[0];
   const isInteractiveMenu = args.length === 0;

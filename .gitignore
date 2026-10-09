@@ -1,2 +1,5 @@
 dist
 node_modules
+!templates/
+!templates/tools/
+!templates/tools/rg.yaml

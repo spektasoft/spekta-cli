@@ -260,6 +260,7 @@ const ownedInstructions = `${CODEX_USAGE_START}
 Prefer the Spekta CLI for supported workspace inspection: use \`spekta ls\`, \`spekta read\`, \`spekta rg\`, and supported \`spekta git\` inspections. Use the configured Spekta MCP server only when the CLI is unavailable and MCP has been enabled.
 
 Use Spekta for eligible file discovery, reading, searching, and supported Git inspection. Retrieve only the files and ranges needed to answer the current question; narrow broad searches by symbol, path, pattern, or glob, then read selected files. Unsupported or compound commands continue through the normal shell path. If Spekta rejects an operation under policy, do not retry it through MCP or the original executable.
+The Codex hook routes supported standalone native \`rg\` requests through \`spekta rg\`, preserving repeated patterns, paths, case flags, ordered globs, and \`--\`. Unsupported shell forms and ripgrep options remain on the normal route. Spekta runs search through RTK and applies its own output formatting, eligible-file restrictions, and response budget; a rejected or oversized request must not be retried through the original route. Use MCP tool \`spekta_rg\` with separate \`patterns\`, \`paths\`, \`globs\`, and \`case_mode\` values when MCP is enabled.
 MCP registration changes runtime setup only. Start a new Codex session to load an opt-in server; it does not dynamically add tools to an existing session.
 ${CODEX_USAGE_END}`;
 

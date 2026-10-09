@@ -1,0 +1,18 @@
+name: spekta_rg
+description: |
+  Search eligible workspace files with ripgrep using Spekta-owned output formatting,
+  workspace and ignore policies, and complete response budgets. This is a documented
+  native ripgrep subset, not full option passthrough.
+
+params:
+  patterns:
+    description: "Regex patterns to search; repeated patterns match as alternatives. At least one is required."
+  paths:
+    description: "File and directory paths to search. Empty or omitted searches the workspace root recursively."
+  globs:
+    description: "Ordered ripgrep glob filters, supplied as separate values; values retain commas and later filters follow native ripgrep precedence."
+  case_mode:
+    description: "Case mode: sensitive (default), insensitive (-i/--ignore-case), or smart (-S/--smart-case)."
+
+xml_example: |
+  <rg patterns="[&quot;class ReplSession&quot;,&quot;interface ReplSession&quot;]" paths="[&quot;src&quot;,&quot;docs&quot;]" />
