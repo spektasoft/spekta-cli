@@ -172,30 +172,37 @@ describe("TOOL_REGISTRY", () => {
     );
   });
 
-  it("defines spekta_rg with the basic case-sensitive request contract", async () => {
+  it("defines spekta_rg with separate pattern and path arrays", async () => {
     const tool = TOOL_REGISTRY.spekta_rg;
     expect(tool).toBeDefined();
     const parsed = tool
       .schema({
-        pattern: { description: "regex" },
-        path: { description: "path" },
+        patterns: { description: "regexes" },
+        paths: { description: "paths" },
       })
-      .parse({ pattern: "needle", path: "nested" });
-    expect(parsed).toEqual({ pattern: "needle", path: "nested" });
+      .parse({ patterns: ["needle", "haystack"], paths: ["nested", "docs"] });
+    expect(parsed).toEqual({
+      patterns: ["needle", "haystack"],
+      paths: ["nested", "docs"],
+    });
 
     vi.mocked(getRgOutcome).mockResolvedValueOnce({
       status: "success",
       value: "rg result",
     });
-    const result = await tool.handler({ pattern: "needle", path: "nested" });
+    const result = await tool.handler({
+      patterns: ["needle", "haystack"],
+      paths: ["nested", "docs"],
+      globs: ["*.ts,*.tsx"],
+    });
     expect(result).toEqual({
       content: [{ type: "text", text: "rg result" }],
     });
     expect(getRgOutcome).toHaveBeenCalledWith(
       {
-        patterns: ["needle"],
-        paths: ["nested"],
-        globs: [],
+        patterns: ["needle", "haystack"],
+        paths: ["nested", "docs"],
+        globs: ["*.ts,*.tsx"],
         case_mode: "sensitive",
       },
       undefined,

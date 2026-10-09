@@ -197,14 +197,15 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
   ),
   rg: topic(
     "rg — Search eligible workspace files",
-    "Search eligible workspace files through RTK with ripgrep's basic case-sensitive interface.",
-    ["spekta rg <pattern> [path]"],
+    "Search eligible workspace files through RTK with a documented subset of native ripgrep operands.",
+    ["spekta rg [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]..."],
     [
       {
         heading: "Arguments and behavior",
         lines: [
-          "pattern is one nonempty ripgrep regular expression. path is an optional file or directory; when omitted, the workspace root (.) is searched recursively.",
-          "Search uses native case-sensitive matching by default. This basic command does not accept additional ripgrep options.",
+          "Without -e or --regexp, the first positional operand is the regex and later operands are paths. With explicit patterns, every positional operand is a path. Omitted paths search the workspace root recursively.",
+          "Repeat -e or --regexp for alternative patterns. Use --regexp=PATTERN or -- before literal dash-prefixed patterns and paths. The MCP tool accepts patterns, paths, globs, and case_mode as separate arrays and values.",
+          "Only the documented options are supported; other ripgrep flags, stdin, and empty or whitespace-only patterns are rejected. Spekta applies workspace eligibility and response limits, so this is not full native ripgrep compatibility.",
           "Search is limited to eligible workspace files and applies Git and Spekta ignore rules. Restricted paths and symlink escapes are rejected.",
         ],
       },
@@ -216,7 +217,11 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         ],
       },
     ],
-    ["spekta rg 'TODO'", "spekta rg 'timeout' src"],
+    [
+      "spekta rg 'TODO'",
+      "spekta rg 'timeout' src docs",
+      "spekta rg -e TODO -e FIXME src",
+    ],
   ),
   diagnostic: topic(
     "diagnostic — Scan files for policy and optimization findings",

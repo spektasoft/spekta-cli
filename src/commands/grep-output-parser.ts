@@ -42,6 +42,8 @@ export interface GrepOutputContext {
   workspace: ResolvedWorkspace;
   canonicalSearchPath: string;
   requestedSearchPath: string;
+  canonicalSearchPaths?: string[];
+  requestedSearchPaths?: string[];
   responseId?: string | number;
 }
 
@@ -114,6 +116,7 @@ export async function parseGrepOutput(
   let exceeded = false;
   let cancellationRequested = false;
   const eligibilityCache = new Map<string, string | null>();
+  const seenMatches = new Set<string>();
   const stopForLimit = () => {
     exceeded = true;
     cancellationRequested = true;
@@ -150,20 +153,40 @@ export async function parseGrepOutput(
                   filePath,
                   context.workspace,
                 );
-                const relativeToSearch = path.relative(
+                const searchPaths = context.canonicalSearchPaths ?? [
                   context.canonicalSearchPath,
-                  eligiblePath,
-                );
-                const requestedMatchPath = path.resolve(
-                  context.workspace.root,
+                ];
+                const requestedPaths = context.requestedSearchPaths ?? [
                   context.requestedSearchPath,
-                  relativeToSearch,
-                );
-                const requestedEligiblePath = await validateReadPathAccess(
-                  requestedMatchPath,
-                  context.workspace,
-                );
-                if (requestedEligiblePath !== eligiblePath) eligiblePath = null;
+                ];
+                let matchedRequestedPath = false;
+                for (const [index, searchPath] of searchPaths.entries()) {
+                  const relativeToSearch = path.relative(
+                    searchPath,
+                    eligiblePath,
+                  );
+                  if (
+                    relativeToSearch.startsWith("..") ||
+                    path.isAbsolute(relativeToSearch)
+                  )
+                    continue;
+                  const requestedMatchPath = path.resolve(
+                    context.workspace.root,
+                    requestedPaths[index] ?? ".",
+                    relativeToSearch,
+                  );
+                  try {
+                    const requestedEligiblePath = await validateReadPathAccess(
+                      requestedMatchPath,
+                      context.workspace,
+                    );
+                    if (requestedEligiblePath === eligiblePath)
+                      matchedRequestedPath = true;
+                  } catch {
+                    /* another requested path may authorize this match */
+                  }
+                }
+                if (!matchedRequestedPath) eligiblePath = null;
               } else {
                 eligiblePath = (await isPathIgnored(filePath))
                   ? null
@@ -183,13 +206,19 @@ export async function parseGrepOutput(
             .map((m: GrepProcessSubmatch) => m.start)
             .join(",");
           const text = parsed.data.lines.text.trimEnd();
+          const identity = `${eligiblePath}\0${lineNum}\0${colNums}\0${text}`;
+          if (seenMatches.has(identity)) continue;
+          seenMatches.add(identity);
           const formattedLine = `${lineNum}:${colNums}:${text}`;
 
           const displayPath = context
-            ? displayGrepPath(
-                path.relative(context.workspace.canonicalRoot, eligiblePath),
-                context,
-              )
+            ? context.canonicalSearchPaths &&
+              context.canonicalSearchPaths.length > 1
+              ? path.relative(context.workspace.canonicalRoot, eligiblePath)
+              : displayGrepPath(
+                  path.relative(context.workspace.canonicalRoot, eligiblePath),
+                  context,
+                )
             : filePath;
           if (
             totalMatches >= MAX_MATCHES ||

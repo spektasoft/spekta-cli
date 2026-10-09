@@ -53,27 +53,34 @@ export interface SearchRequest {
   case_mode: SearchCaseMode;
 }
 
-/** Current basic slice: exactly one pattern, zero or one path, no globs. */
 export async function getRgOutcome(
   request: SearchRequest,
   workspace?: WorkspaceContext,
   responseId?: string | number,
 ): Promise<OperationOutcome<string>> {
   if (
-    request.patterns.length !== 1 ||
-    request.paths.length > 1 ||
-    request.globs.length > 0
+    request.patterns.length === 0 ||
+    request.patterns.some((p) => !p.trim())
   ) {
     return failureOutcome(
       "policy_rejection",
-      "This search interface currently supports one pattern, one path, and no globs.",
+      "Search patterns cannot be empty or whitespace-only.",
+      responseId,
+    );
+  }
+  if (request.paths.includes("-")) {
+    return failureOutcome(
+      "policy_rejection",
+      "Standard input search paths are not supported.",
       responseId,
     );
   }
   return getGrepOutcome(
     {
       pattern: request.patterns[0],
-      path: request.paths[0] ?? ".",
+      patterns: request.patterns,
+      paths: request.paths.length ? request.paths : ["."],
+      globs: request.globs,
       case_insensitive:
         request.case_mode === "insensitive"
           ? true
@@ -210,10 +217,16 @@ export async function getGrepOutcome(
   workspace?: WorkspaceContext,
   responseId?: string | number,
 ): Promise<OperationOutcome<string>> {
-  const { pattern, path: searchPath = "." } = options;
+  const { pattern, path: legacyPath = "." } = options;
+  const requestedPaths = options.paths ?? [legacyPath];
 
   // SECURITY: Reject empty/whitespace patterns to prevent full-codebase scans
-  if (!pattern || pattern.trim() === "") {
+  const requestedPatterns =
+    options.patterns ?? (pattern === undefined ? [] : [pattern]);
+  if (
+    requestedPatterns.length === 0 ||
+    requestedPatterns.some((value) => !value || value.trim() === "")
+  ) {
     return failureOutcome(
       "policy_rejection",
       "Search pattern cannot be empty or whitespace-only.",
@@ -222,12 +235,13 @@ export async function getGrepOutcome(
   }
 
   let resolvedWorkspace: ResolvedWorkspace;
-  let canonicalSearchPath: string;
+  let canonicalSearchPaths: string[];
   try {
     resolvedWorkspace = await resolveWorkspace(workspace);
-    canonicalSearchPath = await validateReadPathAccess(
-      searchPath,
-      resolvedWorkspace,
+    canonicalSearchPaths = await Promise.all(
+      requestedPaths.map((searchPath) =>
+        validateReadPathAccess(searchPath, resolvedWorkspace),
+      ),
     );
   } catch {
     return failureOutcome(
@@ -267,18 +281,28 @@ export async function getGrepOutcome(
 
   try {
     const args = await buildGrepArgs(
-      { ...options, path: canonicalSearchPath },
+      { ...options, patterns: requestedPatterns, paths: canonicalSearchPaths },
       resolvedWorkspace.canonicalRoot,
     );
     const ignorePatterns = await getIgnorePatterns(
       resolvedWorkspace.canonicalRoot,
     );
-    const additionalPaths = await findWhitelistedGitIgnoredFiles(
-      options,
-      canonicalSearchPath,
-      resolvedWorkspace,
-      ignorePatterns,
-    );
+    const additionalPaths = [
+      ...new Set(
+        (
+          await Promise.all(
+            canonicalSearchPaths.map((searchPath) =>
+              findWhitelistedGitIgnoredFiles(
+                options,
+                searchPath,
+                resolvedWorkspace,
+                ignorePatterns,
+              ),
+            ),
+          )
+        ).flat(),
+      ),
+    ];
     if (additionalPaths.length > 0) {
       args.splice(args.length - 1, 0, ...additionalPaths);
     }
@@ -286,8 +310,10 @@ export async function getGrepOutcome(
 
     return parseGrepOutput(child, {
       workspace: resolvedWorkspace,
-      canonicalSearchPath,
-      requestedSearchPath: searchPath,
+      canonicalSearchPath: canonicalSearchPaths[0],
+      requestedSearchPath: requestedPaths[0] ?? ".",
+      canonicalSearchPaths,
+      requestedSearchPaths: requestedPaths,
       responseId,
     });
   } catch {

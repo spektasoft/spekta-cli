@@ -38,6 +38,85 @@ afterEach(async () => {
 });
 
 describe("spekta rg public boundaries", () => {
+  it("rejects standard input as a requested path", async () => {
+    const outcome = await getRgOutcome(
+      { patterns: ["needle"], paths: ["-"], globs: [], case_mode: "sensitive" },
+      { root: fixture.root },
+    );
+    expect(outcome.status).toBe("policy_rejection");
+    expect(outcome.message).toContain("Standard input");
+  });
+
+  it("matches native ripgrep for repeated patterns and overlapping paths without duplicate results", async ({
+    skip,
+  }) => {
+    if (!rtkAvailable) skip();
+    await fs.ensureDir(path.join(fixture.root, "nested"));
+    await fs.writeFile(
+      path.join(fixture.root, "nested", "one.txt"),
+      "alpha\nBeta\n",
+    );
+    await fs.writeFile(path.join(fixture.root, "nested", "two.txt"), "gamma\n");
+    await fs.writeFile(path.join(fixture.root, "-named.txt"), "delta\n");
+
+    const native = await execa(
+      "rg",
+      [
+        "--no-config",
+        "--json",
+        "nested",
+        "--regexp",
+        "alpha",
+        "--regexp=gamma",
+        "-e",
+        "delta",
+        "--",
+        "nested/one.txt",
+        "-named.txt",
+      ],
+      { cwd: fixture.root },
+    );
+    const nativeMatches = new Set(
+      native.stdout
+        .split("\n")
+        .filter((line) => line.includes('"type":"match"'))
+        .map((line) => {
+          const event = JSON.parse(line) as {
+            data: {
+              path: { text: string };
+              line_number: number;
+              lines: { text: string };
+            };
+          };
+          return `${event.data.path.text}:${event.data.line_number}:${event.data.lines.text.trim()}`;
+        }),
+    );
+    const output = await getRgOutcome(
+      {
+        patterns: ["alpha", "gamma", "delta"],
+        paths: ["nested", "nested/one.txt", "-named.txt"],
+        globs: [],
+        case_mode: "sensitive",
+      },
+      { root: fixture.root },
+    );
+    expect(output.status).toBe("success");
+    const outputText = output.status === "success" ? output.value : "";
+    expect(outputText).toContain("nested/one.txt");
+    expect(outputText).toContain("nested/two.txt");
+    expect(outputText).toContain("-named.txt");
+    expect((outputText.match(/one\.txt/g) ?? []).length).toBe(1);
+    expect(nativeMatches).toEqual(
+      new Set([
+        "nested/one.txt:1:alpha",
+        "nested/two.txt:1:gamma",
+        "-named.txt:1:delta",
+      ]),
+    );
+    expect(outputText).toContain("1:0:alpha");
+    expect(outputText).toContain("1:0:gamma");
+  });
+
   it("finds a nested eligible match through CLI and MCP using RTK when available", async ({
     skip,
   }) => {
@@ -60,7 +139,7 @@ describe("spekta rg public boundaries", () => {
     expect(cliText).not.toContain("nested/upper.txt");
 
     const mcp = await TOOL_REGISTRY.spekta_rg.handler(
-      { pattern: "needle" },
+      { patterns: ["needle"] },
       { root: fixture.root },
     );
     expect(mcp.content[0]?.text).toContain("nested/lower.txt");
@@ -76,7 +155,7 @@ describe("spekta rg public boundaries", () => {
     noMatchWrite.mockRestore();
     expect(noMatchCli).toContain("No matches found.");
     const noMatchMcp = await TOOL_REGISTRY.spekta_rg.handler(
-      { pattern: "missing-unique-pattern" },
+      { patterns: ["missing-unique-pattern"] },
       { root: fixture.root },
     );
     expect(noMatchMcp.content[0]?.text).toBe("No matches found.");
@@ -197,7 +276,7 @@ setInterval(()=>{}, 1000);
       await fs.remove(stoppedPath);
 
       const mcp = await TOOL_REGISTRY.spekta_rg.handler(
-        { pattern: "needle" },
+        { patterns: ["needle"] },
         { root: fixture.root },
         "budget-cancel-request",
       );
@@ -248,7 +327,7 @@ setInterval(()=>{}, 1000);
       .join("");
     matchWrite.mockRestore();
     const matchMcp = await TOOL_REGISTRY.spekta_rg.handler(
-      { pattern: "needle" },
+      { patterns: ["needle"] },
       { root: fixture.root },
       "match-ceiling-request",
     );
@@ -278,7 +357,7 @@ setInterval(()=>{}, 1000);
       .join("");
     fileWrite.mockRestore();
     const fileMcp = await TOOL_REGISTRY.spekta_rg.handler(
-      { pattern: "needle" },
+      { patterns: ["needle"] },
       { root: fixture.root },
       "file-ceiling-request",
     );

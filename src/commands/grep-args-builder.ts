@@ -4,9 +4,11 @@ import { getAssetPaths, HOME_IGNORE } from "../core/config";
 import { RESTRICTED_FILES } from "../utils/security";
 
 export interface GrepOptions {
-  pattern: string;
+  pattern?: string;
+  patterns?: string[];
   path?: string;
-  globs?: string;
+  paths?: string[];
+  globs?: string | string[];
   case_insensitive?: boolean;
 }
 
@@ -18,7 +20,7 @@ async function buildIgnoreArgs(
   const { globs } = options;
 
   if (globs) {
-    for (const glob of globs.split(",")) {
+    for (const glob of Array.isArray(globs) ? globs : globs.split(",")) {
       if (glob) args.push("-g", glob);
     }
   }
@@ -47,13 +49,17 @@ export async function buildGrepArgs(
   options: GrepOptions,
   workspaceRoot = process.cwd(),
 ): Promise<string[]> {
-  const { pattern, path: searchPath = ".", case_insensitive } = options;
+  const {
+    pattern,
+    patterns = pattern === undefined ? [] : [pattern],
+    case_insensitive,
+  } = options;
+  const searchPaths = options.paths ?? [options.path ?? "."];
 
   const args = [
     "--no-config",
     "--no-follow",
-    "--regexp",
-    pattern,
+    ...patterns.flatMap((value) => ["--regexp", value]),
     "--line-number",
     "--column",
     "--color=never",
@@ -74,7 +80,7 @@ export async function buildGrepArgs(
   }
 
   args.push(...(await buildIgnoreArgs(options, workspaceRoot)));
-  args.push("--", searchPath);
+  args.push("--", ...searchPaths);
   return args;
 }
 

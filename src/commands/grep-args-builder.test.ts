@@ -53,4 +53,17 @@ describe("buildGrepArgs", () => {
       ...RESTRICTED_FILES.map((restricted) => `!**/${restricted}`),
     ]);
   });
+
+  it("preserves repeated patterns, paths, and glob values as separate native arguments", async () => {
+    const args = await buildGrepArgs({
+      patterns: ["first", "second"],
+      paths: ["src", "-literal-path"],
+      globs: ["*.ts,*.tsx", "!*.test.ts"],
+    });
+    expect(
+      args.slice(args.indexOf("--regexp"), args.indexOf("--line-number")),
+    ).toEqual(["--regexp", "first", "--regexp", "second"]);
+    expect(args.slice(-3)).toEqual(["--", "src", "-literal-path"]);
+    expect(args).toContain("*.ts,*.tsx");
+  });
 });

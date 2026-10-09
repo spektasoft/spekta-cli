@@ -198,19 +198,42 @@ const registry: Record<string, ToolRegistryEntry> = {
   spekta_rg: {
     schema: (params) =>
       z.object({
-        pattern: z.string().describe(params.pattern?.description || ""),
-        path: z
-          .string()
+        patterns: z
+          .array(z.string())
+          .describe(
+            params.patterns?.description ||
+              "Patterns to search; alternatives use OR matching.",
+          ),
+        paths: z
+          .array(z.string())
           .optional()
-          .describe(params.path?.description || ""),
+          .describe(
+            params.paths?.description ||
+              "File and directory paths to search. Omit or pass an empty array for the workspace root.",
+          ),
+        globs: z
+          .array(z.string())
+          .optional()
+          .describe(
+            params.globs?.description || "Ordered ripgrep glob filters.",
+          ),
+        case_mode: z
+          .enum(["sensitive", "insensitive", "smart"])
+          .optional()
+          .describe(
+            params.case_mode?.description ||
+              "Case matching mode; defaults to sensitive.",
+          ),
       }),
     handler: async (rawArgs, context, requestId) => {
       const outcome = await getRgOutcome(
         {
-          patterns: [rawArgs.pattern as string],
-          paths: typeof rawArgs.path === "string" ? [rawArgs.path] : [],
-          globs: [],
-          case_mode: "sensitive",
+          patterns: rawArgs.patterns as string[],
+          paths: (rawArgs.paths as string[] | undefined) ?? [],
+          globs: (rawArgs.globs as string[] | undefined) ?? [],
+          case_mode:
+            (rawArgs.case_mode as
+              "sensitive" | "insensitive" | "smart" | undefined) ?? "sensitive",
         },
         context,
         requestId,

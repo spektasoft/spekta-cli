@@ -57,9 +57,20 @@ xml_example: "<read />"
     const rgTool = tools.find((tool) => tool.name === "spekta_rg");
 
     expect(rgTool?.params).toEqual({
-      pattern: { description: "The ripgrep regular expression." },
-      path: {
-        description: "File or directory to search (default: workspace root).",
+      patterns: {
+        description:
+          "Regex patterns to search; repeated patterns match as alternatives. At least one is required.",
+      },
+      paths: {
+        description:
+          "File and directory paths to search. Empty or omitted searches the workspace root recursively.",
+      },
+      globs: {
+        description:
+          "Ordered ripgrep glob filters, supplied as separate values.",
+      },
+      case_mode: {
+        description: "Case mode: sensitive (default), insensitive, or smart.",
       },
     });
   });

@@ -84,19 +84,29 @@ export const loadToolDefinitions = async (
 
   // The loader enumerates the installed YAML templates above, so register
   // the new basic search tool here to keep it in bundled MCP deployments.
-  // Its public fields describe only the implemented slice; the operation
-  // contract retains arrays and an explicit case enum for later expansion.
   tools.push({
     name: "spekta_rg",
     description:
-      "Search eligible workspace files with a basic case-sensitive ripgrep interface. One regular expression and an optional file or directory path are supported; omitted paths search the workspace root.",
+      "Search eligible workspace files with ripgrep. Supply one or more regex patterns and optional workspace paths and globs. Repeated patterns use alternative matching; when patterns are omitted, the first positional CLI operand is the pattern and later operands are paths. CLI supports -e/--regexp and -- option termination; unsupported flags are rejected.",
     params: {
-      pattern: { description: "The ripgrep regular expression." },
-      path: {
-        description: "File or directory to search (default: workspace root).",
+      patterns: {
+        description:
+          "Regex patterns to search; repeated patterns match as alternatives. At least one is required.",
+      },
+      paths: {
+        description:
+          "File and directory paths to search. Empty or omitted searches the workspace root recursively.",
+      },
+      globs: {
+        description:
+          "Ordered ripgrep glob filters, supplied as separate values.",
+      },
+      case_mode: {
+        description: "Case mode: sensitive (default), insensitive, or smart.",
       },
     },
-    xml_example: '<rg pattern="class ReplSession" path="src" />',
+    xml_example:
+      '<rg patterns="[&quot;class ReplSession&quot;,&quot;interface ReplSession&quot;]" paths="[&quot;src&quot;,&quot;docs&quot;]" />',
   });
 
   cachedTools = tools;
