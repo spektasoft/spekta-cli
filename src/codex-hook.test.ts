@@ -101,23 +101,38 @@ describe("Codex inspection hook parser", () => {
   );
 
   it.each([
-    ["rg needle", "'spekta' 'grep' 'needle'"],
-    ["rg 'a.b' src", "'spekta' 'grep' 'a.b' 'src'"],
-    ["rg -i needle", "'spekta' 'grep' 'needle' '--ignore-case'"],
+    ["rg needle", "'spekta' 'rg' 'needle'"],
+    ["rg 'a.b' src", "'spekta' 'rg' 'a.b' 'src'"],
+    ["rg -i needle", "'spekta' 'rg' '-i' 'needle'"],
     [
       "rg --glob '*.ts' needle src",
-      "'spekta' 'grep' 'needle' 'src' '--glob' '*.ts'",
+      "'spekta' 'rg' '--glob' '*.ts' 'needle' 'src'",
     ],
+    [
+      "rg -e first -e 'second pattern' src docs",
+      "'spekta' 'rg' '-e' 'first' '-e' 'second pattern' 'src' 'docs'",
+    ],
+    ["rg needle src docs", "'spekta' 'rg' 'needle' 'src' 'docs'"],
     [
       "rg -g '*.ts' -g '!*.test.ts' 'foo|bar' src",
-      "'spekta' 'grep' 'foo|bar' 'src' '--glob' '*.ts,!*.test.ts'",
+      "'spekta' 'rg' '-g' '*.ts' '-g' '!*.test.ts' 'foo|bar' 'src'",
     ],
-    ["rg -e '-needle' -- path", "'spekta' 'grep' '-needle' 'path'"],
-    ["rg -- -needle", "'spekta' 'grep' '-needle'"],
-    ["rtk rg needle", "'spekta' 'grep' 'needle'"],
+    ["rg -e '-needle' -- path", "'spekta' 'rg' '-e' '-needle' '--' 'path'"],
+    ["rg -- -needle", "'spekta' 'rg' '--' '-needle'"],
+    ["rg -- -", "'spekta' 'rg' '--' '-'"],
+    ["rtk rg needle", "'spekta' 'rg' 'needle'"],
+    ["rtk rg -g '*.ts' needle src", "'spekta' 'rg' '-g' '*.ts' 'needle' 'src'"],
     [
-      "rtk rg -g '*.ts' needle src",
-      "'spekta' 'grep' 'needle' 'src' '--glob' '*.ts'",
+      "rg -e 'foo bar' --regexp='a|b' src docs",
+      "'spekta' 'rg' '-e' 'foo bar' '--regexp=a|b' 'src' 'docs'",
+    ],
+    [
+      "rg -s -S -i -g '*.ts,*.tsx' -g '!*.test.ts' 'foo' src docs",
+      "'spekta' 'rg' '-s' '-S' '-i' '-g' '*.ts,*.tsx' '-g' '!*.test.ts' 'foo' 'src' 'docs'",
+    ],
+    [
+      "rtk rg -e '-needle' -i -g '*.ts,*.tsx' -- src docs",
+      "'spekta' 'rg' '-e' '-needle' '-i' '-g' '*.ts,*.tsx' '--' 'src' 'docs'",
     ],
   ])("routes representable search %s", (input, expected) =>
     expect(rewritten(input)).toBe(expected),
@@ -146,11 +161,12 @@ describe("Codex inspection hook parser", () => {
     "rg -F needle",
     "rg -l needle",
     "rg --json needle",
-    "rg needle path other",
     "rg needle -",
     "rg --pre foo needle",
     "rg --glob",
     "rg --glob '*.ts'",
+    "rg -e",
+    "rg --regexp",
     "rtk ls",
     "rtk rg --no-config needle",
     "ls --",

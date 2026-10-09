@@ -129,10 +129,10 @@ function translateRead(words: string[]): string[] | undefined {
 
 function translateSearch(words: string[]): string[] | undefined {
   const args = words.slice(1);
-  let pattern: string | undefined;
-  let searchPath: string | undefined;
-  let caseInsensitive = false;
-  const globs: string[] = [];
+  const translated = ["spekta", "rg"];
+  let patternCount = 0;
+  let positionalCount = 0;
+  let firstPositional: string | undefined;
   const positional: string[] = [];
   let optionsEnded = false;
 
@@ -140,44 +140,61 @@ function translateSearch(words: string[]): string[] | undefined {
     const arg = args[i];
     if (!optionsEnded && arg === "--") {
       optionsEnded = true;
+      translated.push(arg);
       continue;
     }
     if (
       !optionsEnded &&
-      !pattern &&
-      (arg === "-i" || arg === "--ignore-case")
+      [
+        "-i",
+        "--ignore-case",
+        "-s",
+        "--case-sensitive",
+        "-S",
+        "--smart-case",
+      ].includes(arg)
     ) {
-      caseInsensitive = true;
+      translated.push(arg);
       continue;
     }
-    if (!optionsEnded && !pattern && (arg === "-g" || arg === "--glob")) {
-      const glob = args[++i];
-      if (!glob || glob.startsWith("-") || glob.includes(",")) return;
-      globs.push(glob);
+    if (!optionsEnded && ["-g", "--glob", "-e", "--regexp"].includes(arg)) {
+      const value = args[++i];
+      if (value === undefined || value === "") return;
+      if (arg === "-e" || arg === "--regexp") patternCount += 1;
+      translated.push(arg, value);
       continue;
     }
-    if (!optionsEnded && !pattern && arg === "-e") {
-      pattern = args[++i];
-      if (pattern === undefined) return;
+    if (!optionsEnded && arg.startsWith("-e") && arg.length > 2) {
+      patternCount += 1;
+      translated.push(arg);
+      continue;
+    }
+    if (
+      !optionsEnded &&
+      ((arg.startsWith("-g") && arg.length > 2) ||
+        arg.startsWith("--glob=") ||
+        arg.startsWith("--regexp="))
+    ) {
+      if (arg.startsWith("--regexp=")) patternCount += 1;
+      if (arg === "--glob=" || arg === "--regexp=") return;
+      translated.push(arg);
       continue;
     }
     if (!optionsEnded && arg.startsWith("-")) return;
+    positionalCount += 1;
     positional.push(arg);
+    if (firstPositional === undefined) firstPositional = arg;
+    translated.push(arg);
   }
 
-  if (pattern === undefined) {
-    if (positional.length === 0) return;
-    pattern = positional.shift();
-  }
-  if (!pattern || positional.length > 1) return;
-  if (positional[0] === "-") return;
-  if (positional[0]?.startsWith("-")) return;
-  if (positional[0] !== undefined) searchPath = positional[0];
-
-  const translated = ["spekta", "grep", pattern];
-  if (searchPath !== undefined) translated.push(searchPath);
-  if (caseInsensitive) translated.push("--ignore-case");
-  if (globs.length > 0) translated.push("--glob", globs.join(","));
+  if (patternCount === 0 && (!positionalCount || firstPositional === ""))
+    return;
+  if (
+    patternCount > 0
+      ? positional.includes("-")
+      : positional.slice(1).includes("-")
+  )
+    return;
   return translated;
 }
 
