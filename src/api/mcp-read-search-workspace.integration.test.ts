@@ -135,7 +135,7 @@ describe("CLI and existing MCP workspace boundaries", () => {
 
   it("marks an authorized read execution failure as an MCP error", async () => {
     const tools = createToolRegistry({ root: fixture.root });
-    vi.spyOn(readUtils, "getFileLines").mockRejectedValueOnce(
+    vi.spyOn(readUtils, "getVersionedFileLines").mockRejectedValueOnce(
       new Error("I/O failure PRIVATE_DIAGNOSTIC"),
     );
 

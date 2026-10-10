@@ -21,6 +21,7 @@ export interface ReadOutputOptions {
   exceedsLimit?: boolean;
   warning?: string;
   empty?: boolean;
+  version?: string;
 }
 
 const formatNumber = (value: number): string => value.toLocaleString("en-US");
@@ -39,6 +40,7 @@ export function formatReadOutput(options: ReadOutputOptions): string {
     exceedsLimit = false,
     warning = "",
     empty = false,
+    version,
   } = options;
 
   const extension = path.split(".").pop() || "txt";
@@ -57,8 +59,9 @@ export function formatReadOutput(options: ReadOutputOptions): string {
 
   const exceedLabel = exceedsLimit ? " [EXCEEDS TOKEN LIMIT]" : "";
   const warningLabel = warning ? ` [${warning}]` : "";
+  const versionLabel = version ? ` [Version: ${version}]` : "";
 
-  return `#### ${path} (${empty ? "" : "lines "}${rangeLabel})${tokenDetails}${exceedLabel}${warningLabel}
+  return `#### ${path} (${empty ? "" : "lines "}${rangeLabel})${tokenDetails}${versionLabel}${exceedLabel}${warningLabel}
 \`\`\`${extension}
 ${content}
 \`\`\`

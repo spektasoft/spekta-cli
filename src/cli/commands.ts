@@ -61,6 +61,7 @@ export const COMMANDS: Record<string, CommandDefinition> = {
       if (
         parsed.operands.length === 0 &&
         parsed.allowance === undefined &&
+        parsed.expectedVersion === undefined &&
         !parsed.malformed
       ) {
         await runReadInteractive();
@@ -68,7 +69,7 @@ export const COMMANDS: Record<string, CommandDefinition> = {
       }
       let requests;
       try {
-        if (parsed.malformed) throw new Error("Invalid read allowance");
+        if (parsed.malformed) throw new Error("Invalid read options");
         requests = parseReadRequests(parsed.operands);
       } catch {
         process.stdout.write(getOutcomeText(readUsageFailure()));
@@ -84,6 +85,7 @@ export const COMMANDS: Record<string, CommandDefinition> = {
       await runRead(requests, {
         save: parsed.save,
         allowance: resolved.allowance,
+        expectedVersion: parsed.expectedVersion,
       });
     },
   },

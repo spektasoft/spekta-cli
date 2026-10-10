@@ -8,7 +8,8 @@ import { getTempPath } from "../utils/fs-utils";
 import { openEditor } from "../utils/editor-utils";
 import {
   FileRequest,
-  getFileLines,
+  getVersionedFileLines,
+  isReadVersion,
   getTokenCount,
   parseFilePathWithRange,
 } from "../utils/read-utils";
@@ -79,7 +80,9 @@ function boundedReadFailure(
         ? "unavailable_access: Read rejected by workspace policy."
         : status === "engine_failure"
           ? "internal_failure: Read failed."
-          : "output_limit_exceeded: Narrow the read range.";
+          : status === "version_mismatch"
+            ? "version_mismatch: Restart without --expected-version (MCP: omit expectedVersion)."
+            : "output_limit_exceeded: Narrow the read range.";
   return boundFailureOutcome(status, message, fallback, budget, (candidate) =>
     Math.max(
       responseTokens(candidate, requestId, true, suffix),
@@ -100,6 +103,7 @@ export interface ReadCliArgs {
   operands: string[];
   save: boolean;
   allowance?: string;
+  expectedVersion?: string;
   malformed: boolean;
 }
 
@@ -107,6 +111,7 @@ export function splitReadArgs(args: string[]): ReadCliArgs {
   const operands: string[] = [];
   let save = false;
   let allowance: string | undefined;
+  let expectedVersion: string | undefined;
   let malformed = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -116,9 +121,20 @@ export function splitReadArgs(args: string[]): ReadCliArgs {
         arg === "--allowance" ? args[++i] : arg.slice("--allowance=".length);
       if (value === undefined || allowance !== undefined) malformed = true;
       else allowance = value;
+    } else if (
+      arg === "--expected-version" ||
+      arg.startsWith("--expected-version=")
+    ) {
+      const value =
+        arg === "--expected-version"
+          ? args[++i]
+          : arg.slice("--expected-version=".length);
+      if (value === undefined || expectedVersion !== undefined)
+        malformed = true;
+      else expectedVersion = value;
     } else operands.push(arg);
   }
-  return { operands, save, allowance, malformed };
+  return { operands, save, allowance, expectedVersion, malformed };
 }
 
 export function resolveReadAllowance(
@@ -203,13 +219,16 @@ export async function getReadOutcome(
   requestId?: string | number,
   suffix = "",
   allowance?: number,
+  expectedVersion?: unknown,
 ): Promise<OperationOutcome<string>> {
   // Retain the interactive parameter for existing callers; all reads share planning.
   void _interactive;
   if (
     !requests ||
     requests.length === 0 ||
-    requests.some((request) => !validReadRequest(request))
+    requests.some((request) => !validReadRequest(request)) ||
+    (expectedVersion !== undefined &&
+      (requests.length !== 1 || !isReadVersion(expectedVersion)))
   )
     return readUsageFailure(requestId);
 
@@ -230,34 +249,45 @@ export async function getReadOutcome(
 
   for (const [position, req] of requests.entries()) {
     const isRangeRequest = !!req.range;
-    let readPath: string;
-    try {
-      readPath = await validateReadPathAccess(req.path, resolvedWorkspace);
-    } catch {
-      return boundedReadFailure(
+    const unavailable = () =>
+      boundedReadFailure(
         "policy_rejection",
         `Read rejected: unavailable_access; Operand ${position + 1} is unavailable under workspace policy.`,
         requestId,
         suffix,
         tokenLimit,
       );
+    const changed = () =>
+      boundedReadFailure(
+        "version_mismatch",
+        `version_mismatch: Operand ${position + 1} changed. Discard earlier chunks and restart from the original requested range without --expected-version (MCP: omit expectedVersion).`,
+        requestId,
+        suffix,
+        tokenLimit,
+      );
+
+    let readPath: string;
+    try {
+      readPath = await validateReadPathAccess(req.path, resolvedWorkspace);
+    } catch {
+      return unavailable();
     }
 
     try {
-      const { lines, total: rangeTotal } = await getFileLines(
+      const { lines, total, fullLines, version } = await getVersionedFileLines(
         readPath,
         req.range || { start: 1, end: "$" },
       );
-      const total = rangeTotal;
-
-      const content = lines.join("\n");
-      const tokens = getTokenCount(content);
-
-      let fullTokens = tokens;
-      if (isRangeRequest) {
-        const fullFile = await getFileLines(readPath, { start: 1, end: "$" });
-        fullTokens = getTokenCount(fullFile.lines.join("\n"));
+      let currentPath: string;
+      try {
+        currentPath = await validateReadPathAccess(req.path, resolvedWorkspace);
+      } catch {
+        return unavailable();
       }
+      if (currentPath !== readPath) return changed();
+      if (expectedVersion !== undefined && expectedVersion !== version)
+        return changed();
+      const fullTokens = getTokenCount(fullLines.join("\n"));
 
       const start = req.range?.start ?? 1;
       const render = (count: number) => {
@@ -274,9 +304,10 @@ export async function getReadOutcome(
           tokens: getTokenCount(chunk),
           fullTokens,
           empty: count === 0,
+          version,
         });
         return incomplete
-          ? `${body}[INCOMPLETE: output_limit_exceeded; Next range: ${req.path}[${end + 1},${start + lines.length - 1}]]\n`
+          ? `${body}[INCOMPLETE: output_limit_exceeded; Next range: ${req.path}[${end + 1},${start + lines.length - 1}]; use Version as expected version]\n`
           : body;
       };
       const complete = render(lines.length);
@@ -311,6 +342,15 @@ export async function getReadOutcome(
       }
       combinedOutput += complete;
     } catch {
+      try {
+        const currentPath = await validateReadPathAccess(
+          req.path,
+          resolvedWorkspace,
+        );
+        if (currentPath !== readPath) return changed();
+      } catch {
+        return unavailable();
+      }
       return boundedReadFailure(
         "engine_failure",
         `Read failed: internal_failure while accessing authorized Operand ${position + 1}.`,
@@ -347,6 +387,7 @@ export async function runRead(
     interactive?: boolean;
     workspace?: WorkspaceContext;
     allowance?: number;
+    expectedVersion?: string;
   } = {},
 ) {
   try {
@@ -375,6 +416,7 @@ export async function runRead(
       undefined,
       suffix,
       options.allowance,
+      options.expectedVersion,
     );
     const finalContent = getOutcomeText(outcome);
     if (outcome.status !== "success") process.exitCode = 1;

@@ -62,6 +62,13 @@ const registry: Record<string, ToolRegistryEntry> = {
     schema: (params) =>
       z.object({
         paths: z.array(z.string()).describe(params.paths?.description || ""),
+        expectedVersion: z
+          .string()
+          .optional()
+          .describe(
+            params.expectedVersion?.description ||
+              "Version from an earlier read. Requires exactly one path; a mismatch returns restart guidance without content.",
+          ),
         allowance: z
           .number()
           .optional()
@@ -75,6 +82,7 @@ const registry: Record<string, ToolRegistryEntry> = {
         .object({
           paths: z.array(z.string()).min(1),
           allowance: z.unknown().optional(),
+          expectedVersion: z.unknown().optional(),
         })
         .strict()
         .safeParse(rawArgs);
@@ -105,9 +113,11 @@ const registry: Record<string, ToolRegistryEntry> = {
         requestId,
         "",
         resolved.allowance,
+        parsed.success ? parsed.data.expectedVersion : undefined,
       );
       return {
         ...(outcome.status === "usage_error" ||
+        outcome.status === "version_mismatch" ||
         outcome.status === "output_limit_exceeded" ||
         outcome.status === "policy_rejection" ||
         outcome.status === "engine_failure"

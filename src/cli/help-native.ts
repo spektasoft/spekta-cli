@@ -14,7 +14,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
     purpose:
       "Print complete original lines with accurate coverage and continuation ranges.",
     usage: [
-      "spekta read [--save] [--allowance <tokens>] <path[start,end]>...",
+      "spekta read [--save] [--allowance <tokens>] [--expected-version <marker>] <path[start,end]>...",
       "spekta read [--save]",
       "spekta help read",
     ],
@@ -36,6 +36,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Options and saving",
         lines: [
           "--save  Save rendered output to a temporary spekta-read-<timestamp>.md file, reporting its path.",
+          "--expected-version <marker>  Check the Version marker from an earlier read. Also accepts --expected-version=<marker>. Requires exactly one file path.",
           "Without --save, direct reads print to stdout. --save does not take an output-path value.",
           "SPEKTA_EDITOR opens saved output unless SPEKTA_NO_EDITOR=1. With no editor, saved content is also printed.",
           "--help or -h as the first or final argument shows this topic; help read is equivalent.",
@@ -49,9 +50,12 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
           "--allowance <tokens> requests a positive whole-number response allowance. The default is SPEKTA_READ_TOKEN_LIMIT (1000); it covers the whole rendered response and cannot exceed SPEKTA_READ_TOKEN_CEILING (8000). The workspace owner sets the ceiling; it is not a security boundary. Invalid and over-ceiling values are rejected with guidance.",
           "Example: spekta read --allowance 2000 'src/index.ts[1,200]'",
           "Full-file and explicit-range reads return original content. The legacy SPEKTA_COMPACT_THRESHOLD (default 500 tokens) does not affect reads.",
-          "When a read exceeds the response budget, Spekta returns a contiguous chunk of complete original lines with the actual delivered range and a Next range operand. Repeat that operand to continue; ranges extending beyond EOF report only existing lines.",
+          "When a read exceeds the response budget, Spekta returns a contiguous chunk of complete original lines with the actual delivered range and a Next range operand. Repeat that operand with --expected-version set to the earlier Version marker to continue safely; ranges extending beyond EOF report only existing lines.",
+          "Each rendered file includes a Version marker for its canonical target and original bytes, including empty files and ranges beyond EOF. MCP accepts the same marker as expectedVersion.",
+          "version_mismatch returns no content and exits nonzero. Discard earlier chunks and restart from the original requested range without --expected-version; for MCP, omit expectedVersion.",
+          "Eligibility and canonical targets are checked again on every request. Newly unavailable targets return unavailable_access. Version checking does not provide an atomic snapshot across files; omitting the expected version reads the currently eligible content.",
           "An incomplete read exits nonzero with output_limit_exceeded. A single line that cannot fit is withheld with guidance to request a supported allowance increase; lines are never shortened. Empty files and requests beyond EOF report no lines.",
-          "Printed and saved results use the same complete-line contract. The complete response budget includes headings, coverage, continuation guidance, the MCP envelope and the save-path notice when applicable.",
+          "Printed and saved results use the same complete-line contract. The complete response budget includes headings, coverage, version markers, continuation guidance, the MCP envelope and the save-path notice when applicable.",
           "Configuration precedence is shell environment, workspace .env, then personal Spekta .env. Invalid read limits fall back to 1000; invalid compaction thresholds fall back to 500 (zero is allowed).",
           "Direct read and help require no AI provider credentials. Interactive selection requires Git.",
         ],
@@ -69,6 +73,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
     examples: [
       "spekta read README.md",
       "spekta read 'src/index.ts[10,20]'",
+      "spekta read --expected-version '<Version marker from prior response>' 'src/index.ts[21,40]'",
       "spekta read 'src/index.ts[50,$]' README.md --save",
       "spekta read './notes with spaces.md[,20]'",
       "spekta read ./--help",

@@ -56,7 +56,7 @@ describe("original read chunks at public CLI/MCP boundaries", () => {
   });
 
   it("delivers complete contiguous Unicode lines with accurate coverage and a usable next range", async () => {
-    process.env.SPEKTA_READ_TOKEN_LIMIT = "220";
+    process.env.SPEKTA_READ_TOKEN_LIMIT = "320";
     const lines = Array.from(
       { length: 40 },
       (_, i) => `line ${i + 1}: สวัสดี 🌏 café evidence`,
@@ -64,18 +64,26 @@ describe("original read chunks at public CLI/MCP boundaries", () => {
     await fs.writeFile(path.join(fixture.root, "chunk.txt"), lines.join("\n"));
     const tools = createToolRegistry({ root: fixture.root });
     let start = 1;
+    let expectedVersion: string | undefined;
     const delivered: string[] = [];
     while (start <= 40) {
       const requestId = "chunk-request";
       const result = await tools.spekta_read.handler(
-        { paths: [`chunk.txt[${start},40]`] },
+        {
+          paths: [`chunk.txt[${start},40]`],
+          ...(expectedVersion ? { expectedVersion } : {}),
+        },
         undefined,
         requestId,
       );
       const output = result.content[0].text;
       expect(
         getTokenCount(serializeMcpToolReply(requestId, result)),
-      ).toBeLessThanOrEqual(220);
+      ).toBeLessThanOrEqual(320);
+      const version = output.match(/\[Version: (v1-[A-Za-z0-9_-]{43})\]/)?.[1];
+      expect(version).toBeDefined();
+      if (expectedVersion) expect(version).toBe(expectedVersion);
+      expectedVersion = version;
       const coverage = output.match(/lines (\d+)-(\d+) of 40/);
       expect(coverage).not.toBeNull();
       const end = Number(coverage![2]);
@@ -181,13 +189,13 @@ describe("original read chunks at public CLI/MCP boundaries", () => {
   });
 
   it("saves and prints the same complete-line chunk within the response budget", async () => {
-    process.env.SPEKTA_READ_TOKEN_LIMIT = "200";
+    process.env.SPEKTA_READ_TOKEN_LIMIT = "300";
     await fs.writeFile(
       path.join(fixture.root, "saved.txt"),
       "complete saved evidence line\n".repeat(100),
     );
     const output = await cli(["saved.txt", "--save"]);
-    expect(getTokenCount(output)).toBeLessThanOrEqual(200);
+    expect(getTokenCount(output)).toBeLessThanOrEqual(300);
     const savedPath = output.match(/Output saved to: (.+)\n/)?.[1];
     expect(savedPath).toBeDefined();
     try {

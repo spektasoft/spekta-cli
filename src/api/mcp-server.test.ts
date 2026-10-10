@@ -316,6 +316,9 @@ describe("TOOL_REGISTRY", () => {
       false,
       workspace,
       undefined,
+      "",
+      undefined,
+      undefined,
     );
     expect(getRgOutcome).toHaveBeenCalledWith(
       {
@@ -360,6 +363,32 @@ describe("TOOL_REGISTRY", () => {
       false,
       undefined,
       "request-42",
+      "",
+      undefined,
+      undefined,
+    );
+  });
+
+  it("passes expected versions to the planner and marks mismatches as MCP errors", async () => {
+    const version = `v1-${"a".repeat(43)}`;
+    vi.mocked(getReadOutcome).mockResolvedValueOnce({
+      status: "version_mismatch",
+      message: "version_mismatch: restart",
+    });
+    const result = await TOOL_REGISTRY.spekta_read.handler(
+      { paths: ["src/file.ts"], expectedVersion: version },
+      undefined,
+      "version-request",
+    );
+    expect(result.isError).toBe(true);
+    expect(getReadOutcome).toHaveBeenCalledWith(
+      [{ path: "src/file.ts" }],
+      false,
+      undefined,
+      "version-request",
+      "",
+      undefined,
+      version,
     );
   });
 

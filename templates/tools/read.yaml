@@ -8,6 +8,8 @@ description: |
 params:
   paths:
     description: "Space-separated file paths."
+  expectedVersion:
+    description: "Version marker from an earlier read. Requires exactly one path. A mismatch returns restart guidance without content."
 
 xml_example: |
   <read path="src/main.ts[1,20] 'tests/unit test.ts'" />
