@@ -67,7 +67,7 @@ describe("public read operands", () => {
     }
   });
 
-  it("withholds oversized rendered batches rather than cutting a line or header", async () => {
+  it("rejects batches whose outcome metadata cannot fit", async () => {
     process.env.SPEKTA_READ_TOKEN_LIMIT = "160";
     await fs.writeFile(
       path.join(fixture.root, "large.txt"),
@@ -78,6 +78,7 @@ describe("public read operands", () => {
     }).spekta_read.handler({ paths: ["real.txt", "large.txt"] });
     expect(response.isError).toBe(true);
     expect(response.content[0].text).toContain("output_limit_exceeded");
+    expect(response.content[0].text).toMatch(/split/i);
     expect(response.content[0].text).not.toContain("batch evidence");
     expect(response.content[0].text).not.toContain("####");
   });

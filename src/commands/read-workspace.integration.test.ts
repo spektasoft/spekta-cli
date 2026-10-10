@@ -77,17 +77,22 @@ describe("workspace reads", () => {
       "Read rejected:",
     );
   });
-  it("withholds a partial multi-file read when any requested file is denied", async () => {
+  it("retains eligible siblings without disclosing a denied operand", async () => {
     const outcome = await getReadOutcome(
       [{ path: "internal-file.txt" }, { path: "../sibling.txt" }],
       false,
       { root: fixture.root },
     );
-    expect(outcome.status).toBe("policy_rejection");
+    expect(outcome.status).toBe("partial_result");
+    if (outcome.status !== "partial_result")
+      throw new Error("Expected a partial batch");
+    expect(outcome.operands).toEqual([
+      { position: 1, status: "returned" },
+      { position: 2, status: "unavailable" },
+    ]);
+    expect(outcome.value).toContain("needle INTERNAL");
     const serialized = JSON.stringify(outcome);
-    expect(serialized).not.toContain("internal-file.txt");
     expect(serialized).not.toContain("sibling.txt");
-    expect(serialized).not.toContain("INTERNAL");
     expect(serialized).not.toContain("SIBLING");
   });
   it("accepts absolute internal targets and nongit workspaces", async () => {

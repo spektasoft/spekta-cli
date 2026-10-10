@@ -23,7 +23,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
       {
         heading: "Operands and ranges",
         lines: [
-          "Direct reading requires one or more literal file paths; multiple paths are combined in one response.",
+          "Direct reading requires one or more literal file paths; multiple paths share one response budget. Mixed batches retain eligible siblings and identify every operand by its one-based position.",
           "Paths are relative to the current workspace; absolute paths must remain inside it. No glob expansion is provided by Spekta.",
           "Optionally append [start,end] for inclusive, 1-based line ranges; $ means the last line.",
           "path[10,20] reads lines 10–20; path[10,$] or path[10] reads from line 10 to EOF.",
@@ -56,6 +56,10 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
           "Eligibility and canonical targets are checked again on every request. Newly unavailable targets return unavailable_access. Version checking does not provide an atomic snapshot across files; omitting the expected version reads the currently eligible content.",
           "An incomplete read exits nonzero with output_limit_exceeded. A single line that cannot fit is withheld with guidance to request a supported allowance increase; lines are never shortened. Empty files and requests beyond EOF report no lines.",
           "Printed and saved results use the same complete-line contract. The complete response budget includes headings, coverage, version markers, continuation guidance, the MCP envelope and the save-path notice when applicable.",
+          "Multi-file reads report Batch: success or Batch: partial_result and an explicit outcome for every operand. returned means the requested range is complete; incomplete includes a chunk; budget_limited means no requested line fits; unavailable conceals the path; unattempted means retrieval could not start.",
+          "All operand metadata is reserved before content retrieval. Conservative reservation can reject a batch whose metadata cannot fit; split it into fewer operands or request a supported allowance increase. Readable operands share content opportunities fairly, and unused allowance is redistributed.",
+          "Each readable batch operand reports its original requested range and Version. Continue each Next range separately with --expected-version, or MCP expectedVersion. A single expected version still requires exactly one path.",
+          "Partial batches exit nonzero and MCP marks isError while preserving useful content. Whole lines are never shortened or compacted to fit.",
           "Configuration precedence is shell environment, workspace .env, then personal Spekta .env. Invalid read limits fall back to 1000; invalid compaction thresholds fall back to 500 (zero is allowed).",
           "Direct read and help require no AI provider credentials. Interactive selection requires Git.",
         ],

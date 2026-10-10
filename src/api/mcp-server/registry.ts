@@ -116,7 +116,8 @@ const registry: Record<string, ToolRegistryEntry> = {
         parsed.success ? parsed.data.expectedVersion : undefined,
       );
       return {
-        ...(outcome.status === "usage_error" ||
+        ...(outcome.status === "partial_result" ||
+        outcome.status === "usage_error" ||
         outcome.status === "version_mismatch" ||
         outcome.status === "output_limit_exceeded" ||
         outcome.status === "policy_rejection" ||
@@ -162,7 +163,9 @@ const registry: Record<string, ToolRegistryEntry> = {
             text:
               outcome.status === "success"
                 ? outcome.value.message
-                : outcome.message,
+                : outcome.status === "partial_result"
+                  ? outcome.value.message
+                  : outcome.message,
           },
         ],
       };
@@ -198,7 +201,9 @@ const registry: Record<string, ToolRegistryEntry> = {
             text:
               outcome.status === "success"
                 ? outcome.value.message
-                : outcome.message,
+                : outcome.status === "partial_result"
+                  ? outcome.value.message
+                  : outcome.message,
           },
         ],
       };
@@ -249,7 +254,9 @@ const registry: Record<string, ToolRegistryEntry> = {
         requestId,
       );
       const text =
-        outcome.status === "success" ? outcome.value : outcome.message;
+        outcome.status === "success" || outcome.status === "partial_result"
+          ? outcome.value
+          : outcome.message;
       return {
         ...(outcome.status === "engine_failure" ||
         outcome.status === "policy_rejection"

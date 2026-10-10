@@ -47,11 +47,13 @@ describe("original read content through CLI and MCP", () => {
     expect(response.isError).toBeUndefined();
   });
 
-  it("withholds batch contents when another operand is unavailable", async () => {
+  it("retains eligible batch content when another operand is unavailable", async () => {
     const output = await cli(["real.txt", "../sibling.txt"]);
     expect(process.exitCode).toBe(1);
-    expect(output).toContain("Operand 2");
-    expect(output).not.toContain("INTERNAL");
+    expect(output).toContain("Batch: partial_result");
+    expect(output).toContain("Operand 1: returned");
+    expect(output).toContain("Operand 2: unavailable; unavailable_access");
+    expect(output).toContain("needle INTERNAL\nsecond line");
     expect(output).not.toContain("sibling.txt");
   });
 });

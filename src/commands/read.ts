@@ -26,14 +26,16 @@ import {
   type OperationOutcome,
 } from "../core/operation-outcome";
 import { formatReadOutput } from "./read-formatter";
+import { getReadBatchOutcome } from "./read-batch";
 
-function responseTokens(
+function measureReadResponse(
   text: string,
-  requestId?: string | number,
-  isError = false,
-  suffix = "",
+  requestId: string | number | undefined,
+  isError: boolean,
+  suffix: string,
+  measure: (value: string) => number,
 ): number {
-  const cli = getTokenCount(`${text}${suffix}`);
+  const cli = measure(`${text}${suffix}`);
   if (requestId === undefined) return cli;
   const mcp = JSON.stringify({
     jsonrpc: "2.0",
@@ -43,7 +45,16 @@ function responseTokens(
       content: [{ type: "text", text }],
     },
   });
-  return Math.max(cli, getTokenCount(`${mcp}\n`));
+  return Math.max(cli, measure(`${mcp}\n`));
+}
+
+function responseTokens(
+  text: string,
+  requestId?: string | number,
+  isError = false,
+  suffix = "",
+): number {
+  return measureReadResponse(text, requestId, isError, suffix, getTokenCount);
 }
 
 const READ_LIMIT_GUIDANCE =
@@ -82,7 +93,7 @@ function boundedReadFailure(
           ? "internal_failure: Read failed."
           : status === "version_mismatch"
             ? "version_mismatch: Restart without --expected-version (MCP: omit expectedVersion)."
-            : "output_limit_exceeded: Narrow the read range.";
+            : "output_limit_exceeded: Split the batch or narrow the range.";
   return boundFailureOutcome(status, message, fallback, budget, (candidate) =>
     Math.max(
       responseTokens(candidate, requestId, true, suffix),
@@ -231,6 +242,32 @@ export async function getReadOutcome(
       (requests.length !== 1 || !isReadVersion(expectedVersion)))
   )
     return readUsageFailure(requestId);
+
+  if (requests.length > 1) {
+    const limit = allowance ?? getReadTokenLimit();
+    const budget =
+      requestId === undefined
+        ? limit
+        : Math.max(limit, getMinimumMcpReadResponseBudget(requestId));
+    return getReadBatchOutcome(requests, workspace, {
+      budget,
+      measure: (text, isError) =>
+        responseTokens(text, requestId, isError, suffix),
+      metadataBytes: (text) =>
+        measureReadResponse(text, requestId, true, suffix, (value) =>
+          Buffer.byteLength(value, "utf8"),
+        ),
+      failure: (message) =>
+        boundedReadFailure(
+          "output_limit_exceeded",
+          message,
+          requestId,
+          suffix,
+          limit,
+        ),
+      increaseHint: allowanceIncreaseHint(limit),
+    });
+  }
 
   let resolvedWorkspace: ResolvedWorkspace;
   try {
