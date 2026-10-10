@@ -1,4 +1,5 @@
 export * from "./config/bootstrap";
+export * from "./config/allowance";
 export * from "./config/context";
 export {
   getCompactThreshold,

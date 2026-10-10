@@ -1,5 +1,9 @@
 import fs from "fs-extra";
 import { getEnv, getReadTokenLimit } from "../core/config";
+import {
+  resolveAllowanceSettings,
+  resolveRequestAllowance,
+} from "../core/config/allowance";
 import { getTempPath } from "../utils/fs-utils";
 import { openEditor } from "../utils/editor-utils";
 import {
@@ -44,6 +48,13 @@ function responseTokens(
 const READ_LIMIT_GUIDANCE =
   "output_limit_exceeded: Read result exceeds the response budget. Request a narrower path or line range.";
 
+function allowanceIncreaseHint(limit: number): string {
+  const ceiling = resolveAllowanceSettings("read").ceilingTokens;
+  return ceiling > limit
+    ? ` A larger allowance up to ${ceiling} tokens is supported.`
+    : "";
+}
+
 export function getMinimumMcpReadResponseBudget(
   requestId: string | number,
 ): number {
@@ -55,14 +66,12 @@ function boundedReadFailure(
   message: string,
   requestId?: string | number,
   suffix = "",
+  limit: number = getReadTokenLimit(),
 ): FailureOutcome {
   const budget =
     requestId === undefined
-      ? getReadTokenLimit()
-      : Math.max(
-          getReadTokenLimit(),
-          getMinimumMcpReadResponseBudget(requestId),
-        );
+      ? limit
+      : Math.max(limit, getMinimumMcpReadResponseBudget(requestId));
   const fallback =
     status === "usage_error"
       ? "usage_error: Use spekta help read."
@@ -85,6 +94,55 @@ export function readUsageFailure(requestId?: string | number): FailureOutcome {
     "usage_error: Read requires literal paths with inclusive positive line ranges. Use spekta help read.",
     requestId,
   );
+}
+
+export interface ReadCliArgs {
+  operands: string[];
+  save: boolean;
+  allowance?: string;
+  malformed: boolean;
+}
+
+export function splitReadArgs(args: string[]): ReadCliArgs {
+  const operands: string[] = [];
+  let save = false;
+  let allowance: string | undefined;
+  let malformed = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--save") save = true;
+    else if (arg === "--allowance" || arg.startsWith("--allowance=")) {
+      const value =
+        arg === "--allowance" ? args[++i] : arg.slice("--allowance=".length);
+      if (value === undefined || allowance !== undefined) malformed = true;
+      else allowance = value;
+    } else operands.push(arg);
+  }
+  return { operands, save, allowance, malformed };
+}
+
+export function resolveReadAllowance(
+  raw: unknown,
+  requestId?: string | number,
+): { allowance?: number; failure?: FailureOutcome } {
+  const result = resolveRequestAllowance("read", raw);
+  if (result.status === "ok") return { allowance: result.requested };
+  const ceiling = result.settings.ceilingTokens;
+  if (result.status === "over_ceiling")
+    return {
+      failure: boundedReadFailure(
+        "output_limit_exceeded",
+        `output_limit_exceeded: Requested allowance ${result.requested} exceeds the configured ceiling of ${ceiling} tokens. Request ${ceiling} or fewer, or a narrower range.`,
+        requestId,
+      ),
+    };
+  return {
+    failure: boundedReadFailure(
+      "usage_error",
+      `usage_error: Allowance must be a positive whole number of tokens no greater than ${ceiling}. Use spekta help read.`,
+      requestId,
+    ),
+  };
 }
 
 export function parseReadRequests(paths: string[]): FileRequest[] {
@@ -114,8 +172,9 @@ export function boundReadResponse(
   content: string,
   requestId?: string | number,
   suffix = "",
+  limit: number = getReadTokenLimit(),
 ): OperationOutcome<string> {
-  const configuredBudget = getReadTokenLimit();
+  const configuredBudget = limit;
   const budget =
     requestId === undefined
       ? configuredBudget
@@ -126,9 +185,10 @@ export function boundReadResponse(
     status: "output_limit_exceeded",
     message: boundedReadFailure(
       "output_limit_exceeded",
-      READ_LIMIT_GUIDANCE,
+      `${READ_LIMIT_GUIDANCE}${allowanceIncreaseHint(configuredBudget)}`,
       requestId,
       suffix,
+      configuredBudget,
     ).message,
   };
 }
@@ -142,6 +202,7 @@ export async function getReadOutcome(
   workspace?: WorkspaceContext,
   requestId?: string | number,
   suffix = "",
+  allowance?: number,
 ): Promise<OperationOutcome<string>> {
   // Retain the interactive parameter for existing callers; all reads share planning.
   void _interactive;
@@ -161,9 +222,10 @@ export async function getReadOutcome(
       "Read rejected: unavailable_access; workspace is unavailable.",
       requestId,
       suffix,
+      allowance ?? getReadTokenLimit(),
     );
   }
-  const tokenLimit = getReadTokenLimit();
+  const tokenLimit = allowance ?? getReadTokenLimit();
   let combinedOutput = "";
 
   for (const [position, req] of requests.entries()) {
@@ -177,6 +239,7 @@ export async function getReadOutcome(
         `Read rejected: unavailable_access; Operand ${position + 1} is unavailable under workspace policy.`,
         requestId,
         suffix,
+        tokenLimit,
       );
     }
 
@@ -240,9 +303,10 @@ export async function getReadOutcome(
           ? { status: "output_limit_exceeded", message: best }
           : boundedReadFailure(
               "output_limit_exceeded",
-              `output_limit_exceeded: Operand 1 line ${start} cannot fit with read metadata. Increase SPEKTA_READ_TOKEN_LIMIT or request a smaller range; lines are never shortened.`,
+              `output_limit_exceeded: Operand 1 line ${start} cannot fit with read metadata. Request a smaller range; lines are never shortened.${allowanceIncreaseHint(tokenLimit)}`,
               requestId,
               suffix,
+              tokenLimit,
             );
       }
       combinedOutput += complete;
@@ -252,11 +316,12 @@ export async function getReadOutcome(
         `Read failed: internal_failure while accessing authorized Operand ${position + 1}.`,
         requestId,
         suffix,
+        tokenLimit,
       );
     }
   }
 
-  return boundReadResponse(combinedOutput, requestId, suffix);
+  return boundReadResponse(combinedOutput, requestId, suffix, tokenLimit);
 }
 
 /** Compatibility renderer for existing internal string consumers. */
@@ -281,17 +346,22 @@ export async function runRead(
     save?: boolean;
     interactive?: boolean;
     workspace?: WorkspaceContext;
+    allowance?: number;
   } = {},
 ) {
   try {
     const savedPath = options.save ? getTempPath("spekta-read") : undefined;
     const suffix = savedPath ? `Output saved to: ${savedPath}\n` : "";
-    if (responseTokens(suffix) > getReadTokenLimit()) {
+    const limit = options.allowance ?? getReadTokenLimit();
+    if (responseTokens(suffix) > limit) {
       process.stdout.write(
         getOutcomeText(
           boundedReadFailure(
             "output_limit_exceeded",
-            "output_limit_exceeded: Save metadata exceeds the response budget; increase SPEKTA_READ_TOKEN_LIMIT or omit --save.",
+            `output_limit_exceeded: Save metadata exceeds the response budget; omit --save.${allowanceIncreaseHint(limit)}`,
+            undefined,
+            "",
+            limit,
           ),
         ),
       );
@@ -304,6 +374,7 @@ export async function runRead(
       options.workspace,
       undefined,
       suffix,
+      options.allowance,
     );
     const finalContent = getOutcomeText(outcome);
     if (outcome.status !== "success") process.exitCode = 1;

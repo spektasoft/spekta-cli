@@ -4,7 +4,13 @@ import { runPromptRunner } from "../commands/prompt";
 import { runCommitRange } from "../commands/commit-range";
 import { runRg } from "../commands/rg";
 import { runPr } from "../commands/pr";
-import { runRead, parseReadRequests, readUsageFailure } from "../commands/read";
+import {
+  runRead,
+  parseReadRequests,
+  readUsageFailure,
+  resolveReadAllowance,
+  splitReadArgs,
+} from "../commands/read";
 import { getOutcomeText } from "../core/operation-outcome";
 import { runReadInteractive } from "../commands/read-interactive";
 import { runRepl } from "../commands/repl";
@@ -51,23 +57,34 @@ export const COMMANDS: Record<string, CommandDefinition> = {
   read: {
     name: "Read Files",
     run: async (args?: string[]) => {
-      const safeArgs = args || [];
-      const fileArgs = safeArgs.filter((arg) => arg !== "--save");
-      const isSave = safeArgs.includes("--save");
-
-      if (fileArgs.length === 0) {
+      const parsed = splitReadArgs(args || []);
+      if (
+        parsed.operands.length === 0 &&
+        parsed.allowance === undefined &&
+        !parsed.malformed
+      ) {
         await runReadInteractive();
-      } else {
-        let requests;
-        try {
-          requests = parseReadRequests(fileArgs);
-        } catch {
-          process.stdout.write(getOutcomeText(readUsageFailure()));
-          process.exitCode = 1;
-          return;
-        }
-        await runRead(requests, { save: isSave });
+        return;
       }
+      let requests;
+      try {
+        if (parsed.malformed) throw new Error("Invalid read allowance");
+        requests = parseReadRequests(parsed.operands);
+      } catch {
+        process.stdout.write(getOutcomeText(readUsageFailure()));
+        process.exitCode = 1;
+        return;
+      }
+      const resolved = resolveReadAllowance(parsed.allowance);
+      if (resolved.failure) {
+        process.stdout.write(getOutcomeText(resolved.failure));
+        process.exitCode = 1;
+        return;
+      }
+      await runRead(requests, {
+        save: parsed.save,
+        allowance: resolved.allowance,
+      });
     },
   },
   rg: {

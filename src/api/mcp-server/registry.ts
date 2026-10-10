@@ -18,6 +18,7 @@ import {
   getReadOutcome,
   parseReadRequests,
   readUsageFailure,
+  resolveReadAllowance,
 } from "../../commands/read";
 import { executeSafeReplaceOutcome } from "../../commands/replace";
 import { getWriteOutcome } from "../../commands/write";
@@ -61,16 +62,28 @@ const registry: Record<string, ToolRegistryEntry> = {
     schema: (params) =>
       z.object({
         paths: z.array(z.string()).describe(params.paths?.description || ""),
+        allowance: z
+          .number()
+          .optional()
+          .describe(
+            params.allowance?.description ||
+              "Optional response allowance in tokens for the whole rendered response. Positive whole number within the configured ceiling.",
+          ),
       }),
     handler: async (rawArgs, context, requestId) => {
       const parsed = z
-        .object({ paths: z.array(z.string()).min(1) })
+        .object({
+          paths: z.array(z.string()).min(1),
+          allowance: z.unknown().optional(),
+        })
         .strict()
         .safeParse(rawArgs);
       let fileRequests;
+      let allowanceRaw: unknown;
       try {
         if (!parsed.success) throw new Error("Invalid read request");
         fileRequests = parseReadRequests(parsed.data.paths);
+        allowanceRaw = parsed.data.allowance;
       } catch {
         return {
           isError: true,
@@ -79,11 +92,19 @@ const registry: Record<string, ToolRegistryEntry> = {
           ],
         };
       }
+      const resolved = resolveReadAllowance(allowanceRaw, requestId);
+      if (resolved.failure)
+        return {
+          isError: true,
+          content: [{ type: "text", text: getOutcomeText(resolved.failure) }],
+        };
       const outcome = await getReadOutcome(
         fileRequests,
         false,
         context,
         requestId,
+        "",
+        resolved.allowance,
       );
       return {
         ...(outcome.status === "usage_error" ||

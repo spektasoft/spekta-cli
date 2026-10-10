@@ -140,7 +140,8 @@ describe("original read chunks at public CLI/MCP boundaries", () => {
     expect(oversized.isError).toBe(true);
     expect(oversized.content[0].text).toContain("output_limit_exceeded");
     expect(oversized.content[0].text).toContain("line 1");
-    expect(oversized.content[0].text).toContain("SPEKTA_READ_TOKEN_LIMIT");
+    expect(oversized.content[0].text).toContain("allowance");
+    expect(oversized.content[0].text).not.toContain("SPEKTA_READ_TOKEN_LIMIT");
     expect(oversized.content[0].text).not.toContain("PRIVATE_LINE");
     expect(
       getTokenCount(serializeMcpToolReply("oversized", oversized)),

@@ -14,7 +14,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
     purpose:
       "Print complete original lines with accurate coverage and continuation ranges.",
     usage: [
-      "spekta read <path[range]>... [--save]",
+      "spekta read [--save] [--allowance <tokens>] <path[start,end]>...",
       "spekta read [--save]",
       "spekta help read",
     ],
@@ -46,9 +46,11 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Defaults and response budgets",
         lines: [
           "SPEKTA_READ_TOKEN_LIMIT defaults to 1000 tokens for the complete response, including metadata and formatting.",
+          "--allowance <tokens> requests a positive whole-number response allowance. The default is SPEKTA_READ_TOKEN_LIMIT (1000); it covers the whole rendered response and cannot exceed SPEKTA_READ_TOKEN_CEILING (8000). The workspace owner sets the ceiling; it is not a security boundary. Invalid and over-ceiling values are rejected with guidance.",
+          "Example: spekta read --allowance 2000 'src/index.ts[1,200]'",
           "Full-file and explicit-range reads return original content. The legacy SPEKTA_COMPACT_THRESHOLD (default 500 tokens) does not affect reads.",
           "When a read exceeds the response budget, Spekta returns a contiguous chunk of complete original lines with the actual delivered range and a Next range operand. Repeat that operand to continue; ranges extending beyond EOF report only existing lines.",
-          "An incomplete read exits nonzero with output_limit_exceeded. A single line that cannot fit is withheld with guidance to increase SPEKTA_READ_TOKEN_LIMIT; lines are never shortened. Empty files and requests beyond EOF report no lines.",
+          "An incomplete read exits nonzero with output_limit_exceeded. A single line that cannot fit is withheld with guidance to request a supported allowance increase; lines are never shortened. Empty files and requests beyond EOF report no lines.",
           "Printed and saved results use the same complete-line contract. The complete response budget includes headings, coverage, continuation guidance, the MCP envelope and the save-path notice when applicable.",
           "Configuration precedence is shell environment, workspace .env, then personal Spekta .env. Invalid read limits fall back to 1000; invalid compaction thresholds fall back to 500 (zero is allowed).",
           "Direct read and help require no AI provider credentials. Interactive selection requires Git.",
