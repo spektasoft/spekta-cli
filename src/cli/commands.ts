@@ -60,6 +60,7 @@ export const COMMANDS: Record<string, CommandDefinition> = {
       const parsed = splitReadArgs(args || []);
       if (
         parsed.operands.length === 0 &&
+        !parsed.overview &&
         parsed.allowance === undefined &&
         parsed.expectedVersion === undefined &&
         !parsed.malformed
@@ -86,6 +87,7 @@ export const COMMANDS: Record<string, CommandDefinition> = {
         save: parsed.save,
         allowance: resolved.allowance,
         expectedVersion: parsed.expectedVersion,
+        overview: parsed.overview,
       });
     },
   },

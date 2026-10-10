@@ -1,6 +1,6 @@
 name: spekta_read
 description: |
-  Read one or multiple files with optional range support. Always use relative paths. Ranges use [start,end] syntax (e.g., 'src/main.ts[10,50]').
+  Read one or multiple files with optional range support. Set overview=true to request an explicit structural overview of whole files; overview cannot be combined with ranges. Always use relative paths. Ranges use [start,end] syntax (e.g., 'src/main.ts[10,50]').
 
   - **Syntax:** Space-separated paths; quotes for paths with spaces
   - **Line Ranges:** Append `[start,end]` to a path; use `$` for the last line (e.g., `[10,$]`)
@@ -10,6 +10,8 @@ params:
     description: "Space-separated file paths."
   expectedVersion:
     description: "Version marker from an earlier read. Requires exactly one path. A mismatch returns restart guidance without content."
+  overview:
+    description: "Opt in to a structural overview. Cannot be combined with explicit line ranges; unsupported files return original content."
 
 xml_example: |
   <read path="src/main.ts[1,20] 'tests/unit test.ts'" />

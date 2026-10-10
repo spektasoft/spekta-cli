@@ -15,6 +15,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
       "Print complete original lines with accurate coverage and continuation ranges.",
     usage: [
       "spekta read [--save] [--allowance <tokens>] [--expected-version <marker>] <path[start,end]>...",
+      "spekta read --overview [--save] [--allowance <tokens>] <path>...",
       "spekta read [--save]",
       "spekta help read",
     ],
@@ -36,6 +37,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Options and saving",
         lines: [
           "--save  Save rendered output to a temporary spekta-read-<timestamp>.md file, reporting its path.",
+          "--overview  Opt in to a structural overview. It may omit original source evidence, which is identified by absolute line markers. Cannot be combined with an explicit range; unsupported formats return labeled original content with normal chunking.",
           "--expected-version <marker>  Check the Version marker from an earlier read. Also accepts --expected-version=<marker>. Requires exactly one file path.",
           "Without --save, direct reads print to stdout. --save does not take an output-path value.",
           "SPEKTA_EDITOR opens saved output unless SPEKTA_NO_EDITOR=1. With no editor, saved content is also printed.",
@@ -49,7 +51,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
           "SPEKTA_READ_TOKEN_LIMIT defaults to 1000 tokens for the complete response, including metadata and formatting.",
           "--allowance <tokens> requests a positive whole-number response allowance. The default is SPEKTA_READ_TOKEN_LIMIT (1000); it covers the whole rendered response and cannot exceed SPEKTA_READ_TOKEN_CEILING (8000). The workspace owner sets the ceiling; it is not a security boundary. Invalid and over-ceiling values are rejected with guidance.",
           "Example: spekta read --allowance 2000 'src/index.ts[1,200]'",
-          "Full-file and explicit-range reads return original content. The legacy SPEKTA_COMPACT_THRESHOLD (default 500 tokens) does not affect reads.",
+          "Ordinary full-file and explicit-range reads return original content. The legacy SPEKTA_COMPACT_THRESHOLD (default 500 tokens) does not affect ordinary reads or explicit overviews.",
           "When a read exceeds the response budget, Spekta returns a contiguous chunk of complete original lines with the actual delivered range and a Next range operand. Repeat that operand with --expected-version set to the earlier Version marker to continue safely; ranges extending beyond EOF report only existing lines.",
           "Each rendered file includes a Version marker for its canonical target and original bytes, including empty files and ranges beyond EOF. MCP accepts the same marker as expectedVersion.",
           "version_mismatch returns no content and exits nonzero. Discard earlier chunks and restart from the original requested range without --expected-version; for MCP, omit expectedVersion.",

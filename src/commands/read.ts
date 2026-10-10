@@ -27,6 +27,7 @@ import {
 } from "../core/operation-outcome";
 import { formatReadOutput } from "./read-formatter";
 import { getReadBatchOutcome } from "./read-batch";
+import { compactFile } from "../utils/compactor";
 
 function measureReadResponse(
   text: string,
@@ -115,6 +116,7 @@ export interface ReadCliArgs {
   save: boolean;
   allowance?: string;
   expectedVersion?: string;
+  overview: boolean;
   malformed: boolean;
 }
 
@@ -124,9 +126,14 @@ export function splitReadArgs(args: string[]): ReadCliArgs {
   let allowance: string | undefined;
   let expectedVersion: string | undefined;
   let malformed = false;
+  let overview = false;
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === "--save") save = true;
+    else if (arg === "--overview") {
+      if (overview) malformed = true;
+      overview = true;
+    } else if (arg.startsWith("--overview=")) malformed = true;
     else if (arg === "--allowance" || arg.startsWith("--allowance=")) {
       const value =
         arg === "--allowance" ? args[++i] : arg.slice("--allowance=".length);
@@ -145,7 +152,7 @@ export function splitReadArgs(args: string[]): ReadCliArgs {
       else expectedVersion = value;
     } else operands.push(arg);
   }
-  return { operands, save, allowance, expectedVersion, malformed };
+  return { operands, save, allowance, expectedVersion, overview, malformed };
 }
 
 export function resolveReadAllowance(
@@ -231,6 +238,7 @@ export async function getReadOutcome(
   suffix = "",
   allowance?: number,
   expectedVersion?: unknown,
+  overview = false,
 ): Promise<OperationOutcome<string>> {
   // Retain the interactive parameter for existing callers; all reads share planning.
   void _interactive;
@@ -238,10 +246,19 @@ export async function getReadOutcome(
     !requests ||
     requests.length === 0 ||
     requests.some((request) => !validReadRequest(request)) ||
+    (overview && requests.some((request) => request.range !== undefined)) ||
     (expectedVersion !== undefined &&
       (requests.length !== 1 || !isReadVersion(expectedVersion)))
   )
-    return readUsageFailure(requestId);
+    return overview && requests?.some((request) => request.range !== undefined)
+      ? boundedReadFailure(
+          "usage_error",
+          "usage_error: Overview cannot be combined with an explicit range; omit overview or remove the range.",
+          requestId,
+          suffix,
+          allowance ?? getReadTokenLimit(),
+        )
+      : readUsageFailure(requestId);
 
   if (requests.length > 1) {
     const limit = allowance ?? getReadTokenLimit();
@@ -266,6 +283,7 @@ export async function getReadOutcome(
           limit,
         ),
       increaseHint: allowanceIncreaseHint(limit),
+      overview,
     });
   }
 
@@ -325,15 +343,22 @@ export async function getReadOutcome(
       if (expectedVersion !== undefined && expectedVersion !== version)
         return changed();
       const fullTokens = getTokenCount(fullLines.join("\n"));
+      const structural = overview
+        ? compactFile(req.path, fullLines.join("\n"))
+        : undefined;
+      const isStructuralOverview = !!structural?.isCompacted;
+      const overviewContent = isStructuralOverview ? structural.content : "";
 
       const start = req.range?.start ?? 1;
       const render = (count: number) => {
-        const chunk = lines.slice(0, count).join("\n");
+        const chunk = isStructuralOverview
+          ? overviewContent
+          : lines.slice(0, count).join("\n");
         const end = start + count - 1;
-        const incomplete = count < lines.length;
+        const incomplete = !isStructuralOverview && count < lines.length;
         const body = formatReadOutput({
           path: req.path,
-          content: chunk,
+          content: isStructuralOverview ? overviewContent : chunk,
           total,
           isRangeRequest: isRangeRequest || incomplete,
           rangeStart: start,
@@ -342,12 +367,14 @@ export async function getReadOutcome(
           fullTokens,
           empty: count === 0,
           version,
+          isCompacted: isStructuralOverview,
+          overview,
         });
         return incomplete
           ? `${body}[INCOMPLETE: output_limit_exceeded; Next range: ${req.path}[${end + 1},${start + lines.length - 1}]; use Version as expected version]\n`
           : body;
       };
-      const complete = render(lines.length);
+      const complete = render(isStructuralOverview ? 0 : lines.length);
       const budget =
         requestId === undefined
           ? tokenLimit
@@ -356,6 +383,15 @@ export async function getReadOutcome(
         requests.length === 1 &&
         responseTokens(complete, requestId, false, suffix) > budget
       ) {
+        if (isStructuralOverview) {
+          return boundedReadFailure(
+            "output_limit_exceeded",
+            `output_limit_exceeded: Structural overview for Operand ${position + 1} is indivisible and exceeds the response budget. Request a larger allowance or omit --overview and use targeted original ranges.${allowanceIncreaseHint(tokenLimit)}`,
+            requestId,
+            suffix,
+            tokenLimit,
+          );
+        }
         let low = 1;
         let high = lines.length - 1;
         let best = "";
@@ -425,6 +461,7 @@ export async function runRead(
     workspace?: WorkspaceContext;
     allowance?: number;
     expectedVersion?: string;
+    overview?: boolean;
   } = {},
 ) {
   try {
@@ -454,6 +491,7 @@ export async function runRead(
       suffix,
       options.allowance,
       options.expectedVersion,
+      options.overview,
     );
     const finalContent = getOutcomeText(outcome);
     if (outcome.status !== "success") process.exitCode = 1;

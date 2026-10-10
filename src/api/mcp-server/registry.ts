@@ -76,6 +76,13 @@ const registry: Record<string, ToolRegistryEntry> = {
             params.allowance?.description ||
               "Optional response allowance in tokens for the whole rendered response. Positive whole number within the configured ceiling.",
           ),
+        overview: z
+          .boolean()
+          .optional()
+          .describe(
+            params.overview?.description ||
+              "Request a structural overview. Cannot be combined with explicit ranges.",
+          ),
       }),
     handler: async (rawArgs, context, requestId) => {
       const parsed = z
@@ -83,6 +90,7 @@ const registry: Record<string, ToolRegistryEntry> = {
           paths: z.array(z.string()).min(1),
           allowance: z.unknown().optional(),
           expectedVersion: z.unknown().optional(),
+          overview: z.boolean().optional(),
         })
         .strict()
         .safeParse(rawArgs);
@@ -96,7 +104,10 @@ const registry: Record<string, ToolRegistryEntry> = {
         return {
           isError: true,
           content: [
-            { type: "text", text: getOutcomeText(readUsageFailure(requestId)) },
+            {
+              type: "text",
+              text: getOutcomeText(readUsageFailure(requestId)),
+            },
           ],
         };
       }
@@ -114,6 +125,7 @@ const registry: Record<string, ToolRegistryEntry> = {
         "",
         resolved.allowance,
         parsed.success ? parsed.data.expectedVersion : undefined,
+        parsed.success ? parsed.data.overview === true : false,
       );
       return {
         ...(outcome.status === "partial_result" ||
