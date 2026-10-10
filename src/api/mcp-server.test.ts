@@ -14,12 +14,12 @@ import {
 } from "./mcp-server/registry";
 import { getReadOutcome } from "../commands/read";
 import { executeSafeReplaceOutcome } from "../commands/replace";
-import { getGrepOutcome } from "../commands/grep-search";
+import { getRgOutcome } from "../commands/grep-search";
 import { getWriteOutcome } from "../commands/write";
 import { executeRtkCommand } from "../commands/proxy/proxy-execution";
 import { getTokenCount } from "../utils/read-utils";
 import { getGrepResponseTokenCount } from "../commands/grep-output-parser";
-import { runGrep } from "../commands/grep";
+import { runRg } from "../commands/rg";
 import fs from "fs-extra";
 import os from "node:os";
 import path from "node:path";
@@ -27,7 +27,9 @@ import path from "node:path";
 vi.mock("../commands/read", () => ({ getReadOutcome: vi.fn() }));
 vi.mock("../commands/replace", () => ({ executeSafeReplaceOutcome: vi.fn() }));
 vi.mock("../commands/write", () => ({ getWriteOutcome: vi.fn() }));
-vi.mock("../commands/grep-search", () => ({ getGrepOutcome: vi.fn() }));
+vi.mock("../commands/grep-search", () => ({
+  getRgOutcome: vi.fn(),
+}));
 vi.mock("../commands/proxy/proxy-execution", () => ({
   executeRtkCommand: vi.fn(),
 }));
@@ -137,32 +139,49 @@ describe("TOOL_REGISTRY", () => {
     expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
   });
 
-  it("defines spekta_grep correctly", async () => {
-    const tool = TOOL_REGISTRY.spekta_grep;
+  it("defines spekta_rg with separate pattern and path arrays", async () => {
+    expect(Object.hasOwn(TOOL_REGISTRY, "spekta_grep")).toBe(false);
+    const tool = TOOL_REGISTRY.spekta_rg;
     expect(tool).toBeDefined();
-
-    // Verify schema
-    const schema = tool.schema({
-      pattern: { description: "search pattern" },
-      path: { description: "search path" },
+    const parsed = tool
+      .schema({
+        patterns: { description: "regexes" },
+        paths: { description: "paths" },
+        globs: { description: "ordered globs" },
+        case_mode: { description: "case mode" },
+      })
+      .parse({
+        patterns: ["needle", "haystack"],
+        paths: ["nested", "docs"],
+        globs: ["*.ts,*.tsx", "!*.test.ts"],
+        case_mode: "smart",
+      });
+    expect(parsed).toEqual({
+      patterns: ["needle", "haystack"],
+      paths: ["nested", "docs"],
+      globs: ["*.ts,*.tsx", "!*.test.ts"],
+      case_mode: "smart",
     });
-    const parsed = schema.parse({ pattern: "test", path: "src" });
-    expect(parsed).toEqual({ pattern: "test", path: "src" });
 
-    // Verify handler
-    vi.mocked(getGrepOutcome).mockResolvedValue({
+    vi.mocked(getRgOutcome).mockResolvedValueOnce({
       status: "success",
-      value: "grep result",
+      value: "rg result",
     });
-    const result = await tool.handler({ pattern: "test", path: "src" });
-
+    const result = await tool.handler({
+      patterns: ["needle", "haystack"],
+      paths: ["nested", "docs"],
+      globs: ["*.ts,*.tsx"],
+      case_mode: "smart",
+    });
     expect(result).toEqual({
-      content: [{ type: "text", text: "grep result" }],
+      content: [{ type: "text", text: "rg result" }],
     });
-    expect(getGrepOutcome).toHaveBeenCalledWith(
+    expect(getRgOutcome).toHaveBeenCalledWith(
       {
-        pattern: "test",
-        path: "src",
+        patterns: ["needle", "haystack"],
+        paths: ["nested", "docs"],
+        globs: ["*.ts,*.tsx"],
+        case_mode: "smart",
       },
       undefined,
       undefined,
@@ -170,24 +189,24 @@ describe("TOOL_REGISTRY", () => {
   });
 
   it("renders bounded grep outcomes with MCP status metadata", async () => {
-    const tool = TOOL_REGISTRY.spekta_grep;
-    vi.mocked(getGrepOutcome).mockResolvedValueOnce({
+    const tool = TOOL_REGISTRY.spekta_rg;
+    vi.mocked(getRgOutcome).mockResolvedValueOnce({
       status: "output_limit_exceeded",
       message:
         "Search results exceed the response budget; all matches were withheld. Narrow the path or pattern.",
     });
-    const limited = await tool.handler({ pattern: "needle" });
+    const limited = await tool.handler({ patterns: ["needle"] });
     expect(limited.isError).toBeUndefined();
     expect(limited.content[0].text).toContain("all matches were withheld");
     expect(
       getGrepResponseTokenCount(limited.content[0].text, "request-42"),
     ).toBeLessThanOrEqual(2000);
 
-    vi.mocked(getGrepOutcome).mockResolvedValueOnce({
+    vi.mocked(getRgOutcome).mockResolvedValueOnce({
       status: "engine_failure",
       message: "Search failed.",
     });
-    const failure = await tool.handler({ pattern: "needle" });
+    const failure = await tool.handler({ patterns: ["needle"] });
     expect(failure.isError).toBe(true);
     expect(
       getGrepResponseTokenCount(failure.content[0].text, "request-42", true),
@@ -205,18 +224,18 @@ describe("TOOL_REGISTRY", () => {
         "Search results exceed the response budget; all matches were withheld. Narrow the path or pattern.",
     },
   ])("keeps CLI and MCP grep rendering in parity", async (outcome) => {
-    vi.mocked(getGrepOutcome).mockResolvedValueOnce(outcome);
+    vi.mocked(getRgOutcome).mockResolvedValueOnce(outcome);
     const writeSpy = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
-    await runGrep(["needle"]);
+    await runRg(["needle"]);
     const cliOutput = writeSpy.mock.calls
       .map(([chunk]) => String(chunk))
       .join("");
     writeSpy.mockRestore();
 
-    vi.mocked(getGrepOutcome).mockResolvedValueOnce(outcome);
-    const mcp = await TOOL_REGISTRY.spekta_grep.handler({ pattern: "needle" });
+    vi.mocked(getRgOutcome).mockResolvedValueOnce(outcome);
+    const mcp = await TOOL_REGISTRY.spekta_rg.handler({ patterns: ["needle"] });
     expect(cliOutput).toBe(`${mcp.content[0].text}\n`);
     expect(
       getGrepResponseTokenCount(mcp.content[0].text, "request-42"),
@@ -225,12 +244,12 @@ describe("TOOL_REGISTRY", () => {
 
   it("budgets MCP results against the actual request ID", async () => {
     const requestId = `mcp-request-${"x".repeat(300)}`;
-    vi.mocked(getGrepOutcome).mockResolvedValueOnce({
+    vi.mocked(getRgOutcome).mockResolvedValueOnce({
       status: "success",
       value: "matches",
     });
-    const response = await TOOL_REGISTRY.spekta_grep.handler(
-      { pattern: "needle" },
+    const response = await TOOL_REGISTRY.spekta_rg.handler(
+      { patterns: ["needle"] },
       undefined,
       requestId,
     );
@@ -241,8 +260,13 @@ describe("TOOL_REGISTRY", () => {
     expect(getGrepResponseTokenCount(text, requestId)).toBeGreaterThan(
       getGrepResponseTokenCount(text, "mcp-request-1"),
     );
-    expect(getGrepOutcome).toHaveBeenCalledWith(
-      { pattern: "needle" },
+    expect(getRgOutcome).toHaveBeenCalledWith(
+      {
+        patterns: ["needle"],
+        paths: [],
+        globs: [],
+        case_mode: "sensitive",
+      },
       undefined,
       requestId,
     );
@@ -255,7 +279,7 @@ describe("TOOL_REGISTRY", () => {
       status: "success",
       value: "read result",
     });
-    vi.mocked(getGrepOutcome).mockResolvedValueOnce({
+    vi.mocked(getRgOutcome).mockResolvedValueOnce({
       status: "success",
       value: "grep result",
     });
@@ -269,11 +293,11 @@ describe("TOOL_REGISTRY", () => {
     });
 
     await tools.spekta_read.handler({ paths: ["src/file.ts"] });
-    await tools.spekta_grep.handler({
-      pattern: "needle",
-      path: "src",
-      globs: "*.ts",
-      case_insensitive: true,
+    await tools.spekta_rg.handler({
+      patterns: ["needle"],
+      paths: ["src"],
+      globs: ["*.ts"],
+      case_mode: "insensitive",
       cwd: "/attacker",
       workspace: { root: "/attacker" },
       root: "/attacker",
@@ -290,12 +314,12 @@ describe("TOOL_REGISTRY", () => {
       workspace,
       undefined,
     );
-    expect(getGrepOutcome).toHaveBeenCalledWith(
+    expect(getRgOutcome).toHaveBeenCalledWith(
       {
-        pattern: "needle",
-        path: "src",
-        globs: "*.ts",
-        case_insensitive: true,
+        patterns: ["needle"],
+        paths: ["src"],
+        globs: ["*.ts"],
+        case_mode: "insensitive",
       },
       workspace,
       undefined,

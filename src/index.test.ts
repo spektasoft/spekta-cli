@@ -9,7 +9,8 @@ describe("public command registry", () => {
   });
 
   it("keeps hidden command metadata intact", () => {
-    expect(COMMANDS.grep.hidden).toBe(true);
+    expect(COMMANDS.grep).toBeUndefined();
+    expect(COMMANDS.rg.hidden).toBeUndefined();
     expect(COMMANDS.replace.hidden).toBe(true);
     expect(COMMANDS.write.hidden).toBe(true);
     expect(COMMANDS.mcp.hidden).toBe(true);
@@ -37,9 +38,9 @@ describe("public command registry", () => {
 });
 
 describe("Interactive menu command visibility", () => {
-  it("grep command is hidden from interactive menu", () => {
-    expect(COMMANDS.grep).toBeDefined();
-    expect(COMMANDS.grep.hidden).toBe(true);
+  it("rg command is available in the interactive menu", () => {
+    expect(COMMANDS.rg).toBeDefined();
+    expect(COMMANDS.rg.hidden).toBeUndefined();
   });
 
   it("critical user commands remain visible", () => {

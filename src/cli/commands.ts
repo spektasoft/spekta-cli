@@ -2,7 +2,7 @@ import { runMcpServer } from "../api/mcp-server";
 import { runCommit } from "../commands/commit";
 import { runPromptRunner } from "../commands/prompt";
 import { runCommitRange } from "../commands/commit-range";
-import { runGrep } from "../commands/grep";
+import { runRg } from "../commands/rg";
 import { runPr } from "../commands/pr";
 import { runRead } from "../commands/read";
 import { runReadInteractive } from "../commands/read-interactive";
@@ -63,10 +63,9 @@ export const COMMANDS: Record<string, CommandDefinition> = {
       }
     },
   },
-  grep: {
+  rg: {
     name: "Search Project (ripgrep)",
-    run: runGrep,
-    hidden: true,
+    run: runRg,
   },
   diagnostic: {
     name: "Run Diagnostics",
@@ -131,6 +130,13 @@ export async function dispatchCommand(
   commandArg: string,
   args: string[],
 ): Promise<void> {
+  if (commandArg === "grep") {
+    process.stderr.write(
+      "The 'grep' command was removed. Use 'spekta rg' instead.\n",
+    );
+    process.exitCode = 1;
+    return;
+  }
   const command = COMMANDS[commandArg];
 
   if (command) {

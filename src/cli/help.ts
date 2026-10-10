@@ -10,7 +10,6 @@ const HELP_FLAGS = new Set(["--help", "-h"]);
 const VALUE_OPTIONS: Record<string, readonly string[]> = {
   commit: ["--model"],
   prompt: ["--output", "--include-partial", "--exclude-partial"],
-  grep: ["--glob"],
   find: ["-name", "-type"],
   "git log": ["-n"],
 };
@@ -19,15 +18,10 @@ function requestsCommandHelp(topic: string, args: string[]): boolean {
   if (args.length === 1 && HELP_FLAGS.has(args[0])) return true;
   // write/replace consume everything after the target path as literal payload.
   if (topic === "write" || topic === "replace") return false;
-  let patternSeen = false;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     // Preserve operand boundaries without adding separator support to parsers.
     if (arg === "--") return false;
-    if (topic === "grep" && !patternSeen && arg !== "--ignore-case") {
-      patternSeen = true;
-      continue;
-    }
     if (VALUE_OPTIONS[topic]?.includes(arg)) {
       index++;
       continue;

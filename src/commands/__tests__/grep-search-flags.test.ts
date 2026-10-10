@@ -88,14 +88,17 @@ describe("getGrepContent - flags", () => {
   });
 
   it("reports backend launch and execution failures", async () => {
-    vi.mocked(execa).mockImplementationOnce(() => {
-      throw new Error("ENOENT");
-    });
+    vi.mocked(execa)
+      .mockImplementationOnce(() => mockExecaStream("rtk version"))
+      .mockImplementationOnce(() => {
+        throw new Error("ENOENT");
+      });
     await expect(getGrepContent({ pattern: "needle" })).rejects.toThrow(
       "ripgrep is unavailable",
     );
     vi.mocked(execa)
       .mockImplementationOnce(() => mockExecaStream("version"))
+      .mockImplementationOnce(() => mockExecaStream("rg version"))
       .mockImplementationOnce(() => mockExecaStream("", 2));
     await expect(getGrepContent({ pattern: "needle" })).rejects.toThrow(
       "Ripgrep error",
@@ -111,7 +114,7 @@ describe("getGrepContent - flags", () => {
       case_insensitive: false,
     });
 
-    const lastCallArgs = vi.mocked(execa).mock.calls[1][1];
+    const lastCallArgs = vi.mocked(execa).mock.calls[2][1];
     expect(lastCallArgs).toContain("--json");
     expect(lastCallArgs).toContain("-g");
     expect(lastCallArgs).toContain("*.ts");
@@ -122,7 +125,7 @@ describe("getGrepContent - flags", () => {
       pattern: "test",
       case_insensitive: true,
     });
-    const lastCallArgs2 = vi.mocked(execa).mock.calls[3][1];
+    const lastCallArgs2 = vi.mocked(execa).mock.calls[5][1];
     expect(lastCallArgs2).toContain("--ignore-case");
   });
 
@@ -139,7 +142,7 @@ describe("getGrepContent - flags", () => {
 
     await getGrepContent({ pattern: "test" });
 
-    const searchCallArgs = vi.mocked(execa).mock.calls[1]?.[1];
+    const searchCallArgs = vi.mocked(execa).mock.calls[2]?.[1];
     if (!Array.isArray(searchCallArgs)) {
       throw new Error("Expected ripgrep search arguments");
     }

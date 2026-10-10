@@ -46,6 +46,7 @@ describe("getGrepContent - formatting", () => {
     const matchJson = createRgMatch("src/main.ts", 1, 5, "const x = 1;");
 
     vi.mocked(execa)
+      .mockImplementationOnce(() => mockExecaStream("rtk version"))
       .mockImplementationOnce(() => mockExecaStream(""))
       .mockImplementationOnce(() => mockExecaStream(matchJson));
 
@@ -58,7 +59,9 @@ describe("getGrepContent - formatting", () => {
 
   it("returns 'No matches found.' when ripgrep exit code is 1", async () => {
     vi.mocked(execa)
+      .mockImplementationOnce(() => mockExecaStream("rtk version"))
       .mockImplementationOnce(() => mockExecaStream(""))
+      .mockImplementationOnce(() => mockExecaStream("rg version"))
       .mockImplementationOnce(() => mockExecaStream("", 1));
 
     const result = await getGrepContent({ pattern: "nonexistent" });
@@ -71,6 +74,7 @@ describe("getGrepContent - formatting", () => {
     const mixedStdout = `${invalidJson}\n${validMatch}`;
 
     vi.mocked(execa)
+      .mockImplementationOnce(() => mockExecaStream("rtk version"))
       .mockImplementationOnce(() => mockExecaStream(""))
       .mockImplementationOnce(() => mockExecaStream(mixedStdout));
 
@@ -92,6 +96,7 @@ describe("getGrepContent - formatting", () => {
     });
 
     vi.mocked(execa)
+      .mockImplementationOnce(() => mockExecaStream("rtk version"))
       .mockImplementationOnce(() => mockExecaStream(""))
       .mockImplementationOnce(() => mockExecaStream(mockJson));
 
@@ -133,6 +138,7 @@ describe("getGrepContent - formatting", () => {
     );
 
     vi.mocked(execa)
+      .mockImplementationOnce(() => mockExecaStream("rtk version"))
       .mockImplementationOnce(() => mockExecaStream(""))
       .mockImplementationOnce(() => mockExecaStream(mockJson));
 
@@ -154,6 +160,7 @@ describe("getGrepContent - formatting", () => {
     });
 
     vi.mocked(execa)
+      .mockImplementationOnce(() => mockExecaStream("rtk version"))
       .mockImplementationOnce(() => mockExecaStream(""))
       .mockImplementationOnce(() => mockExecaStream(mockJson));
 

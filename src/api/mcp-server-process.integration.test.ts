@@ -178,10 +178,11 @@ describe("spekta mcp process", () => {
       await initialize(client);
       const listing = await client.request("tools/list");
       expect(listing.error).toBeUndefined();
-      expect(getToolNames(listing)).toContain("spekta_grep");
+      expect(getToolNames(listing)).toContain("spekta_rg");
+      expect(getToolNames(listing)).not.toContain("spekta_grep");
       const call = await client.request("tools/call", {
-        name: "spekta_grep",
-        arguments: { pattern: "Ticket 13", path: "README.md" },
+        name: "spekta_rg",
+        arguments: { patterns: ["Ticket 13"], paths: ["README.md"] },
       });
       expect(call.error).toBeUndefined();
       expect(call.result?.isError).not.toBe(true);
@@ -204,7 +205,7 @@ describe("spekta mcp process", () => {
     await fs.writeFile(path.join(home, "user.yaml"), "theme: quiet\n");
     await fs.writeFile(
       path.join(home, "tools", "grep.yaml"),
-      await fs.readFile(path.join(projectRoot, "templates/tools/grep.yaml")),
+      "name: spekta_grep\ndescription: legacy custom search\nparams: {}\nxml_example: <grep />\n",
     );
     const before = await snapshotTree(home);
     const client = await start(home);
@@ -212,8 +213,8 @@ describe("spekta mcp process", () => {
       await initialize(client);
       await client.request("tools/list");
       await client.request("tools/call", {
-        name: "spekta_grep",
-        arguments: { pattern: "Ticket 13", path: "README.md" },
+        name: "spekta_rg",
+        arguments: { patterns: ["Ticket 13"], paths: ["README.md"] },
       });
       expect((await client.close()).code).toBe(0);
       expect(await snapshotTree(home)).toEqual(before);
@@ -240,22 +241,22 @@ describe("spekta mcp process", () => {
     await fs.writeFile(
       path.join(toolsDir, "write.yaml"),
       [
-        "name: spekta_grep",
+        "name: spekta_rg",
         "description: Duplicate name",
         "params: {}",
-        "xml_example: <spekta_grep />",
+        "xml_example: <spekta_rg />",
         "",
       ].join("\n"),
     );
     await fs.writeFile(
-      path.join(toolsDir, "grep.yaml"),
+      path.join(toolsDir, "rg.yaml"),
       [
-        "name: spekta_grep",
+        "name: spekta_rg",
         "description: Search files",
         "params:",
-        "  pattern:",
+        "  patterns:",
         "    description: ''",
-        "xml_example: <spekta_grep />",
+        "xml_example: <spekta_rg />",
         "",
       ].join("\n"),
     );
@@ -263,10 +264,11 @@ describe("spekta mcp process", () => {
     try {
       await initialize(client);
       const listing = await client.request("tools/list");
-      expect(getToolNames(listing)).toContain("spekta_grep");
+      expect(getToolNames(listing)).toContain("spekta_rg");
+      expect(getToolNames(listing)).not.toContain("spekta_grep");
       const call = await client.request("tools/call", {
-        name: "spekta_grep",
-        arguments: { pattern: "Ticket 13", path: "README.md" },
+        name: "spekta_rg",
+        arguments: { patterns: ["Ticket 13"], paths: ["README.md"] },
       });
       expect(call.error).toBeUndefined();
       expect(call.result?.isError).not.toBe(true);
@@ -287,8 +289,8 @@ describe("spekta mcp process", () => {
     try {
       await initialize(client);
       const invalid = await client.request("tools/call", {
-        name: "spekta_grep",
-        arguments: { pattern: 3 },
+        name: "spekta_rg",
+        arguments: { patterns: 3 },
       });
       expect(
         invalid.error !== undefined || invalid.result?.isError === true,
@@ -306,8 +308,8 @@ describe("spekta mcp process", () => {
       });
       expect(failed.result?.isError).toBe(true);
       const succeeding = await client.request("tools/call", {
-        name: "spekta_grep",
-        arguments: { pattern: "Ticket 13", path: "README.md" },
+        name: "spekta_rg",
+        arguments: { patterns: ["Ticket 13"], paths: ["README.md"] },
       });
       expect(succeeding.error).toBeUndefined();
       expect(succeeding.result?.isError).not.toBe(true);

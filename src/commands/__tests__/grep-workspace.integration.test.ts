@@ -43,8 +43,8 @@ describe("workspace searches with real ripgrep", () => {
       { pattern: "needle", path: "alias" },
       { root: fixture.root },
     );
-    const mcp = await TOOL_REGISTRY.spekta_grep.handler(
-      { pattern: "needle", path: "alias" },
+    const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+      { patterns: ["needle"], paths: ["alias"] },
       { root: fixture.root },
       1,
     );

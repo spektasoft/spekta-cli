@@ -4,10 +4,13 @@ import { getAssetPaths, HOME_IGNORE } from "../core/config";
 import { RESTRICTED_FILES } from "../utils/security";
 
 export interface GrepOptions {
-  pattern: string;
+  pattern?: string;
+  patterns?: string[];
   path?: string;
-  globs?: string;
+  paths?: string[];
+  globs?: string | string[];
   case_insensitive?: boolean;
+  case_mode?: "insensitive" | "sensitive" | "smart";
 }
 
 async function buildIgnoreArgs(
@@ -18,7 +21,7 @@ async function buildIgnoreArgs(
   const { globs } = options;
 
   if (globs) {
-    for (const glob of globs.split(",")) {
+    for (const glob of Array.isArray(globs) ? globs : globs.split(",")) {
       if (glob) args.push("-g", glob);
     }
   }
@@ -47,18 +50,22 @@ export async function buildGrepArgs(
   options: GrepOptions,
   workspaceRoot = process.cwd(),
 ): Promise<string[]> {
-  const { pattern, path: searchPath = ".", case_insensitive } = options;
+  const {
+    pattern,
+    patterns = pattern === undefined ? [] : [pattern],
+    case_insensitive,
+    case_mode,
+  } = options;
+  const searchPaths = options.paths ?? [options.path ?? "."];
 
   const args = [
     "--no-config",
     "--no-follow",
-    "--regexp",
-    pattern,
+    ...patterns.flatMap((value) => ["--regexp", value]),
     "--line-number",
     "--column",
     "--color=never",
     "--heading",
-    "--smart-case",
     "--json",
     // Force ignore-file processing even when rg cannot confirm a git root
     // (e.g. via a linked bin, an unusual cwd, or a nested search path).
@@ -67,14 +74,20 @@ export async function buildGrepArgs(
     "--no-require-git",
   ];
 
-  if (case_insensitive === true) {
+  if (case_mode === "insensitive" || case_insensitive === true) {
     args.push("--ignore-case");
-  } else if (case_insensitive === false) {
+  } else if (case_mode === "smart") {
+    args.push("--smart-case");
+  } else if (
+    case_mode === "sensitive" ||
+    case_insensitive === false ||
+    case_mode === undefined
+  ) {
     args.push("--case-sensitive");
   }
 
   args.push(...(await buildIgnoreArgs(options, workspaceRoot)));
-  args.push("--", searchPath);
+  args.push("--", ...searchPaths);
   return args;
 }
 

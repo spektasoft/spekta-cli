@@ -13,7 +13,7 @@ import {
 import { z } from "zod";
 import path from "node:path";
 
-import { getGrepOutcome } from "../../commands/grep-search";
+import { getRgOutcome } from "../../commands/grep-search";
 import { getReadOutcome } from "../../commands/read";
 import { executeSafeReplaceOutcome } from "../../commands/replace";
 import { getWriteOutcome } from "../../commands/write";
@@ -156,33 +156,49 @@ const registry: Record<string, ToolRegistryEntry> = {
     },
   },
 
-  spekta_grep: {
+  spekta_rg: {
     schema: (params) =>
       z.object({
-        pattern: z.string().describe(params.pattern?.description || ""),
-        path: z
-          .string()
+        patterns: z
+          .array(z.string())
+          .describe(
+            params.patterns?.description ||
+              "Patterns to search; alternatives use OR matching.",
+          ),
+        paths: z
+          .array(z.string())
           .optional()
-          .describe(params.path?.description || ""),
+          .describe(
+            params.paths?.description ||
+              "File and directory paths to search. Omit or pass an empty array for the workspace root.",
+          ),
         globs: z
-          .string()
+          .array(z.string())
           .optional()
-          .describe(params.globs?.description || ""),
-        case_insensitive: z
-          .boolean()
+          .describe(
+            params.globs?.description || "Ordered ripgrep glob filters.",
+          ),
+        case_mode: z
+          .enum(["sensitive", "insensitive", "smart"])
           .optional()
-          .describe(params.case_insensitive?.description || ""),
+          .describe(
+            params.case_mode?.description ||
+              "Case matching mode; defaults to sensitive.",
+          ),
       }),
     handler: async (rawArgs, context, requestId) => {
-      const args = {
-        pattern: rawArgs.pattern as string,
-        ...(typeof rawArgs.path === "string" ? { path: rawArgs.path } : {}),
-        ...(typeof rawArgs.globs === "string" ? { globs: rawArgs.globs } : {}),
-        ...(typeof rawArgs.case_insensitive === "boolean"
-          ? { case_insensitive: rawArgs.case_insensitive }
-          : {}),
-      };
-      const outcome = await getGrepOutcome(args, context, requestId);
+      const outcome = await getRgOutcome(
+        {
+          patterns: rawArgs.patterns as string[],
+          paths: (rawArgs.paths as string[] | undefined) ?? [],
+          globs: (rawArgs.globs as string[] | undefined) ?? [],
+          case_mode:
+            (rawArgs.case_mode as
+              "sensitive" | "insensitive" | "smart" | undefined) ?? "sensitive",
+        },
+        context,
+        requestId,
+      );
       const text =
         outcome.status === "success" ? outcome.value : outcome.message;
       return {

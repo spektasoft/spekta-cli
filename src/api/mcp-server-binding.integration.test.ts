@@ -41,10 +41,15 @@ const toolDefinitions: ToolDefinition[] = [
     xml_example: "<spekta_write></spekta_write>",
   },
   {
-    name: "spekta_grep",
+    name: "spekta_rg",
     description: "Search files",
-    params: { pattern: { description: "Search pattern" } },
-    xml_example: "<spekta_grep></spekta_grep>",
+    params: {
+      patterns: { description: "Search patterns" },
+      paths: { description: "Search paths" },
+      globs: { description: "Ordered glob filters" },
+      case_mode: { description: "Case mode" },
+    },
+    xml_example: "<rg patterns='[&quot;needle&quot;]' />",
   },
   {
     name: "spekta_shell",
@@ -154,8 +159,8 @@ describe("MCP server workspace binding", () => {
       }),
     ).not.toHaveProperty("isError", true);
     const read = await tools.spekta_read.handler({ paths: ["created.txt"] });
-    const search = await tools.spekta_grep.handler({
-      pattern: "updated launch",
+    const search = await tools.spekta_rg.handler({
+      patterns: ["updated launch"],
     });
     expect(JSON.stringify(read)).toContain("updated launch");
     expect(JSON.stringify(search)).toContain("updated launch");
@@ -274,8 +279,8 @@ describe("MCP server workspace binding", () => {
     ] = await Promise.all([
       first.get("spekta_read")!({ paths: ["created.txt", "real.txt"] }),
       second.get("spekta_read")!({ paths: ["created.txt", "real.txt"] }),
-      first.get("spekta_grep")!({ pattern: "updated" }),
-      second.get("spekta_grep")!({ pattern: "updated" }),
+      first.get("spekta_rg")!({ patterns: ["updated"] }),
+      second.get("spekta_rg")!({ patterns: ["updated"] }),
       first.get("spekta_shell")!({ command: "ls", args: ["."] }),
       second.get("spekta_shell")!({ command: "ls", args: ["."] }),
       first.get("spekta_shell")!({
@@ -345,7 +350,7 @@ describe("MCP server workspace binding", () => {
     ]) {
       for (const [name, args] of [
         ["spekta_read", { paths: [target] }],
-        ["spekta_grep", { pattern: "needle", path: target }],
+        ["spekta_rg", { patterns: ["needle"], paths: [target] }],
         ["spekta_write", { path: target, content: "escape" }],
         ["spekta_replace", { path: target, blocks: "invalid blocks" }],
         ["spekta_shell", { command: "ls", args: [target] }],

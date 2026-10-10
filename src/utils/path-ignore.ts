@@ -27,6 +27,7 @@ async function checkIgnoreRule(
   patternsOverride?: string[],
   gitNoIndex = false,
   workspaceRoot?: string,
+  skipGitIgnoreCheck = false,
 ): Promise<IgnoreCheckResult> {
   const spektaIgnores =
     patternsOverride ??
@@ -43,6 +44,7 @@ async function checkIgnoreRule(
 
   let isGitIgnored = false;
   try {
+    if (skipGitIgnoreCheck) return { match: null, spektaIgnores };
     const args = [
       "check-ignore",
       "-q",
@@ -109,12 +111,14 @@ export async function assertPathNotIgnored(
   targetPath: string,
   verb: { git?: string; gitNoIndex?: boolean } = {},
   workspaceRoot?: string,
+  skipGitIgnoreCheck = false,
 ): Promise<void> {
   const { match } = await checkIgnoreRule(
     displayPath,
     undefined,
     verb.gitNoIndex,
     workspaceRoot,
+    skipGitIgnoreCheck,
   );
 
   if (match === "spekta") {

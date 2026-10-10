@@ -2,6 +2,16 @@
 
 Related guides: [README](../README.md) · [Prompts and workflows](workflows.md) · [Runtime and configuration](configuration.md) · [Codex setup](codex-setup.md)
 
+## Search with ripgrep
+
+Use `spekta rg` for searches. Without `-e`/`--regexp`, the first positional operand is a regex pattern and remaining operands are paths. With explicit patterns, all positional operands are paths. Omit paths to search the workspace root recursively. Repeat `-e`/`--regexp` for alternative patterns and `-g`/`--glob` for ordered inclusion or exclusion filters. Glob values remain intact, including commas. Search is case-sensitive by default; `-i`/`--ignore-case`, `-s`/`--case-sensitive`, and `-S`/`--smart-case` select a mode. Use `--` before a literal path that begins with a dash.
+
+The supported CLI subset runs ripgrep through RTK and keeps Spekta's formatting, eligible-file restrictions, and complete response budget. Unsupported ripgrep options, stdin, empty patterns, restricted files, paths outside the workspace, and symlink escapes are rejected. Search responses are bounded by `SPEKTA_GREP_TOKEN_LIMIT` (2000 tokens by default), 500 matches, and 100 files. The environment variable keeps its historical name; no rename is required.
+
+The MCP equivalent is `spekta_rg`, with `patterns`, `paths`, `globs`, and `case_mode` fields. Existing MCP clients should replace `spekta_grep` and its singular `pattern`, `path`, and comma-separated `globs` with the new tool and array fields. Existing `~/.spekta/tools/grep.yaml` custom definitions are no longer loaded; migrate them to `rg.yaml`, update the definition name and four parameters, and restart Spekta.
+
+Calls to the removed CLI `spekta grep` command, including its old help forms, fail with guidance to use `spekta rg`.
+
 Commands without a native Spekta handler and MCP `spekta_shell` requests use one fail-closed policy before RTK starts. Supported forms are `ls`, restricted `find` discovery, and the Git inspections below.
 
 ## Listing with `ls`

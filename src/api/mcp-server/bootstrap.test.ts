@@ -55,8 +55,8 @@ vi.mock("./registry", async () => {
   const { z } = await import("zod");
   const entry = { schema: () => z.object({}), handler: toolHandler };
   return {
-    createToolRegistry: vi.fn(() => ({ spekta_grep: entry })),
-    TOOL_REGISTRY: { spekta_grep: entry },
+    createToolRegistry: vi.fn(() => ({ spekta_rg: entry })),
+    TOOL_REGISTRY: { spekta_rg: entry },
   };
 });
 
@@ -86,7 +86,7 @@ beforeEach(() => {
     canonicalRoot: "/canonical-launch",
   });
   vi.mocked(createToolRegistry).mockReturnValue({
-    spekta_grep: registryEntry,
+    spekta_rg: registryEntry,
   });
   toolHandler.mockReset();
   connect.mockResolvedValue(undefined);
@@ -96,10 +96,10 @@ describe("runMcpServer", () => {
   it("initializes configuration, validates tools, registers tools, and connects transport", async () => {
     vi.mocked(loadToolDefinitions).mockResolvedValue([
       {
-        name: "spekta_grep",
+        name: "spekta_rg",
         description: "Search",
         params: {},
-        xml_example: "<spekta_grep></spekta_grep>",
+        xml_example: "<spekta_rg></spekta_rg>",
       },
     ]);
 
@@ -112,15 +112,15 @@ describe("runMcpServer", () => {
     });
     expect(validateToolDefinitions).toHaveBeenCalledWith([
       {
-        name: "spekta_grep",
+        name: "spekta_rg",
         description: "Search",
         params: {},
-        xml_example: "<spekta_grep></spekta_grep>",
+        xml_example: "<spekta_rg></spekta_rg>",
       },
     ]);
     expect(registerTool).toHaveBeenCalledOnce();
     expect(registerTool).toHaveBeenCalledWith(
-      "spekta_grep",
+      "spekta_rg",
       {
         description: "Search",
         inputSchema: {},
@@ -136,10 +136,10 @@ describe("runMcpServer", () => {
   it("passes the JSON-RPC request ID to the tool handler", async () => {
     vi.mocked(loadToolDefinitions).mockResolvedValue([
       {
-        name: "spekta_grep",
+        name: "spekta_rg",
         description: "Search",
         params: {},
-        xml_example: "<spekta_grep></spekta_grep>",
+        xml_example: "<spekta_rg></spekta_rg>",
       },
     ]);
     await runMcpServer();
@@ -197,16 +197,16 @@ describe("runMcpServer", () => {
   it("skips duplicate tool names", async () => {
     vi.mocked(loadToolDefinitions).mockResolvedValue([
       {
-        name: "spekta_grep",
+        name: "spekta_rg",
         description: "Search",
         params: {},
-        xml_example: "<spekta_grep></spekta_grep>",
+        xml_example: "<spekta_rg></spekta_rg>",
       },
       {
-        name: "spekta_grep",
+        name: "spekta_rg",
         description: "Search again",
         params: {},
-        xml_example: "<spekta_grep></spekta_grep>",
+        xml_example: "<spekta_rg></spekta_rg>",
       },
     ]);
 
@@ -236,10 +236,10 @@ describe("runMcpServer", () => {
 
     vi.mocked(loadToolDefinitions).mockResolvedValue([
       {
-        name: "spekta_grep",
+        name: "spekta_rg",
         description: "Search",
         params: {},
-        xml_example: "<spekta_grep></spekta_grep>",
+        xml_example: "<spekta_rg></spekta_rg>",
       },
     ]);
 
@@ -267,15 +267,15 @@ describe("runMcpServer", () => {
 
   it("continues registering tools after a registration exception", async () => {
     const grep = {
-      name: "spekta_grep",
+      name: "spekta_rg",
       description: "Search",
       params: {},
-      xml_example: "<spekta_grep></spekta_grep>",
+      xml_example: "<spekta_rg></spekta_rg>",
     };
     const read = { ...grep, name: "spekta_read" };
     vi.mocked(loadToolDefinitions).mockResolvedValue([grep, read]);
     vi.mocked(createToolRegistry).mockReturnValue({
-      spekta_grep: registryEntry,
+      spekta_rg: registryEntry,
       spekta_read: registryEntry,
     });
     registerTool.mockImplementationOnce(() => {

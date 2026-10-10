@@ -41,6 +41,20 @@ describe("dispatchCommand", () => {
     COMMANDS.commit.run = original;
   });
 
+  it("dispatches rg as a visible native command", async () => {
+    const run = vi.fn().mockResolvedValue(undefined);
+    const original = COMMANDS.rg.run;
+    COMMANDS.rg.run = run;
+    try {
+      await dispatchCommand("rg", ["needle"]);
+      expect(run).toHaveBeenCalledWith(["needle"]);
+      expect(COMMANDS.rg.hidden).toBeUndefined();
+      expect(runRtkProxy).not.toHaveBeenCalled();
+    } finally {
+      COMMANDS.rg.run = original;
+    }
+  });
+
   it("delegates unknown commands to the RTK proxy", async () => {
     vi.mocked(runRtkProxy).mockResolvedValueOnce(undefined);
 
@@ -53,7 +67,6 @@ describe("dispatchCommand", () => {
   it.each([
     ["write", ["notes.md", "--help"]],
     ["replace", ["notes.md", "-h"]],
-    ["grep", ["--help", "src"]],
     ["read", ["./--help"]],
   ])(
     "preserves ordinary %s arguments at native dispatch",
@@ -70,6 +83,18 @@ describe("dispatchCommand", () => {
       }
     },
   );
+
+  it("rejects removed grep calls without delegating to RTK", async () => {
+    const stderr = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    await dispatchCommand("grep", ["needle"]);
+    expect(
+      stderr.mock.calls.map(([chunk]) => String(chunk)).join(""),
+    ).toContain("Use 'spekta rg'");
+    expect(runRtkProxy).not.toHaveBeenCalled();
+    stderr.mockRestore();
+  });
 });
 
 describe("runInteractiveMenu", () => {
@@ -93,10 +118,14 @@ describe("runInteractiveMenu", () => {
     );
     expect(choices).not.toEqual(
       expect.arrayContaining([
-        { name: "Search Project (ripgrep)", value: "grep" },
         { name: "Replace Code in File", value: "replace" },
         { name: "Write New File (agent tool)", value: "write" },
         { name: "Start the MCP Server", value: "mcp" },
+      ]),
+    );
+    expect(choices).toEqual(
+      expect.arrayContaining([
+        { name: "Search Project (ripgrep)", value: "rg" },
       ]),
     );
   });

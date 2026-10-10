@@ -166,33 +166,33 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
     ],
     ["spekta review"],
   ),
-  grep: topic(
-    "grep — Search eligible workspace files",
-    "Search a workspace path with Spekta's bounded, policy-aware ripgrep integration.",
-    ["spekta grep <pattern> [path] [--ignore-case] [--glob <glob>]..."],
+  rg: topic(
+    "rg — Search eligible workspace files",
+    "Search eligible workspace files through RTK with a documented subset of native ripgrep operands.",
+    ["spekta rg [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]..."],
     [
       {
-        heading: "Arguments and options",
+        heading: "Arguments and behavior",
         lines: [
-          "pattern is the first positional argument and must be nonempty; it is a ripgrep regular expression. path is the next positional argument when it does not begin with a dash; otherwise path defaults to the workspace root (.).",
-          "--glob <glob> adds a file glob; repeat it to include multiple glob filters. Matching uses ripgrep smart-case: lowercase patterns match without case sensitivity, while uppercase patterns trigger case-sensitive matching. --ignore-case forces case-insensitive matching.",
-          "Spekta accepts only this pattern/path/options grammar. It does not pass arbitrary ripgrep options through.",
+          "Without -e or --regexp, the first positional operand is the regex and later operands are paths. With explicit patterns, every positional operand is a path. Omitted paths search the workspace root recursively.",
+          "Repeat -e/--regexp for alternative patterns and -g/--glob for ordered inclusion or exclusion filters; glob values retain commas. Use -i/--ignore-case, -s/--case-sensitive, or -S/--smart-case (case-sensitive by default). Use -- before literal dash-prefixed operands. Spekta keeps eligible-file restrictions and its own output formatting; unsupported options are rejected. MCP accepts patterns, paths, globs, and case_mode as separate values.",
+          "Only the documented options are supported; other ripgrep flags, stdin, and empty or whitespace-only patterns are rejected. Spekta applies workspace eligibility and response limits, so this is not full native ripgrep compatibility.",
           "Search is limited to eligible workspace files and applies Git and Spekta ignore rules. Restricted paths and symlink escapes are rejected.",
         ],
       },
       {
-        heading: "Defaults and response budget",
+        heading: "Execution and response budget",
         lines: [
-          "SPEKTA_GREP_TOKEN_LIMIT defaults to 2000 tokens. Results are also bounded by 500 matches and 100 files.",
-          "If the complete result exceeds the configured response budget, all matches are withheld and a bounded output-limit message asks you to narrow the pattern, path or globs.",
-          "A missing ripgrep executable or rejected/unavailable path exits nonzero. Help does not invoke ripgrep.",
+          "Search runs through rtk proxy rg. Missing RTK or ripgrep is reported as an engine failure.",
+          "SPEKTA_GREP_TOKEN_LIMIT (the retained historical setting) defaults to 2000 tokens; results are also bounded by 500 matches and 100 files. Overflow withholds every match and cancels the RTK search process tree.",
         ],
       },
     ],
     [
-      "spekta grep 'TODO'",
-      "spekta grep 'timeout' src --ignore-case",
-      "spekta grep 'export function' src --glob '*.ts' --glob '!*.test.ts'",
+      "spekta rg 'TODO'",
+      "spekta rg 'timeout' src docs",
+      "spekta rg -e TODO -e FIXME src",
+      "spekta rg -i -g '*.ts,*.tsx' -g '!*.test.ts' TODO src",
     ],
   ),
   diagnostic: topic(

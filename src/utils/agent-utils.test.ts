@@ -13,7 +13,7 @@ vi.mock("../commands/read", () => ({
 }));
 
 vi.mock("../commands/grep-search", () => ({
-  getGrepContent: vi.fn(),
+  getRgOutcome: vi.fn(),
 }));
 
 vi.mock("./read-utils", async () => {
@@ -68,17 +68,20 @@ describe("agent-utils", () => {
       });
     });
 
-    it("parses grep calls with multiple attributes", () => {
-      const text = '<grep pattern="foo" path="src" globs="*.ts" />';
+    it("parses rg calls with the shared array request shape", () => {
+      const text =
+        '<rg patterns="[&quot;foo&quot;,&quot;bar&quot;]" paths="[&quot;src&quot;]" globs="[&quot;*.ts&quot;]" case_mode="insensitive" />';
       const calls = parseToolCalls(text);
 
       expect(calls).toHaveLength(1);
       expect(calls[0]).toEqual({
-        type: "grep",
-        path: "src",
-        pattern: "foo",
-        globs: "*.ts",
-        raw: '<grep pattern="foo" path="src" globs="*.ts" />',
+        type: "rg",
+        path: "",
+        patterns: ["foo", "bar"],
+        paths: ["src"],
+        globs: ["*.ts"],
+        case_mode: "insensitive",
+        raw: text,
       });
     });
   });
@@ -127,25 +130,31 @@ describe("agent-utils", () => {
       ]);
     });
 
-    it("executes grep tool correctly", async () => {
-      const { getGrepContent } = await import("../commands/grep-search");
-      vi.mocked(getGrepContent).mockResolvedValue("grep results");
+    it("executes rg through the shared search operation", async () => {
+      const { getRgOutcome } = await import("../commands/grep-search");
+      vi.mocked(getRgOutcome).mockResolvedValue({
+        status: "success",
+        value: "rg results",
+      });
 
       const call: ToolCall = {
-        type: "grep",
-        path: "src",
-        pattern: "todo",
-        globs: "*.ts",
+        type: "rg",
+        path: "",
+        patterns: ["todo"],
+        paths: ["src"],
+        globs: ["*.ts"],
+        case_mode: "sensitive",
         raw: "",
       };
 
       const result = await executeTool(call);
 
-      expect(result).toBe("grep results");
-      expect(getGrepContent).toHaveBeenCalledWith({
-        pattern: "todo",
-        path: "src",
-        globs: "*.ts",
+      expect(result).toBe("rg results");
+      expect(getRgOutcome).toHaveBeenCalledWith({
+        patterns: ["todo"],
+        paths: ["src"],
+        globs: ["*.ts"],
+        case_mode: "sensitive",
       });
     });
   });

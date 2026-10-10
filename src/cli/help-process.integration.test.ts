@@ -210,6 +210,23 @@ describe("CLI help before initialization", () => {
     expect(result.stderr).not.toContain("Critical Error");
   });
 
+  it.each([
+    ["grep", "needle"],
+    ["grep", "--help"],
+    ["help", "grep"],
+  ])(
+    "rejects removed grep entry points with migration guidance for %j",
+    async (...args) => {
+      const result = await invoke(args);
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout + result.stderr).toContain("spekta rg");
+      expect(result.stdout + result.stderr).not.toContain("grep — Search");
+      expect(
+        await fs.pathExists(path.join(tempRoot, "backend-invocations.txt")),
+      ).toBe(false);
+    },
+  );
+
   it.each(["-h", "help"])("supports the global %s alias", async (alias) => {
     const result = await invoke([alias]);
     expect(result.exitCode).toBe(0);
@@ -231,30 +248,36 @@ describe("CLI help before initialization", () => {
     expect(result.stdout).toContain("Examples:");
   });
 
+  it.each([
+    ["rg", "-h", "rg —"],
+    ["help", "rg", "rg —"],
+    ["git", "status", "--help", "git status —"],
+    ["help", "git", "status", "git status —"],
+  ])("supports help alias via %j", async (...args) => {
+    const expectedTitle = args.pop() as string;
+    const result = await invoke(args);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain(expectedTitle);
+  });
+
   it.each(Object.keys(COMMANDS).filter((command) => command !== "read"))(
-    "resolves all aliases for complete %s help without executing it",
+    "resolves complete %s help without executing it",
     async (topic) => {
-      for (const args of [
-        [topic, "--help"],
-        [topic, "-h"],
-        ["help", topic],
-      ]) {
-        const result = await invoke(args);
-        expect(result.exitCode).toBe(0);
-        expect(result.stderr).toBe("");
-        expect(result.stdout).toContain(`${topic} —`);
-        expect(result.stdout).toContain(`Usage: spekta ${topic}`);
-        expect(result.stdout).toContain("Examples:");
-        expect(result.stdout).not.toContain(
-          "overview; detailed command help is not yet complete",
-        );
-      }
+      const result = await invoke([topic, "--help"]);
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toContain(`${topic} —`);
+      expect(result.stdout).toContain(`Usage: spekta ${topic}`);
+      expect(result.stdout).toContain("Examples:");
+      expect(result.stdout).not.toContain(
+        "overview; detailed command help is not yet complete",
+      );
     },
     15000,
   );
 
   it.each([
-    "grep",
     "ls",
     "find",
     "git",
@@ -264,25 +287,19 @@ describe("CLI help before initialization", () => {
     "git diff",
     "git branch",
   ])(
-    "resolves all aliases for %s help without executing it",
+    "resolves %s help without executing it",
     async (topic) => {
       const parts = topic.split(" ");
-      for (const args of [
-        [...parts, "--help"],
-        [...parts, "-h"],
-        ["help", ...parts],
-      ]) {
-        const result = await invoke(args);
-        expect(result.exitCode).toBe(0);
-        expect(result.stderr).toBe("");
-        expect(result.stdout).toContain(`${topic} —`);
-        expect(result.stdout).toContain(`Usage: spekta ${topic}`);
-        expect(result.stdout).toContain("Usage:");
-        expect(result.stdout).toContain("Examples:");
-        expect(result.stdout).not.toContain(
-          "overview; detailed command help is not yet complete",
-        );
-      }
+      const result = await invoke([...parts, "--help"]);
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toContain(`${topic} —`);
+      expect(result.stdout).toContain(`Usage: spekta ${topic}`);
+      expect(result.stdout).toContain("Usage:");
+      expect(result.stdout).toContain("Examples:");
+      expect(result.stdout).not.toContain(
+        "overview; detailed command help is not yet complete",
+      );
     },
     15000,
   );
@@ -498,16 +515,16 @@ describe("CLI help before initialization", () => {
       ],
     ],
     [
-      "grep",
+      "rg",
       [
-        "<pattern>",
-        "ripgrep regular expression",
+        "PATTERN",
+        "first positional operand is the regex",
         "smart-case",
         "--glob",
         "--ignore-case",
         "SPEKTA_GREP_TOKEN_LIMIT",
         "2000",
-        "all matches are withheld",
+        "Overflow withholds every match",
       ],
     ],
     [
@@ -561,7 +578,7 @@ describe("CLI help before initialization", () => {
       "prompt",
       "review",
       "read",
-      "grep",
+      "rg",
       "diagnostic",
       "pr",
       "commit-range",
