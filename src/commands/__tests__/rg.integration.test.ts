@@ -117,6 +117,108 @@ describe("spekta rg public boundaries", () => {
     expect(outputText).toContain("1:0:gamma");
   });
 
+  it("keeps combined native search semantics across CLI and MCP boundaries", async ({
+    skip,
+  }) => {
+    if (!rtkAvailable) skip();
+    await fs.ensureDir(path.join(fixture.root, "nested"));
+    await fs.writeFile(
+      path.join(fixture.root, "nested", "one.txt"),
+      "alpha lower\nAlpha upper\nBETA uppercase\n",
+    );
+    await fs.writeFile(
+      path.join(fixture.root, "nested", "excluded.txt"),
+      "alpha excluded\n",
+    );
+    await fs.writeFile(
+      path.join(fixture.root, "nested", "other.md"),
+      "alpha wrong extension\n",
+    );
+
+    const native = await execa(
+      "rtk",
+      [
+        "proxy",
+        "rg",
+        "--no-config",
+        "--json",
+        "--ignore-case",
+        "--case-sensitive",
+        "--regexp",
+        "alpha",
+        "--regexp=BETA",
+        "--glob",
+        "*.txt",
+        "--glob",
+        "!excluded.txt",
+        "nested",
+        "nested/one.txt",
+      ],
+      { cwd: fixture.root },
+    );
+    const nativeMatches = new Set(
+      native.stdout
+        .split("\n")
+        .filter((line) => line.includes('"type":"match"'))
+        .map((line) => {
+          const event = JSON.parse(line) as {
+            data: {
+              path: { text: string };
+              line_number: number;
+              lines: { text: string };
+            };
+          };
+          return `${event.data.path.text}:${event.data.line_number}:${event.data.lines.text.trim()}`;
+        }),
+    );
+    const args = [
+      "-i",
+      "-s",
+      "-e",
+      "alpha",
+      "--regexp=BETA",
+      "-g",
+      "*.txt",
+      "--glob=!excluded.txt",
+      "nested",
+      "nested/one.txt",
+    ];
+    const cliWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    process.chdir(fixture.root);
+    await runRg(args);
+    const cliText = cliWrite.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    cliWrite.mockRestore();
+    const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+      {
+        patterns: ["alpha", "BETA"],
+        paths: ["nested", "nested/one.txt"],
+        globs: ["*.txt", "!excluded.txt"],
+        case_mode: "sensitive",
+      },
+      { root: fixture.root },
+    );
+    const mcpText = mcp.content[0]?.text ?? "";
+
+    expect(nativeMatches).toEqual(
+      new Set([
+        "nested/one.txt:1:alpha lower",
+        "nested/one.txt:3:BETA uppercase",
+      ]),
+    );
+    for (const text of [cliText, mcpText]) {
+      expect(text).toContain("nested/one.txt");
+      expect(text).toContain("1:0:alpha lower");
+      expect(text).toContain("3:0:BETA uppercase");
+      expect(text).not.toContain("Alpha upper");
+      expect(text).not.toContain("excluded.txt");
+      expect(text).not.toContain("other.md");
+      expect((text.match(/one\.txt/g) ?? []).length).toBe(1);
+    }
+    expect(cliText.trim()).toBe(mcpText);
+  });
+
   it("finds a nested eligible match through CLI and MCP using RTK when available", async ({
     skip,
   }) => {
