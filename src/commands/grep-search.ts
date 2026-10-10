@@ -197,6 +197,9 @@ async function findWhitelistedGitIgnoredFiles(
       const canonicalPath = await validateReadPathAccess(
         candidates[index],
         workspace,
+        // Git ignore status and whitelist eligibility were both established
+        // above, so repeating Git's per-path check here only adds serial work.
+        { gitIgnoreAlreadyChecked: true },
       );
       whitelisted.push(canonicalPath);
     } catch {

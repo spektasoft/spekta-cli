@@ -57,6 +57,7 @@ export const validatePathAccess = async (
   targetPath: string,
   options: {
     gitNoIndex?: boolean;
+    skipGitIgnoreCheck?: boolean;
     workspaceRoot?: string;
     displayPath?: string;
   } = {},
@@ -91,6 +92,7 @@ export const validatePathAccess = async (
         displayPath,
         ignoreOptions,
         root,
+        options.skipGitIgnoreCheck,
       );
     }
   }
@@ -116,6 +118,7 @@ export const validatePathAccess = async (
 export const validateReadPathAccess = async (
   targetPath: string,
   workspace: ResolvedWorkspace,
+  options: { gitIgnoreAlreadyChecked?: boolean } = {},
 ): Promise<string> => {
   const requestedName = path.basename(path.resolve(workspace.root, targetPath));
   if (RESTRICTED_FILES.includes(requestedName)) {
@@ -133,6 +136,7 @@ export const validateReadPathAccess = async (
   await validatePathAccess(absolutePath, {
     workspaceRoot: requestedRoot,
     displayPath: targetPath,
+    skipGitIgnoreCheck: options.gitIgnoreAlreadyChecked,
   });
   if (
     canonicalPath !== absolutePath ||
@@ -141,6 +145,7 @@ export const validateReadPathAccess = async (
     await validatePathAccess(canonicalPath, {
       workspaceRoot: workspace.canonicalRoot,
       displayPath: targetPath,
+      skipGitIgnoreCheck: options.gitIgnoreAlreadyChecked,
     });
   }
   return canonicalPath;

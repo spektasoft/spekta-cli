@@ -5,6 +5,7 @@ import * as execaModule from "execa";
 import type { Options as ExecaOptions } from "execa";
 import * as security from "../utils/security";
 import * as grepOutputParser from "./grep-output-parser";
+import { TOOL_REGISTRY } from "../api/mcp-server/registry";
 import { runRg } from "./rg";
 import {
   createWorkspaceFixture,
@@ -63,6 +64,7 @@ const telemetry = {
   ignoredEnumerationMs: 0,
   ignoredEnumerationFileCount: 0,
   gitClassificationCalls: 0,
+  pathGitIgnoreChecks: 0,
   gitClassificationMs: 0,
   gitCandidateCount: 0,
   gitIgnoredCount: 0,
@@ -133,6 +135,8 @@ function instrumentSearch(): void {
         typeof input === "string"
           ? input.split("\0").filter(Boolean).length
           : 0;
+    } else if (command === "git" && commandArgs[0] === "check-ignore") {
+      telemetry.pathGitIgnoreChecks++;
     } else if (command === "rg" && commandArgs.includes("--json")) {
       phase = "content";
       telemetry.contentSearchLaunches++;
@@ -290,6 +294,31 @@ async function search(
 }
 
 describe("root search latency reproduction at the CLI boundary", () => {
+  it("uses batched Git classification for MCP root searches", async () => {
+    await fs.writeFile(".gitignore", "ignored-candidates/\n");
+    await fs.writeFile(".spektaignore", "!ignored-candidates/**\n");
+    await fs.ensureDir("ignored-candidates");
+    for (let index = 0; index < 20; index++) {
+      await fs.writeFile(
+        path.join("ignored-candidates", `candidate-${index}.txt`),
+        `ignored candidate ${index}\n`,
+      );
+    }
+
+    const before = snapshotTelemetry();
+    const response = await TOOL_REGISTRY.spekta_rg.handler(
+      { patterns: [marker] },
+      { root: fixture.root },
+      1,
+    );
+
+    expect(response.content[0]?.text).toContain(marker);
+    expect(response.content[0]?.text).not.toContain("ignored-candidates");
+    const phases = telemetryDelta(before);
+    expect(phases.gitClassificationCalls).toBe(1);
+    expect(phases.pathGitIgnoreChecks).toBeLessThanOrEqual(2);
+  });
+
   it("compares a nested match across paths and incrementally adds ignored work", async () => {
     const results: Record<
       string,
@@ -445,6 +474,7 @@ describe("root search latency reproduction at the CLI boundary", () => {
       expect(result.output).toContain(marker);
       expect(result.output).not.toContain("whitelist-candidates");
       expect(result.phases.whitelistAllowed).toBe(candidateCount);
+      expect(result.phases.pathGitIgnoreChecks).toBeLessThanOrEqual(2);
       console.info(
         `[root-latency-whitelist-fixture] ${JSON.stringify({
           candidateCount,
