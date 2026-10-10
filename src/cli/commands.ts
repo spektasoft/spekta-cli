@@ -4,7 +4,8 @@ import { runPromptRunner } from "../commands/prompt";
 import { runCommitRange } from "../commands/commit-range";
 import { runRg } from "../commands/rg";
 import { runPr } from "../commands/pr";
-import { runRead } from "../commands/read";
+import { runRead, parseReadRequests, readUsageFailure } from "../commands/read";
+import { getOutcomeText } from "../core/operation-outcome";
 import { runReadInteractive } from "../commands/read-interactive";
 import { runRepl } from "../commands/repl";
 import { runReplace } from "../commands/replace";
@@ -16,7 +17,6 @@ import { runDiagnostic } from "../commands/diagnostic";
 import { runDiagnosticInteractive } from "../commands/diagnostic-interactive";
 import { runRtkProxy } from "../commands/proxy";
 import { searchableSelect } from "../ui/ui";
-import { parseFilePathWithRange } from "../utils/read-utils";
 import {
   runCodexSetup,
   runCodexStatus,
@@ -58,7 +58,14 @@ export const COMMANDS: Record<string, CommandDefinition> = {
       if (fileArgs.length === 0) {
         await runReadInteractive();
       } else {
-        const requests = fileArgs.map((arg) => parseFilePathWithRange(arg));
+        let requests;
+        try {
+          requests = parseReadRequests(fileArgs);
+        } catch {
+          process.stdout.write(getOutcomeText(readUsageFailure()));
+          process.exitCode = 1;
+          return;
+        }
         await runRead(requests, { save: isSave });
       }
     },

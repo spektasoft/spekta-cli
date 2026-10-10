@@ -1,6 +1,7 @@
 /** Shared outcome vocabulary for workspace operations exposed over CLI and MCP. */
 export type OperationOutcome<T> =
   | { status: "success"; value: T }
+  | { status: "usage_error"; message: string }
   | { status: "policy_rejection"; message: string }
   | { status: "no_matches"; message: string }
   | { status: "output_limit_exceeded"; message: string }

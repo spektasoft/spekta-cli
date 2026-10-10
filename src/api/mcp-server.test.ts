@@ -24,7 +24,10 @@ import fs from "fs-extra";
 import os from "node:os";
 import path from "node:path";
 
-vi.mock("../commands/read", () => ({ getReadOutcome: vi.fn() }));
+vi.mock("../commands/read", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../commands/read")>()),
+  getReadOutcome: vi.fn(),
+}));
 vi.mock("../commands/replace", () => ({ executeSafeReplaceOutcome: vi.fn() }));
 vi.mock("../commands/write", () => ({ getWriteOutcome: vi.fn() }));
 vi.mock("../commands/grep-search", () => ({

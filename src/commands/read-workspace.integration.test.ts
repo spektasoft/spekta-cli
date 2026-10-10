@@ -99,15 +99,15 @@ describe("workspace reads", () => {
     expect(await read("file.txt", "full", root)).toContain("NO_GIT");
   });
   it("preserves empty request and conceals missing workspace diagnostics", async () => {
-    expect(await getReadContent([])).toBe(
-      "Read requires at least one file path.",
-    );
+    expect(await getReadContent([])).toContain("usage_error");
     const missingWorkspace = await read(
       "real.txt",
       "full",
       path.join(fixture.base, "missing-root"),
     );
-    expect(missingWorkspace).toBe("Read rejected: workspace is unavailable.");
+    expect(missingWorkspace).toBe(
+      "Read rejected: unavailable_access; workspace is unavailable.",
+    );
     expect(missingWorkspace).not.toContain("missing-root");
   });
 });

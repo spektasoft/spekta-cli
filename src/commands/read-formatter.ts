@@ -20,6 +20,7 @@ export interface ReadOutputOptions {
   isCompacted?: boolean;
   exceedsLimit?: boolean;
   warning?: string;
+  empty?: boolean;
 }
 
 const formatNumber = (value: number): string => value.toLocaleString("en-US");
@@ -37,13 +38,16 @@ export function formatReadOutput(options: ReadOutputOptions): string {
     isCompacted = false,
     exceedsLimit = false,
     warning = "",
+    empty = false,
   } = options;
 
   const extension = path.split(".").pop() || "txt";
 
-  const rangeLabel = isRangeRequest
-    ? `${rangeStart}-${rangeEnd === "$" ? total : rangeEnd} of ${total}`
-    : `1-${total} (Full File)`;
+  const rangeLabel = empty
+    ? `no lines; total ${total}`
+    : isRangeRequest
+      ? `${rangeStart}-${rangeEnd === "$" ? total : rangeEnd} of ${total}`
+      : `1-${total} (Full File)`;
 
   const tokenDetails = isCompacted
     ? ` [COMPACTED OVERVIEW: ${formatNumber(tokens)}/${formatNumber(fullTokens)} tokens]`
@@ -54,7 +58,7 @@ export function formatReadOutput(options: ReadOutputOptions): string {
   const exceedLabel = exceedsLimit ? " [EXCEEDS TOKEN LIMIT]" : "";
   const warningLabel = warning ? ` [${warning}]` : "";
 
-  return `#### ${path} (lines ${rangeLabel})${tokenDetails}${exceedLabel}${warningLabel}
+  return `#### ${path} (${empty ? "" : "lines "}${rangeLabel})${tokenDetails}${exceedLabel}${warningLabel}
 \`\`\`${extension}
 ${content}
 \`\`\`

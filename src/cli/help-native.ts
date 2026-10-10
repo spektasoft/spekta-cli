@@ -12,7 +12,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
   read: {
     title: "read — Read eligible workspace files",
     purpose:
-      "Print file content and line/token metadata, compacting full files when applicable.",
+      "Print complete original lines with accurate coverage and continuation ranges.",
     usage: [
       "spekta read <path[range]>... [--save]",
       "spekta read [--save]",
@@ -46,10 +46,10 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Defaults and response budgets",
         lines: [
           "SPEKTA_READ_TOKEN_LIMIT defaults to 1000 tokens for the complete response, including metadata and formatting.",
-          "SPEKTA_COMPACT_THRESHOLD defaults to 500 tokens. Full-file direct reads above this threshold attempt syntax-aware compaction; unsupported files may remain uncompressed with a warning.",
-          "Explicit ranges return original lines without compaction. Choose a narrower range when content exceeds the response budget.",
-          "Oversized results exit nonzero and report incomplete content or bounded guidance. --save uses the same bounded result.",
-          "The interactive picker bypasses per-file compaction and range checks; the final combined response is still bounded.",
+          "Full-file and explicit-range reads return original content. The legacy SPEKTA_COMPACT_THRESHOLD (default 500 tokens) does not affect reads.",
+          "When a read exceeds the response budget, Spekta returns a contiguous chunk of complete original lines with the actual delivered range and a Next range operand. Repeat that operand to continue; ranges extending beyond EOF report only existing lines.",
+          "An incomplete read exits nonzero with output_limit_exceeded. A single line that cannot fit is withheld with guidance to increase SPEKTA_READ_TOKEN_LIMIT; lines are never shortened. Empty files and requests beyond EOF report no lines.",
+          "Printed and saved results use the same complete-line contract. The complete response budget includes headings, coverage, continuation guidance, the MCP envelope and the save-path notice when applicable.",
           "Configuration precedence is shell environment, workspace .env, then personal Spekta .env. Invalid read limits fall back to 1000; invalid compaction thresholds fall back to 500 (zero is allowed).",
           "Direct read and help require no AI provider credentials. Interactive selection requires Git.",
         ],
@@ -60,7 +60,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
           "Only eligible files inside the workspace may be disclosed. Outside paths and symlink escapes are rejected.",
           "Git ignore and Spekta ignore rules apply; explicit Spekta negations can allow Git-ignored files.",
           "Restricted filenames .env, .gitignore and .spektaignore cannot be read, and files larger than 10 MB are rejected.",
-          "Unavailable files, policy rejections and read failures exit nonzero. Help performs no read, save or initialization.",
+          "Unsupported options or nonpositive/reversed ranges yield usage_error before reading. unavailable_access conceals denied paths and existence; internal_failure conceals private diagnostics. Both identify operand positions when possible and exit nonzero. Help performs no read, save or initialization.",
         ],
       },
     ],

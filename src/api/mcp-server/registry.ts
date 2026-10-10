@@ -14,7 +14,11 @@ import { z } from "zod";
 import path from "node:path";
 
 import { getRgOutcome } from "../../commands/grep-search";
-import { getReadOutcome } from "../../commands/read";
+import {
+  getReadOutcome,
+  parseReadRequests,
+  readUsageFailure,
+} from "../../commands/read";
 import { executeSafeReplaceOutcome } from "../../commands/replace";
 import { getWriteOutcome } from "../../commands/write";
 import {
@@ -30,7 +34,6 @@ import { executeRtkCommand } from "../../commands/proxy/proxy-execution";
 import { renderDiscoveryOutcome } from "../../commands/proxy/proxy-ls-render";
 import { ToolDefinition } from "../../core/config";
 import { getOutcomeText } from "../../core/operation-outcome";
-import { parseFilePathWithRange } from "../../utils/read-utils";
 import type { WorkspaceContext } from "../../utils/workspace";
 
 export interface McpToolResponse {
@@ -60,8 +63,22 @@ const registry: Record<string, ToolRegistryEntry> = {
         paths: z.array(z.string()).describe(params.paths?.description || ""),
       }),
     handler: async (rawArgs, context, requestId) => {
-      const { paths } = rawArgs as { paths: string[] };
-      const fileRequests = paths.map((p) => parseFilePathWithRange(p));
+      const parsed = z
+        .object({ paths: z.array(z.string()).min(1) })
+        .strict()
+        .safeParse(rawArgs);
+      let fileRequests;
+      try {
+        if (!parsed.success) throw new Error("Invalid read request");
+        fileRequests = parseReadRequests(parsed.data.paths);
+      } catch {
+        return {
+          isError: true,
+          content: [
+            { type: "text", text: getOutcomeText(readUsageFailure(requestId)) },
+          ],
+        };
+      }
       const outcome = await getReadOutcome(
         fileRequests,
         false,
@@ -69,7 +86,8 @@ const registry: Record<string, ToolRegistryEntry> = {
         requestId,
       );
       return {
-        ...(outcome.status === "output_limit_exceeded" ||
+        ...(outcome.status === "usage_error" ||
+        outcome.status === "output_limit_exceeded" ||
         outcome.status === "policy_rejection" ||
         outcome.status === "engine_failure"
           ? { isError: true }
