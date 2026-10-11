@@ -32,7 +32,6 @@ import {
   validateProxyRequest,
 } from "../../commands/proxy/proxy-policy";
 import { executeRtkCommand } from "../../commands/proxy/proxy-execution";
-import { renderDiscoveryOutcome } from "../../commands/proxy/proxy-ls-render";
 import {
   getListBatchOutcome,
   listContentAllowance,
@@ -43,6 +42,46 @@ import {
 import { ToolDefinition } from "../../core/config";
 import { getOutcomeText } from "../../core/operation-outcome";
 import type { WorkspaceContext } from "../../utils/workspace";
+import { resolveRequestAllowance } from "../../core/config/allowance";
+import { getTokenCount } from "../../utils/read-utils";
+import {
+  discoverFindBatch,
+  getFindValidationFailure,
+  getFindValidationText,
+  getSafeFindValidationMessage,
+} from "../../commands/proxy/proxy-find-batch";
+import { isRtkAvailable } from "../../commands/proxy/proxy-execution";
+
+function measureFindMcpResponse(
+  text: string,
+  isError: boolean,
+  requestId?: string | number,
+): number {
+  // Direct registry calls without an SDK request ID measure the body only;
+  // real stdio requests always carry the ID through bootstrap's handler seam.
+  if (requestId === undefined) return getTokenCount(text);
+  const response = JSON.stringify({
+    jsonrpc: "2.0",
+    id: requestId,
+    result: { isError, content: [{ type: "text", text }] },
+  });
+  return getTokenCount(`${response}\n`);
+}
+
+function measureFindMcpBytes(
+  text: string,
+  isError: boolean,
+  requestId?: string | number,
+): number {
+  // See measureFindMcpResponse: no-ID direct calls have no JSON-RPC envelope.
+  if (requestId === undefined) return Buffer.byteLength(text, "utf8");
+  const response = JSON.stringify({
+    jsonrpc: "2.0",
+    id: requestId,
+    result: { isError, content: [{ type: "text", text }] },
+  });
+  return Buffer.byteLength(`${response}\n`, "utf8");
+}
 
 export interface McpToolResponse {
   content: Array<{
@@ -295,17 +334,19 @@ const registry: Record<string, ToolRegistryEntry> = {
           .optional()
           .describe(
             params?.args?.description ||
-              "Command arguments; for ls, supply zero or more literal workspace directories (zero uses .).",
+              "Command arguments. For find, supply zero or more literal roots before supported -type/-name predicates (zero uses .); -name values are literal arguments.",
           ),
+        // Let find's budget-aware handler reject malformed values. Other
+        // commands retain their existing command-specific allowance checks.
         allowance: z
-          .number()
+          .unknown()
           .optional()
           .describe(
             params?.allowance?.description ||
-              "Optional positive whole-number response allowance in tokens. Applies only to ls and is bounded by the configured list ceiling.",
+              "Optional response allowance in tokens for ls and find. The handler validates a positive whole number within the configured list ceiling.",
           ),
       }),
-    handler: async (rawArgs, context) => {
+    handler: async (rawArgs, context, requestId) => {
       const { command, args, allowance } = rawArgs as {
         command: string;
         args?: string[];
@@ -313,13 +354,17 @@ const registry: Record<string, ToolRegistryEntry> = {
       };
       const cleanArgs = args ?? [];
 
-      if (Object.hasOwn(rawArgs, "allowance") && command !== "ls") {
+      if (
+        Object.hasOwn(rawArgs, "allowance") &&
+        command !== "ls" &&
+        command !== "find"
+      ) {
         return {
           isError: true,
           content: [
             {
               type: "text",
-              text: "usage_error: Allowance is supported only for ls. Use spekta help ls.",
+              text: "usage_error: Allowance is supported only for ls and find.",
             },
           ],
         };
@@ -328,6 +373,27 @@ const registry: Record<string, ToolRegistryEntry> = {
       try {
         validateProxyRequest(command, cleanArgs, context);
       } catch (error: unknown) {
+        if (command === "find") {
+          const resolved = resolveRequestAllowance("list", allowance);
+          return {
+            isError: true,
+            content: [
+              {
+                type: "text",
+                text: getFindValidationText(
+                  getFindValidationFailure(
+                    (text, isError) =>
+                      measureFindMcpResponse(text, isError, requestId),
+                    resolved.settings.ceilingTokens,
+                    resolved.settings.defaultTokens,
+                    "shorten a long MCP request ID if needed",
+                    getSafeFindValidationMessage(error),
+                  ),
+                ),
+              },
+            ],
+          };
+        }
         return {
           isError: true,
           content: [{ type: "text", text: formatProxyFailure(error) }],
@@ -361,6 +427,69 @@ const registry: Record<string, ToolRegistryEntry> = {
         }
         return {
           isError: outcome.status === "partial_result",
+          content: [{ type: "text", text: outcome.content }],
+        };
+      }
+      if (command === "find") {
+        const resolved = resolveRequestAllowance("list", allowance);
+        const settings = resolved.settings;
+        const tokenAllowance =
+          resolved.status === "ok"
+            ? (resolved.requested ?? settings.defaultTokens)
+            : settings.defaultTokens;
+        if (resolved.status !== "ok") {
+          const failure = getFindValidationFailure(
+            (text, isError) => measureFindMcpResponse(text, isError, requestId),
+            settings.ceilingTokens,
+            settings.defaultTokens,
+            "shorten a long MCP request ID if needed",
+            resolved.status === "invalid"
+              ? "usage_error: Allowance must be a positive whole number."
+              : `usage_error: Allowance exceeds the configured ceiling; configured ceiling is ${settings.ceilingTokens} tokens.`,
+          );
+          return {
+            isError: true,
+            content: [{ type: "text", text: getFindValidationText(failure) }],
+          };
+        }
+        const minimum = getFindValidationFailure(
+          (text, isError) => measureFindMcpResponse(text, isError, requestId),
+          settings.ceilingTokens,
+          settings.defaultTokens,
+          "shorten a long MCP request ID if needed",
+        );
+        if (tokenAllowance < minimum.tokens) {
+          return {
+            isError: true,
+            content: [{ type: "text", text: getFindValidationText(minimum) }],
+          };
+        }
+        const outcome = await discoverFindBatch(cleanArgs, context, {
+          allowance: tokenAllowance,
+          validationAllowance: settings.defaultTokens,
+          maximumAllowance: settings.ceilingTokens,
+          requestIdRecoveryHint: "shorten a long MCP request ID if needed",
+          increaseHint:
+            settings.ceilingTokens > tokenAllowance
+              ? ` A larger allowance up to ${settings.ceilingTokens} tokens is supported.`
+              : "",
+          measure: (text, isError) =>
+            measureFindMcpResponse(text, isError, requestId),
+          metadataBytes: (text, isError) =>
+            measureFindMcpBytes(text, isError, requestId),
+          hasRtk: await isRtkAvailable(),
+          backend: async (operand, predicates) => {
+            const result = await executeRtkCommand(
+              "find",
+              [operand, ...predicates],
+              context,
+            );
+            if (!result.available) throw new Error("RTK unavailable");
+            return { stdout: result.stdout, exitCode: result.exitCode };
+          },
+        });
+        return {
+          isError: outcome.isError,
           content: [{ type: "text", text: outcome.content }],
         };
       }
@@ -410,9 +539,7 @@ const registry: Record<string, ToolRegistryEntry> = {
             {
               type: "text",
               text:
-                (command === "git" && cleanArgs[0] === "status") ||
-                command === "ls" ||
-                command === "find"
+                command === "git" && cleanArgs[0] === "status"
                   ? "RTK listing failed before output could be checked."
                   : formatProxyFailure(error),
             },
@@ -429,24 +556,6 @@ const registry: Record<string, ToolRegistryEntry> = {
             },
           ],
         };
-      }
-
-      if (command === "find") {
-        const outcome = await renderDiscoveryOutcome(
-          result,
-          cleanArgs[0]?.startsWith("-") ? "." : cleanArgs[0],
-          context,
-          "find",
-        );
-        return outcome.status === "failure"
-          ? {
-              isError: true,
-              content: [{ type: "text", text: outcome.message }],
-            }
-          : {
-              isError: false,
-              content: [{ type: "text", text: outcome.content }],
-            };
       }
 
       if (command === "git" && cleanArgs[0] === "status") {

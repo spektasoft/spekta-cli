@@ -27,8 +27,12 @@ You can configure the following environment variables to customize `spekta`'s be
 - `SPEKTA_COMPACT_THRESHOLD`: The token threshold above which content is compacted. Defaults to `500`.
 - `SPEKTA_GREP_TOKEN_LIMIT`: The maximum complete response size for `spekta rg`, in tokens. The historical variable name is retained; no configuration rename is required. Defaults to `2000`. Search is also bounded by 500 matches and 100 files.
 - `SPEKTA_READ_TOKEN_LIMIT`: The maximum number of tokens to read from a file. Defaults to `1000`.
-- `SPEKTA_LIST_TOKEN_LIMIT`: The default response allowance for `spekta ls`, in tokens. Defaults to `1000`.
-- `SPEKTA_LIST_TOKEN_CEILING`: The maximum per-request allowance for `spekta ls`, in tokens. Defaults to `8000` and cannot be lower than the configured default allowance.
+- `SPEKTA_LIST_TOKEN_LIMIT`: The default complete-response allowance for `spekta ls` and `spekta find`, in tokens. Defaults to `1000`.
+- `SPEKTA_LIST_TOKEN_CEILING`: The maximum per-request allowance for `spekta ls` and `spekta find`, in tokens. Defaults to `8000` and cannot be lower than the configured default allowance.
+
+For `find`, the allowance covers every root outcome and whole eligible path, plus the complete CLI formatter or MCP JSON-RPC envelope and newline. The CLI form is a leading `spekta find --allowance <tokens> ...`; MCP `spekta_shell` uses its `allowance` field. Empty and incomplete discovery outcomes use the same list-family settings.
+
+Discovery measures a transport-specific minimum allowance for its complete validation response. Requests below that minimum are rejected before RTK probing. The rejected allowance does not govern the error response: syntax and allowance validation errors use the configured `SPEKTA_LIST_TOKEN_LIMIT` default budget whenever it can contain the message. If the default cannot contain the mandatory diagnostic, Spekta emits the shortest useful recovery message even though that rejected-request response exceeds the default. Raise `SPEKTA_LIST_TOKEN_LIMIT` and, when the minimum exceeds the ceiling, `SPEKTA_LIST_TOKEN_CEILING`; shorten an unusually long MCP request ID if needed. This exception applies only to rejected validation requests. Accepted requests still fit metadata, content, and operational failures within their requested allowance.
 
 ## Configuring providers
 

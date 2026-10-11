@@ -48,13 +48,6 @@ function responseText(
     .join("\n");
 }
 
-function outputLines(text: string): string[] {
-  return text
-    .split(/\r?\n/)
-    .filter((line) => line !== "")
-    .sort();
-}
-
 async function expectDiscovery(
   args: string[],
   expectedFiles: string[],
@@ -73,10 +66,12 @@ async function expectDiscovery(
   expect(console.error).not.toHaveBeenCalled();
   expect(process.exitCode).toBeUndefined();
   expect(mcp.isError).toBe(false);
-  expect(outputLines(mcpText)).toEqual([...expectedFiles].sort());
+  expect(mcpText).toContain("Batch: success");
 
   for (const file of expectedFiles) {
-    expect(cli).toContain(file);
+    const disclosed = file.startsWith("./") ? file.slice(2) : file;
+    expect(cli).toContain(JSON.stringify(disclosed));
+    expect(mcpText).toContain(JSON.stringify(disclosed));
   }
 
   expect(cli).not.toContain("outside-only.ts");
@@ -262,7 +257,9 @@ describeBackend(backendSuiteName, () => {
     expect(console.error).not.toHaveBeenCalled();
     expect(process.exitCode).toBeUndefined();
     expect(mcp.isError).toBe(false);
-    expect(responseText(mcp)).toBe("");
+    expect(responseText(mcp)).toBe(
+      'Batch: success\nOperand 1: returned; "internal-alias"\nNo eligible paths in this discovery.\n',
+    );
     expect(consoleText()).not.toContain("nested.ts");
     expect(consoleText()).not.toContain("deep.ts");
   }, 30_000);
@@ -273,19 +270,17 @@ describeBackend(backendSuiteName, () => {
 
     const cli = consoleText();
     const mcpText = responseText(mcp);
-    const lines = outputLines(mcpText);
-
     expect(console.error).not.toHaveBeenCalled();
     expect(process.exitCode).toBeUndefined();
     expect(mcp.isError).toBe(false);
-    expect(lines).toContain(".");
-    expect(lines).toContain("./root.ts");
-    expect(lines).toContain("./root.js");
-    expect(lines).not.toContain("./escape");
-    expect(lines).toContain("./internal-alias");
+    expect(mcpText).toContain('Operand 1: returned; "."');
+    expect(mcpText).toContain('"root.ts"');
+    expect(mcpText).toContain('"root.js"');
+    expect(mcpText).not.toContain('"escape"');
+    expect(mcpText).toContain('"internal-alias"');
     expect(cli).not.toContain("outside-only.ts");
     expect(mcpText).not.toContain("outside-only.ts");
-    expect(lines).not.toContain("./internal-alias/nested.ts");
-    expect(lines).not.toContain("./internal-alias/deep/deep.ts");
+    expect(mcpText).not.toContain('"internal-alias/nested.ts"');
+    expect(mcpText).not.toContain('"internal-alias/deep/deep.ts"');
   }, 30_000);
 });

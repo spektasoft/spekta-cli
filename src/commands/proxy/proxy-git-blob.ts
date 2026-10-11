@@ -5,7 +5,7 @@ import { findRepositoryRoot } from "./proxy-git-policy";
 import { isEligibleGitPath } from "./proxy-git-status";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
 import { redactSecrets } from "./proxy-secret-redaction";
-import type { DiscoveryRenderOutcome } from "./proxy-ls-render";
+import type { DiscoveryRenderOutcome } from "./proxy-render-outcome";
 
 const RESPONSE_LIMIT = 1000;
 

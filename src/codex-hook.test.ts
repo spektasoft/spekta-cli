@@ -56,6 +56,19 @@ describe("Codex inspection hook parser", () => {
       "find src -type f -name '*.ts'",
       "'spekta' 'find' 'src' '-type' 'f' '-name' '*.ts'",
     ],
+    [
+      "find src test src -name '*.ts' -type f -print",
+      "'spekta' 'find' 'src' 'test' 'src' '-name' '*.ts' '-type' 'f' '-print'",
+    ],
+    [
+      "find src -name '--allowance'",
+      "'spekta' 'find' 'src' '-name' '--allowance'",
+    ],
+    ["find src -name '-exec'", "'spekta' 'find' 'src' '-name' '-exec'"],
+    [
+      "find src -name '$(echo literal)'",
+      "'spekta' 'find' 'src' '-name' '$(echo literal)'",
+    ],
     ["find -name 'literal ; *.ts'", "'spekta' 'find' '-name' 'literal ; *.ts'"],
     [
       "find ../outside -name '*.ts'",
@@ -197,6 +210,10 @@ describe("Codex inspection hook parser", () => {
     "rtk find .",
     "find src -exec cat {} \\;",
     "find src -maxdepth 2",
+    "find --allowance 100 src",
+    "find src --allowance 100",
+    "find src -name x; echo unsafe",
+    'find src -name "$HOME"',
     "git status --ignored",
     "git log --oneline -n 1",
     "git commit -m message",
@@ -215,6 +232,26 @@ describe("Codex inspection hook parser", () => {
   ])("does not rewrite excluded syntax: %s", (input) =>
     expect(rewritten(input)).toBeUndefined(),
   );
+
+  it("preserves execution settings when rewriting multi-root find", () => {
+    const raw = rewriteEvent({
+      ...event("find src test -type f"),
+      tool_input: {
+        command: "find src test -type f",
+        timeout: 17,
+        run_in_background: false,
+      },
+    });
+    expect(raw).toBeDefined();
+    const parsed = JSON.parse(raw!) as {
+      hookSpecificOutput: { updatedInput: Record<string, unknown> };
+    };
+    expect(parsed.hookSpecificOutput.updatedInput).toEqual({
+      command: "'spekta' 'find' 'src' 'test' '-type' 'f'",
+      timeout: 17,
+      run_in_background: false,
+    });
+  });
 
   it("returns only the documented response and ignores unrelated fields", () => {
     const raw = rewriteEvent(event("ls"));

@@ -2,7 +2,7 @@ import type { WorkspaceContext } from "../../utils/workspace";
 import { redactSecrets } from "./proxy-secret-redaction";
 import { truncateOutput } from "./proxy-output";
 import { validateGitProxyRequest } from "./proxy-git-policy";
-import { validateFindProxyRequest } from "./proxy-find-policy";
+import { parseFindBatch } from "./proxy-find-batch-parser";
 
 export function validateProxyRequest(
   command: string,
@@ -21,7 +21,10 @@ export function validateProxyRequest(
     return;
   }
   if (command === "find") {
-    validateFindProxyRequest(args, context);
+    // Discovery roots are classified independently by the batch executor.
+    // Parsing here validates the whole grammar without revealing whether a
+    // root exists or is eligible.
+    parseFindBatch(args);
     return;
   }
   if (command !== "ls") {
@@ -51,26 +54,12 @@ export function isSupportedDiscoveryRequest(
     );
   if (command !== "find") return false;
 
-  let index = args.length > 0 && !args[0].startsWith("-") ? 1 : 0;
-  let seenType = false;
-  let seenName = false;
-  while (index < args.length) {
-    const token = args[index];
-    if (
-      token === "-type" &&
-      !seenType &&
-      ["f", "d"].includes(args[index + 1] ?? "")
-    ) {
-      seenType = true;
-      index += 2;
-    } else if (token === "-name" && !seenName && Boolean(args[index + 1])) {
-      seenName = true;
-      index += 2;
-    } else if (token === "-print" && index === args.length - 1) {
-      return true;
-    } else return false;
+  try {
+    parseFindBatch(args);
+    return true;
+  } catch {
+    return false;
   }
-  return true;
 }
 
 /** Classifies standalone Git inspections using the proxy's execution policy. */

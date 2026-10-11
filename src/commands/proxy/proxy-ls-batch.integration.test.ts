@@ -52,6 +52,7 @@ async function installFakeRtk(): Promise<void> {
 const fs = require("node:fs");
 const path = require("node:path");
 const args = process.argv.slice(2);
+if (args[0] === "--version") { process.stdout.write("rtk 0.50.0\\n"); process.exit(0); }
 const operand = args.at(-1) || ".";
 fs.appendFileSync(${JSON.stringify(marker)}, operand + "\\n");
 if (operand === "fail") { fs.writeSync(2, "PRIVATE_STDERR"); process.exit(7); }
@@ -327,12 +328,13 @@ it.each(["cli", "mcp"] as const)(
   },
 );
 
-it("rejects MCP allowance on a non-ls command", async () => {
+it("accepts MCP allowance for find while retaining the ls and find shared budget contract", async () => {
+  await fs.writeFile(path.join(workspace, "find-allowance-entry.ts"), "x");
   const nonLs = await invoke("mcp", [], 1000, "find");
-  expect(nonLs.text).toContain(
-    "usage_error: Allowance is supported only for ls",
-  );
-  expect(fs.existsSync(marker)).toBe(false);
+  expect(nonLs.failed).toBe(false);
+  expect(nonLs.text).toContain("Batch: success");
+  expect(nonLs.text).toContain('"find-allowance-entry.ts"');
+  expect(fs.existsSync(marker)).toBe(true);
 });
 
 it.each(["cli", "mcp"] as const)(
@@ -349,11 +351,13 @@ it.each(["cli", "mcp"] as const)(
 );
 
 it.each(["cli", "mcp"] as const)(
-  "preserves find behavior over %s",
+  "renders multi-root batch find behavior over %s",
   async (transport) => {
     await fs.writeFile(path.join(workspace, "find-regression.txt"), "x");
     const result = await invoke(transport, [], undefined, "find");
-    expect(result.text).toContain("find-regression.txt");
+    expect(result.text).toContain("Batch: success");
+    expect(result.text).toContain('Operand 1: returned; "."');
+    expect(result.text).toContain('"find-regression.txt"');
     expect(result.failed).toBe(false);
   },
 );

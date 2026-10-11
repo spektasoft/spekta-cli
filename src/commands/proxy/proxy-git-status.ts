@@ -11,7 +11,7 @@ import { assertPathNotIgnored } from "../../utils/path-ignore";
 import { getTokenCount } from "../../utils/read-utils";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
 import { redactSecrets } from "./proxy-secret-redaction";
-import type { DiscoveryRenderOutcome } from "./proxy-ls-render";
+import type { DiscoveryRenderOutcome } from "./proxy-render-outcome";
 
 /** Status is collected as NUL-delimited records, never as decorated RTK output. */
 export async function renderGitStatusOutcome(

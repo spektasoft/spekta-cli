@@ -50,7 +50,7 @@ describe("restricted find through validateProxyRequest", () => {
     "--version",
   ])("rejects unsupported token %s before execution", (token) => {
     expect(() => validateProxyRequest("find", [".", token])).toThrow(
-      /unsupported find token/i,
+      /usage_error/i,
     );
   });
 
@@ -64,17 +64,20 @@ describe("restricted find through validateProxyRequest", () => {
     "directory//nested",
     "directory/./nested",
     "././directory",
-    "directory/../directory",
-    "internal-alias/../directory",
     "internal-alias/.",
     "~/directory",
     "directory:name",
     String.raw`directory\nested`,
   ])("rejects unsupported root syntax %s", (root) => {
-    expect(() => validateProxyRequest("find", [root])).toThrow(
-      /Execution refused|Access Denied/i,
-    );
+    expect(() => validateProxyRequest("find", [root])).toThrow(/usage_error/i);
   });
+
+  it.each(["../outside", "/outside", "internal-alias/../directory"])(
+    "leaves parent and absolute roots for independent eligibility: %s",
+    (root) => {
+      expect(() => validateProxyRequest("find", [root])).not.toThrow();
+    },
+  );
 
   it.each([
     "bad\0value",

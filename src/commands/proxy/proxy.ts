@@ -10,10 +10,9 @@ import {
   executeGitDiffPatchOutcome,
   renderGitDiffOutcome,
 } from "./proxy-git-diff";
-import { executeRtkCommand } from "./proxy-execution";
+import { executeRtkCommand, isRtkAvailable } from "./proxy-execution";
 import { formatProxyFailure, validateProxyRequest } from "./proxy-policy";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
-import { renderDiscoveryOutcome } from "./proxy-ls-render";
 import {
   getListBatchOutcome,
   listContentAllowance,
@@ -22,6 +21,13 @@ import {
   RtkListingUnavailableError,
 } from "./proxy-ls-batch";
 import type { WorkspaceContext } from "../../utils/workspace";
+import { resolveRequestAllowance } from "../../core/config/allowance";
+import { getTokenCount } from "../../utils/read-utils";
+import {
+  discoverFindBatch,
+  getFindValidationFailure,
+  getFindValidationText,
+} from "./proxy-find-batch";
 
 export type { WorkspaceContext } from "../../utils/workspace";
 
@@ -53,13 +59,51 @@ function splitLsArgs(args: string[]): {
   return { operands, allowance, malformed };
 }
 
+function splitFindArgs(args: string[]): {
+  operands: string[];
+  allowance?: string;
+  malformed: boolean;
+} {
+  const operands = [...args];
+  let allowance: string | undefined;
+  let malformed = false;
+  if (
+    operands[0] === "--allowance" ||
+    operands[0]?.startsWith("--allowance=")
+  ) {
+    const option = operands.shift()!;
+    allowance = option === "--allowance" ? operands.shift() : option.slice(12);
+    if (allowance === undefined) malformed = true;
+  }
+  // A name operand is literal, so skip it while locating misplaced options.
+  for (let index = 0; index < operands.length; index++) {
+    const token = operands[index];
+    if (token === "-name") {
+      index++;
+      continue;
+    }
+    if (token === "--allowance" || token.startsWith("--allowance="))
+      malformed = true;
+  }
+  return { operands, allowance, malformed };
+}
+
+function findCliResponse(text: string, isError: boolean): string {
+  return `${formatProxyOutput("find", text, isError ? { exitCode: 1 } : {})}\n`;
+}
+
+function findCliMeasure(text: string, isError: boolean): number {
+  return getTokenCount(findCliResponse(text, isError));
+}
+
 export async function runRtkProxy(
   command: string,
   rawArgs: string[],
   context?: WorkspaceContext,
 ): Promise<void> {
   const lsArgs = command === "ls" ? splitLsArgs(rawArgs) : undefined;
-  const requestArgs = lsArgs?.operands ?? rawArgs;
+  const findArgs = command === "find" ? splitFindArgs(rawArgs) : undefined;
+  const requestArgs = lsArgs?.operands ?? findArgs?.operands ?? rawArgs;
   if (lsArgs?.malformed) {
     console.error(
       "usage_error: ls accepts one --allowance value. Use spekta help ls.",
@@ -67,9 +111,46 @@ export async function runRtkProxy(
     process.exitCode = 1;
     return;
   }
+  if (findArgs?.malformed) {
+    const { settings } = resolveRequestAllowance("list", findArgs.allowance);
+    const failure = getFindValidationFailure(
+      findCliMeasure,
+      settings.ceilingTokens,
+      settings.defaultTokens,
+      undefined,
+      "usage_error: find accepts one leading --allowance value",
+    );
+    process.exitCode = 1;
+    console.log(
+      findCliResponse(getFindValidationText(failure), true).trimEnd(),
+    );
+    return;
+  }
   try {
     validateProxyRequest(command, requestArgs, context);
   } catch (error: unknown) {
+    if (command === "find") {
+      const resolved = resolveRequestAllowance("list", findArgs?.allowance);
+      const settings = resolved.settings;
+      const allowance =
+        resolved.status === "ok"
+          ? (resolved.requested ?? settings.defaultTokens)
+          : settings.defaultTokens;
+      const outcome = await discoverFindBatch(requestArgs, context, {
+        allowance,
+        validationAllowance: settings.defaultTokens,
+        maximumAllowance: settings.ceilingTokens,
+        measure: findCliMeasure,
+        metadataBytes: (text, isError) =>
+          Buffer.byteLength(findCliResponse(text, isError), "utf8"),
+        backend: () =>
+          Promise.reject(new Error("unreachable after parser rejection")),
+        hasRtk: true,
+      });
+      process.exitCode = 1;
+      console.log(findCliResponse(outcome.content, true).trimEnd());
+      return;
+    }
     console.error(formatProxyFailure(error));
     process.exitCode = 1;
     return;
@@ -118,6 +199,67 @@ export async function runRtkProxy(
     );
     return;
   }
+  if (command === "find") {
+    const resolved = resolveRequestAllowance("list", findArgs?.allowance);
+    const settings = resolved.settings;
+    const allowance =
+      resolved.status === "ok"
+        ? (resolved.requested ?? settings.defaultTokens)
+        : settings.defaultTokens;
+    const validationFailure = getFindValidationFailure(
+      findCliMeasure,
+      settings.ceilingTokens,
+      settings.defaultTokens,
+      undefined,
+      resolved.status === "invalid"
+        ? "usage_error: Allowance must be a positive whole number."
+        : resolved.status === "over_ceiling"
+          ? `usage_error: Allowance exceeds the configured ceiling; configured ceiling is ${settings.ceilingTokens} tokens.`
+          : undefined,
+    );
+    const outcome =
+      resolved.status !== "ok"
+        ? {
+            status:
+              resolved.status === "over_ceiling"
+                ? ("output_limit_exceeded" as const)
+                : ("usage_error" as const),
+            content: getFindValidationText(validationFailure),
+            isError: true,
+          }
+        : allowance < validationFailure.tokens
+          ? {
+              status: "usage_error" as const,
+              content: getFindValidationText(validationFailure),
+              isError: true,
+            }
+          : await discoverFindBatch(requestArgs, context, {
+              allowance,
+              validationAllowance: settings.defaultTokens,
+              maximumAllowance: settings.ceilingTokens,
+              increaseHint:
+                settings.ceilingTokens > allowance
+                  ? ` A larger allowance up to ${settings.ceilingTokens} tokens is supported.`
+                  : "",
+              measure: findCliMeasure,
+              metadataBytes: (text, isError) =>
+                Buffer.byteLength(findCliResponse(text, isError), "utf8"),
+              hasRtk: await isRtkAvailable(),
+              backend: async (operand, predicates) => {
+                const result = await executeRtkCommand(
+                  "find",
+                  [operand, ...predicates],
+                  context,
+                );
+                if (!result.available) throw new Error("RTK unavailable");
+                return { stdout: result.stdout, exitCode: result.exitCode };
+              },
+            });
+    if (outcome.status === "partial_result" || outcome.isError)
+      process.exitCode = 1;
+    console.log(findCliResponse(outcome.content, outcome.isError).trimEnd());
+    return;
+  }
   if (
     command === "git" &&
     rawArgs[0] === "diff" &&
@@ -147,9 +289,7 @@ export async function runRtkProxy(
     result = await executeRtkCommand(command, rawArgs, context);
   } catch (error: unknown) {
     console.error(
-      (command === "git" && rawArgs[0] === "status") ||
-        command === "ls" ||
-        command === "find"
+      command === "git" && rawArgs[0] === "status"
         ? "RTK listing failed before output could be checked."
         : formatProxyFailure(error),
     );
@@ -167,30 +307,6 @@ export async function runRtkProxy(
       ].join("\n"),
     );
     process.exitCode = 1;
-    return;
-  }
-
-  if (command === "find") {
-    const outcome = await renderDiscoveryOutcome(
-      result,
-      rawArgs[0]?.startsWith("-") ? "." : rawArgs[0],
-      context,
-      "find",
-    );
-    if (outcome.status === "failure") {
-      process.exitCode = outcome.exitCode;
-      console.log(
-        formatProxyOutput(command, outcome.message, {
-          exitCode: outcome.exitCode,
-        }),
-      );
-      return;
-    }
-    console.log(
-      formatProxyOutput(command, outcome.content, {
-        truncated: outcome.truncated,
-      }),
-    );
     return;
   }
 
