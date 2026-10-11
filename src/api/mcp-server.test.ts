@@ -108,12 +108,11 @@ describe("TOOL_REGISTRY", () => {
       const result = await TOOL_REGISTRY.spekta_shell.handler({
         command: "ls",
       });
-      expect(result).toEqual({
-        isError: true,
-        content: [
-          { type: "text", text: "RTK command failed with exit status 7." },
-        ],
-      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        "Operand 1: internal_failure; listing failed",
+      );
+      expect(result.content[0].text).not.toContain("USEFUL_STDERR");
     },
   );
 
@@ -121,7 +120,9 @@ describe("TOOL_REGISTRY", () => {
     vi.mocked(executeRtkCommand).mockResolvedValueOnce({ available: false });
     const result = await TOOL_REGISTRY.spekta_shell.handler({ command: "ls" });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/rtk[\s\S]*not found/i);
+    expect(result.content[0].text).toBe(
+      "RTK listing failed before output could be checked.",
+    );
   });
 
   it("returns safe bounded diagnostics for thrown execution errors", async () => {
@@ -134,12 +135,60 @@ describe("TOOL_REGISTRY", () => {
     const result = await TOOL_REGISTRY.spekta_shell.handler({ command: "ls" });
     expect(result.isError).toBe(true);
     const output = result.content[0].text;
-    expect(output).toContain("RTK listing failed");
+    expect(output).toContain("Operand 1: internal_failure; listing failed");
     expect(output).not.toContain("USEFUL_START");
     expect(output).not.toContain("USEFUL_STDERR");
     expect(output).not.toContain("failure line");
     expect(output).not.toContain(secret);
     expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
+  });
+
+  it("accepts allowance only for ls and forwards it through the list batch", async () => {
+    const shell = TOOL_REGISTRY.spekta_shell;
+    expect(
+      shell.schema({}).parse({ command: "ls", args: ["."], allowance: 250 }),
+    ).toEqual({ command: "ls", args: ["."], allowance: 250 });
+    const wrongCommand = await shell.handler({
+      command: "git",
+      args: ["status"],
+      allowance: 250,
+    });
+    expect(wrongCommand.isError).toBe(true);
+    expect(wrongCommand.content[0].text).toContain("only for ls");
+    expect(executeRtkCommand).not.toHaveBeenCalled();
+
+    const invalid = await shell.handler({ command: "ls", allowance: -1 });
+    expect(invalid.isError).toBe(true);
+    expect(invalid.content[0].text).toContain("positive whole number");
+    expect(executeRtkCommand).not.toHaveBeenCalled();
+
+    const root = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "spekta-mcp-list-allowance-")),
+    );
+    try {
+      fs.ensureDirSync(path.join(root, "directory"));
+      fs.writeFileSync(path.join(root, "directory", "visible.txt"), "x");
+      vi.mocked(executeRtkCommand).mockResolvedValueOnce({
+        available: true,
+        stdout: "visible.txt\n",
+        stderr: "",
+        exitCode: 0,
+      });
+      const listed = await createToolRegistry({ root }).spekta_shell.handler({
+        command: "ls",
+        args: ["directory"],
+        allowance: 800,
+      });
+      expect(listed.isError).toBe(false);
+      expect(listed.content[0].text).toContain(
+        'Operand 1: returned; "directory"',
+      );
+      expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["directory"], {
+        root,
+      });
+    } finally {
+      fs.removeSync(root);
+    }
   });
 
   it("defines spekta_rg with separate pattern and path arrays", async () => {
@@ -319,6 +368,7 @@ describe("TOOL_REGISTRY", () => {
       "",
       undefined,
       undefined,
+      false,
     );
     expect(getRgOutcome).toHaveBeenCalledWith(
       {
@@ -366,6 +416,7 @@ describe("TOOL_REGISTRY", () => {
       "",
       undefined,
       undefined,
+      false,
     );
   });
 
@@ -389,6 +440,7 @@ describe("TOOL_REGISTRY", () => {
       "",
       undefined,
       version,
+      false,
     );
   });
 
@@ -447,10 +499,15 @@ describe("TOOL_REGISTRY", () => {
         args: [],
       });
 
-      expect(executeRtkCommand).toHaveBeenCalledWith("ls", [], { root });
+      expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["."], { root });
       expect(result).toEqual({
         isError: false,
-        content: [{ type: "text", text: '"visible.txt"' }],
+        content: [
+          {
+            type: "text",
+            text: 'Batch: success\nOperand 1: returned; "."\n"visible.txt"\n',
+          },
+        ],
       });
     } finally {
       fs.removeSync(root);

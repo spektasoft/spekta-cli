@@ -66,6 +66,18 @@ export function getReadTokenLimit(): number {
   return parsed;
 }
 
+export function getListTokenLimit(): number {
+  const raw = getEnvValue("SPEKTA_LIST_TOKEN_LIMIT", "1000");
+  const parsed = parseInt(raw, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    console.warn(
+      `Invalid SPEKTA_LIST_TOKEN_LIMIT value "${raw}", falling back to 1000`,
+    );
+    return 1000;
+  }
+  return parsed;
+}
+
 export function getGrepTokenLimit(): number {
   const raw = getEnvValue("SPEKTA_GREP_TOKEN_LIMIT", "2000");
   const parsed = parseInt(raw, 10);

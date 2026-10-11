@@ -1,6 +1,11 @@
-import { getEnvValue, getGrepTokenLimit, getReadTokenLimit } from "./env";
+import {
+  getEnvValue,
+  getGrepTokenLimit,
+  getListTokenLimit,
+  getReadTokenLimit,
+} from "./env";
 
-export type AllowanceFamily = "read" | "search";
+export type AllowanceFamily = "read" | "search" | "list";
 
 export interface AllowanceSettings {
   family: AllowanceFamily;
@@ -21,6 +26,12 @@ const FAMILIES = {
     ceilingFallback: 8000,
     honorsRequestAllowance: true,
     getDefault: getReadTokenLimit,
+  },
+  list: {
+    ceilingEnv: "SPEKTA_LIST_TOKEN_CEILING",
+    ceilingFallback: 8000,
+    honorsRequestAllowance: true,
+    getDefault: getListTokenLimit,
   },
   search: {
     ceilingEnv: "SPEKTA_GREP_TOKEN_CEILING",

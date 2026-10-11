@@ -308,11 +308,13 @@ describe("CLI help before initialization", () => {
     [
       "ls",
       [
-        "existing directory relative to the workspace",
-        "defaults to .",
-        "no operational options",
-        "eligible entries",
-        "1,000-token response budget",
+        "spekta ls [--allowance <tokens>] [directory...]",
+        "one or more literal directory paths",
+        "no directory, ls lists .",
+        "no eligible entries in this listing",
+        "marked incomplete",
+        "SPEKTA_LIST_TOKEN_LIMIT (1000)",
+        "SPEKTA_LIST_TOKEN_CEILING (8000)",
         "spekta ls src",
       ],
     ],

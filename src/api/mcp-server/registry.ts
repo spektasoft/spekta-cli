@@ -33,6 +33,13 @@ import {
 } from "../../commands/proxy/proxy-policy";
 import { executeRtkCommand } from "../../commands/proxy/proxy-execution";
 import { renderDiscoveryOutcome } from "../../commands/proxy/proxy-ls-render";
+import {
+  getListBatchOutcome,
+  listContentAllowance,
+  listAllowanceIncreaseHint,
+  resolveListAllowance,
+  RtkListingUnavailableError,
+} from "../../commands/proxy/proxy-ls-batch";
 import { ToolDefinition } from "../../core/config";
 import { getOutcomeText } from "../../core/operation-outcome";
 import type { WorkspaceContext } from "../../utils/workspace";
@@ -286,14 +293,37 @@ const registry: Record<string, ToolRegistryEntry> = {
         args: z
           .array(z.string())
           .optional()
-          .describe(params?.args?.description || ""),
+          .describe(
+            params?.args?.description ||
+              "Command arguments; for ls, supply zero or more literal workspace directories (zero uses .).",
+          ),
+        allowance: z
+          .number()
+          .optional()
+          .describe(
+            params?.allowance?.description ||
+              "Optional positive whole-number response allowance in tokens. Applies only to ls and is bounded by the configured list ceiling.",
+          ),
       }),
     handler: async (rawArgs, context) => {
-      const { command, args } = rawArgs as {
+      const { command, args, allowance } = rawArgs as {
         command: string;
         args?: string[];
+        allowance?: unknown;
       };
       const cleanArgs = args ?? [];
+
+      if (Object.hasOwn(rawArgs, "allowance") && command !== "ls") {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: "usage_error: Allowance is supported only for ls. Use spekta help ls.",
+            },
+          ],
+        };
+      }
 
       try {
         validateProxyRequest(command, cleanArgs, context);
@@ -301,6 +331,37 @@ const registry: Record<string, ToolRegistryEntry> = {
         return {
           isError: true,
           content: [{ type: "text", text: formatProxyFailure(error) }],
+        };
+      }
+      if (command === "ls") {
+        const resolvedAllowance = resolveListAllowance(allowance);
+        if (resolvedAllowance.failure) {
+          return {
+            isError: true,
+            content: [
+              { type: "text", text: resolvedAllowance.failure.message },
+            ],
+          };
+        }
+        const tokenAllowance = resolvedAllowance.allowance ?? 1000;
+        const outcome = await getListBatchOutcome(cleanArgs, context, {
+          allowance: listContentAllowance(tokenAllowance),
+          increaseHint: listAllowanceIncreaseHint(tokenAllowance),
+          runLs: async (operand) => {
+            const listed = await executeRtkCommand("ls", [operand], context);
+            if (!listed.available) throw new RtkListingUnavailableError();
+            return { stdout: listed.stdout, exitCode: listed.exitCode };
+          },
+        });
+        if (outcome.status === "failure") {
+          return {
+            isError: true,
+            content: [{ type: "text", text: outcome.message }],
+          };
+        }
+        return {
+          isError: outcome.status === "partial_result",
+          content: [{ type: "text", text: outcome.content }],
         };
       }
       if (command === "git" && isGitHistoryPatchRequest(cleanArgs)) {
@@ -358,7 +419,6 @@ const registry: Record<string, ToolRegistryEntry> = {
           ],
         };
       }
-
       if (!result.available) {
         return {
           isError: true,
@@ -371,12 +431,12 @@ const registry: Record<string, ToolRegistryEntry> = {
         };
       }
 
-      if (command === "ls" || command === "find") {
+      if (command === "find") {
         const outcome = await renderDiscoveryOutcome(
           result,
           cleanArgs[0]?.startsWith("-") ? "." : cleanArgs[0],
           context,
-          command,
+          "find",
         );
         return outcome.status === "failure"
           ? {

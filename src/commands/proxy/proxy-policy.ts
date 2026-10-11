@@ -1,6 +1,3 @@
-import fs from "fs-extra";
-import path from "path";
-import { validateCommandArguments } from "./proxy-path-security";
 import type { WorkspaceContext } from "../../utils/workspace";
 import { redactSecrets } from "./proxy-secret-redaction";
 import { truncateOutput } from "./proxy-output";
@@ -32,30 +29,14 @@ export function validateProxyRequest(
   }
   const option = args.find((arg) => arg.startsWith("-"));
   if (option !== undefined) {
-    throw new Error(`Execution refused: unsupported option '${option}'.`);
-  }
-  if (args.length > 1) {
     throw new Error(
-      "Execution refused: ls supports at most one workspace-directory operand.",
+      "usage_error: Unsupported option for ls. Use spekta help ls.",
     );
   }
-  const directory = args[0] ?? ".";
-  if (directory === "" || /[\0\r\n]/.test(directory)) {
+  if (
+    args.some((directory) => directory === "" || /[\0\r\n]/.test(directory))
+  ) {
     throw new Error("Execution refused: invalid directory operand.");
-  }
-  validateCommandArguments([directory], context);
-  let isDirectory = false;
-  try {
-    isDirectory = fs
-      .statSync(path.resolve(context?.root ?? process.cwd(), directory))
-      .isDirectory();
-  } catch {
-    // Missing, broken, or inaccessible operands fail closed.
-  }
-  if (!isDirectory) {
-    throw new Error(
-      `Execution refused: '${directory}' must be an existing workspace directory.`,
-    );
   }
 }
 
@@ -65,7 +46,9 @@ export function isSupportedDiscoveryRequest(
   args: string[],
 ): boolean {
   if (command === "ls")
-    return args.length <= 1 && !args.some((arg) => arg.startsWith("-"));
+    return !args.some(
+      (arg) => arg.startsWith("-") || arg === "" || /[\0\r\n]/.test(arg),
+    );
   if (command !== "find") return false;
 
   let index = args.length > 0 && !args[0].startsWith("-") ? 1 : 0;

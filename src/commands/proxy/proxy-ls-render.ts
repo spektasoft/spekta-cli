@@ -5,11 +5,10 @@ import {
 } from "../../utils/workspace";
 import { getTokenCount } from "../../utils/read-utils";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
-import { filterEligibleLsEntries } from "./proxy-ls";
 import { filterEligibleFindEntries } from "./proxy-find-disclosure";
 import { redactSecrets } from "./proxy-secret-redaction";
 
-const DISCOVERY_RESPONSE_TOKEN_LIMIT = 1000;
+const FIND_RESPONSE_TOKEN_LIMIT = 1000;
 
 export type DiscoveryRenderOutcome =
   | { status: "success"; content: string; truncated: boolean }
@@ -20,15 +19,15 @@ function failure(message: string, exitCode = 1): DiscoveryRenderOutcome {
 }
 
 /**
- * Turn raw physical find or escaped ls output into the shared CLI/MCP listing. Entries
- * are filtered for eligibility before redaction and budgeting. Child stdout and
+ * Turn raw physical find output into the shared CLI/MCP listing. Entries are
+ * filtered for eligibility before redaction and budgeting. Child stdout and
  * stderr are never forwarded on failure, because either may name denied entries.
  */
 export async function renderDiscoveryOutcome(
   result: { stdout: string; exitCode: number },
   directory: string | undefined,
   context?: WorkspaceContext,
-  command: "ls" | "find" = "ls",
+  command: "find" = "find",
 ): Promise<DiscoveryRenderOutcome> {
   if (result.exitCode !== 0) {
     return failure(
@@ -44,9 +43,11 @@ export async function renderDiscoveryOutcome(
     return failure("Listing rejected by workspace policy.");
   }
 
-  const filtered = await (command === "find"
-    ? filterEligibleFindEntries(result.stdout, directory ?? ".", workspace)
-    : filterEligibleLsEntries(result.stdout, directory ?? ".", workspace));
+  const filtered = await filterEligibleFindEntries(
+    result.stdout,
+    directory ?? ".",
+    workspace,
+  );
   if (filtered.status === "ambiguous") return failure(filtered.message);
 
   // One JSON string per line keeps unusual names (including newlines and
@@ -54,7 +55,6 @@ export async function renderDiscoveryOutcome(
   const listing = redactSecrets(
     filtered.names
       .map((name) =>
-        command === "find" &&
         !Array.from(name).some(
           (char) => char.charCodeAt(0) < 32 || char === "`",
         )
@@ -66,14 +66,13 @@ export async function renderDiscoveryOutcome(
 
   // The budget covers the complete CLI response: heading, badges, fences, and
   // the newline added by console.log. MCP text is a strict subset of it.
-  let budget = DISCOVERY_RESPONSE_TOKEN_LIMIT;
+  let budget = FIND_RESPONSE_TOKEN_LIMIT;
   while (budget >= 1) {
     const truncated = truncateOutput(listing, budget);
     const rendered = formatProxyOutput(command, truncated.content, {
       truncated: truncated.truncated,
     });
-    const over =
-      getTokenCount(`${rendered}\n`) - DISCOVERY_RESPONSE_TOKEN_LIMIT;
+    const over = getTokenCount(`${rendered}\n`) - FIND_RESPONSE_TOKEN_LIMIT;
     if (over <= 0) {
       return {
         status: "success",

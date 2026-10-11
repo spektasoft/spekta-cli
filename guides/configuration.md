@@ -27,6 +27,8 @@ You can configure the following environment variables to customize `spekta`'s be
 - `SPEKTA_COMPACT_THRESHOLD`: The token threshold above which content is compacted. Defaults to `500`.
 - `SPEKTA_GREP_TOKEN_LIMIT`: The maximum complete response size for `spekta rg`, in tokens. The historical variable name is retained; no configuration rename is required. Defaults to `2000`. Search is also bounded by 500 matches and 100 files.
 - `SPEKTA_READ_TOKEN_LIMIT`: The maximum number of tokens to read from a file. Defaults to `1000`.
+- `SPEKTA_LIST_TOKEN_LIMIT`: The default response allowance for `spekta ls`, in tokens. Defaults to `1000`.
+- `SPEKTA_LIST_TOKEN_CEILING`: The maximum per-request allowance for `spekta ls`, in tokens. Defaults to `8000` and cannot be lower than the configured default allowance.
 
 ## Configuring providers
 

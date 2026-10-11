@@ -48,6 +48,8 @@ beforeAll(() => {
 describe("Codex inspection hook parser", () => {
   it.each([
     ["ls", "'spekta' 'ls'"],
+    ["ls missing-dir", "'spekta' 'ls' 'missing-dir'"],
+    ["ls a b", "'spekta' 'ls' 'a' 'b'"],
     ["ls src", "'spekta' 'ls' 'src'"],
     ["find", "'spekta' 'find'"],
     [
@@ -170,7 +172,9 @@ describe("Codex inspection hook parser", () => {
     "rtk ls",
     "rtk rg --no-config needle",
     "ls --",
-    "ls a b",
+    "ls -l",
+    "ls --allowance 100 a",
+    'ls ""',
     "ls;whoami",
     "ls | cat",
     "ls >file",

@@ -4,6 +4,8 @@ import { resolveAllowanceSettings, resolveRequestAllowance } from "./allowance";
 const KEYS = [
   "SPEKTA_READ_TOKEN_LIMIT",
   "SPEKTA_READ_TOKEN_CEILING",
+  "SPEKTA_LIST_TOKEN_LIMIT",
+  "SPEKTA_LIST_TOKEN_CEILING",
   "SPEKTA_GREP_TOKEN_LIMIT",
   "SPEKTA_GREP_TOKEN_CEILING",
 ];
@@ -28,6 +30,11 @@ describe("resolveAllowanceSettings", () => {
       ceilingTokens: 8000,
       honorsRequestAllowance: true,
     });
+    expect(resolveAllowanceSettings("list")).toMatchObject({
+      defaultTokens: 1000,
+      ceilingTokens: 8000,
+      honorsRequestAllowance: true,
+    });
     expect(resolveAllowanceSettings("search")).toMatchObject({
       defaultTokens: 2000,
       ceilingTokens: 16000,
@@ -40,6 +47,13 @@ describe("resolveAllowanceSettings", () => {
     expect(resolveAllowanceSettings("read").ceilingTokens).toBe(900);
     process.env.SPEKTA_READ_TOKEN_CEILING = "50";
     expect(resolveAllowanceSettings("read").ceilingTokens).toBe(300);
+  });
+  it("uses list-specific default and ceiling configuration", () => {
+    process.env.SPEKTA_LIST_TOKEN_LIMIT = "300";
+    process.env.SPEKTA_LIST_TOKEN_CEILING = "900";
+    expect(resolveAllowanceSettings("list").ceilingTokens).toBe(900);
+    process.env.SPEKTA_LIST_TOKEN_CEILING = "50";
+    expect(resolveAllowanceSettings("list").ceilingTokens).toBe(300);
   });
   it("uses the fallback for invalid ceilings", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -74,5 +88,13 @@ describe("resolveRequestAllowance", () => {
     ]) {
       expect(resolveRequestAllowance("read", value).status).toBe("invalid");
     }
+  });
+  it("resolves omitted, invalid, and over-ceiling list allowances", () => {
+    expect(resolveRequestAllowance("list", undefined)).toMatchObject({
+      status: "ok",
+      settings: { defaultTokens: 1000 },
+    });
+    expect(resolveRequestAllowance("list", "bad").status).toBe("invalid");
+    expect(resolveRequestAllowance("list", 8001).status).toBe("over_ceiling");
   });
 });

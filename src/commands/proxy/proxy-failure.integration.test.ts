@@ -130,15 +130,15 @@ async function both(args: string[] = []) {
 }
 
 describe.sequential("real subprocess proxy failure reporting", () => {
-  it("preserves success status and safe condensed eligible output", async () => {
+  it("marks over-budget eligible output incomplete without leaking child output", async () => {
     installRtk("success");
     const { cli, mcp } = await both();
-    expect(cli.exitCode).toBe(0);
-    expect(mcp.isError).toBe(false);
+    expect(cli.exitCode).toBe(1);
+    expect(mcp.isError).toBe(true);
     for (const output of [cli.stdout, mcp.content[0].text]) {
       expect(output).toContain("USEFUL_START");
-      expect(output).toContain("USEFUL_END");
-      expect(output).toMatch(/lines collapsed/);
+      expect(output).toContain("Operand 1: incomplete; output_limit_exceeded");
+      expect(output).toContain("Listing incomplete.");
       expect(output).not.toContain(secret);
       expect(output).not.toContain("USEFUL_STDERR");
     }
@@ -147,15 +147,15 @@ describe.sequential("real subprocess proxy failure reporting", () => {
     expect(cli.stderr).toBe("");
   }, 30000);
 
-  it("reports a failing child by status only", async () => {
+  it("reports a nonzero RTK exit as a safe per-operand failure", async () => {
     installRtk("failure");
     const { cli, mcp } = await both();
-    expect(cli.exitCode).toBe(7);
-    expect(cli.stdout).toContain("[FAILED: Exit 7]");
+    expect(cli.exitCode).toBe(1);
+    expect(cli.stdout).toContain("Operand 1: internal_failure; listing failed");
     expect(cli.stderr).toBe("");
     expect(mcp.isError).toBe(true);
     for (const output of [cli.stdout, mcp.content[0].text]) {
-      expect(output).toMatch(/status 7/);
+      expect(output).toContain("internal_failure; listing failed");
       expect(output).not.toContain("USEFUL");
       expect(output).not.toContain(secret);
     }
@@ -167,19 +167,32 @@ describe.sequential("real subprocess proxy failure reporting", () => {
       installRtk(mode);
       const { cli, mcp } = await both();
       expect(cli.exitCode).toBe(1);
-      expect(cli.stdout).toBe("");
-      expect(cli.stderr).not.toBe("");
       expect(mcp.isError).toBe(true);
       expect(mcp.content[0].text).not.toBe("");
-      for (const output of [cli.stderr, mcp.content[0].text]) {
+      if (mode === "missing") {
+        expect(cli.stdout).toBe("");
+        expect(cli.stderr).toContain(
+          "RTK listing failed before output could be checked.",
+        );
+      } else {
+        expect(cli.stdout).toContain(
+          "Operand 1: internal_failure; listing failed",
+        );
+        expect(cli.stderr).toBe("");
+      }
+      for (const output of [
+        mode === "missing" ? cli.stderr : cli.stdout,
+        mcp.content[0].text,
+      ]) {
         expect(output).not.toContain(secret);
         expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
         if (mode === "missing") {
-          expect(output).toMatch(/rtk/i);
-          expect(output).toMatch(/not found|missing/i);
+          expect(output).toContain(
+            "RTK listing failed before output could be checked.",
+          );
         }
-        if (mode === "signal") {
-          expect(output).toContain("RTK listing failed");
+        if (mode !== "missing") {
+          expect(output).toContain("internal_failure; listing failed");
           expect(output).not.toContain("USEFUL_STDERR");
         }
       }

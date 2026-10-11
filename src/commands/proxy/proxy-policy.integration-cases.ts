@@ -1,9 +1,7 @@
 import { rejectedGitRequests } from "./proxy-git.test-fixtures";
 import { proxySecret as secret } from "./proxy-rejection.integration-helper";
 
-export function rejectedPolicyRequests(
-  workspace: string,
-): Array<[string, string[], RegExp]> {
+export function rejectedPolicyRequests(): Array<[string, string[], RegExp]> {
   const requests: Array<[string, string[], RegExp]> = [
     ["unknown-command", [], /unsupported command/i],
     [secret, [], /unsupported command/i],
@@ -41,27 +39,9 @@ export function rejectedPolicyRequests(
       ["run", "build", "--spekta-force"],
       /unsupported option.*--spekta-force/i,
     ],
-    ["ls", [".", "directory"], /at most one/i],
     ["ls", [""], /invalid directory operand/i],
-    ["ls", ["file.txt"], /existing workspace directory/i],
-    ["ls", ["missing"], /existing workspace directory/i],
-    ["ls", [".env"], /restricted/i],
-    ["ls", [".gitignore"], /restricted/i],
-    ["ls", [".spektaignore"], /restricted/i],
-    ["ls", [".env/child"], /restricted/i],
-    ["ls", ["restricted-alias"], /restricted/i],
-    ["ls", ["../outside"], /outside the project directory/i],
-    ["ls", [workspace], /outside the project directory/i],
-    ["ls", ["C:/outside"], /outside the project directory/i],
-    ["ls", [String.raw`C:\outside`], /outside the project directory/i],
-    [
-      "ls",
-      [String.raw`\\server\share\outside`],
-      /outside the project directory/i,
-    ],
-    ["ls", ["escape"], /outside the project directory/i],
-    ["ls", ["escape/missing/child"], /outside the project directory/i],
-    ["ls", [`../${secret}`], /outside the project directory/i],
+    ["ls", ["line\nbreak"], /invalid directory operand/i],
+    ["ls", ["nul\0byte"], /invalid directory operand/i],
   ];
   requests.push(
     ...rejectedGitRequests.map(([args, reason]): [string, string[], RegExp] => [
