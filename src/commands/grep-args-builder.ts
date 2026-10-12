@@ -11,6 +11,7 @@ export interface GrepOptions {
   globs?: string | string[];
   case_insensitive?: boolean;
   case_mode?: "insensitive" | "sensitive" | "smart";
+  responseTokenLimit?: number;
 }
 
 async function buildIgnoreArgs(

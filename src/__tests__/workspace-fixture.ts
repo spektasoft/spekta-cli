@@ -20,6 +20,7 @@ export async function createWorkspaceFixture() {
     "SPEKTA_ASSET_ROOT_OVERRIDE",
     "SPEKTA_READ_TOKEN_LIMIT",
     "SPEKTA_GREP_TOKEN_LIMIT",
+    "SPEKTA_GREP_TOKEN_CEILING",
     "SPEKTA_COMPACT_THRESHOLD",
     "RIPGREP_CONFIG_PATH",
   ] as const;

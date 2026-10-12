@@ -45,10 +45,28 @@ export interface GrepOutputContext {
   canonicalSearchPaths?: string[];
   requestedSearchPaths?: string[];
   responseId?: string | number;
+  responseTokenLimit?: number;
 }
 
 const OUTPUT_LIMIT_GUIDANCE =
-  "Search results exceed the response budget; all matches were withheld. Choose a relevant symbol or behavior, narrow the path, pattern, or glob, or read selected files.";
+  "output_limit_exceeded: All matches were withheld. Narrow with a symbol or pattern (`-e 'class Name'`), a path (`src/module/file.ts`), or a glob (`-g '*.ts'`).";
+
+export function getGrepMinimumResponseTokens(
+  responseId?: string | number,
+): number {
+  const failureTokens = (message: string) =>
+    Math.max(
+      getGrepResponseTokenCount(message, responseId, true),
+      getTokenCount(`[ERROR] ${message}\n`),
+    );
+  return Math.max(
+    failureTokens(OUTPUT_LIMIT_GUIDANCE),
+    getGrepResponseTokenCount("no_matches: No matches found.", responseId),
+    failureTokens("internal_failure: Search engine failed."),
+    failureTokens("usage_error: Search request is invalid."),
+    failureTokens("unavailable_access: Search target is unavailable."),
+  );
+}
 
 /** Count the CLI line and, when an MCP request ID is known, its full response. */
 export function getGrepResponseTokenCount(
@@ -60,8 +78,8 @@ export function getGrepResponseTokenCount(
   if (responseId === undefined) return cliTokens;
   const mcpResponse = JSON.stringify({
     result: {
-      ...(isError ? { isError: true } : {}),
       content: [{ type: "text", text }],
+      ...(isError ? { isError: true } : {}),
     },
     jsonrpc: "2.0",
     id: responseId,
@@ -74,7 +92,10 @@ function boundedMessage(
   tokenLimit: number,
   responseId?: string | number,
 ): string {
-  const isFailure = message.startsWith("Ripgrep error:");
+  const isFailure =
+    /^(?:internal_failure|usage_error|unavailable_access|output_limit_exceeded):/.test(
+      message,
+    );
   if (
     getGrepResponseTokenCount(message, responseId, isFailure) <= tokenLimit &&
     (!isFailure || getTokenCount(`[ERROR] ${message}\n`) <= tokenLimit)
@@ -82,8 +103,12 @@ function boundedMessage(
     return message;
   }
   const shortMessages = isFailure
-    ? ["Search failed.", "Failed.", "Error.", ""]
-    : ["No matches found.", "No matches.", "No match.", ""];
+    ? [
+        "internal_failure: Search engine failed.",
+        "internal_failure: Failed.",
+        "",
+      ]
+    : ["no_matches: No matches found.", "no_matches: No matches.", ""];
   return (
     shortMessages.find(
       (candidate) =>
@@ -110,9 +135,20 @@ export async function parseGrepOutput(
   child: GrepChildProcess,
   context?: GrepOutputContext,
 ): Promise<OperationOutcome<string>> {
+  // Attach a rejection handler before consuming stdout so a fast failing child
+  // cannot surface an unhandled rejection while buffered lines are parsed.
+  const childCompletion = Promise.resolve(child).then(
+    () => ({}),
+    (error: unknown) => ({ error }),
+  );
   const resultsByFile: Record<string, string[]> = {};
   let totalMatches = 0;
-  const MAX_GREP_TOKENS = getGrepTokenLimit();
+  const MAX_GREP_TOKENS = context?.responseTokenLimit ?? getGrepTokenLimit();
+  const finalOutcomeReserve = getGrepResponseTokenCount(
+    "success: Search completed with matches.",
+    undefined,
+  );
+  const contentLimit = Math.max(0, MAX_GREP_TOKENS - finalOutcomeReserve);
   let exceeded = false;
   let cancellationRequested = false;
   const eligibilityCache = new Map<string, string | null>();
@@ -234,7 +270,7 @@ export async function parseGrepOutput(
           const candidate = formatResults(resultsByFile);
           if (
             getGrepResponseTokenCount(candidate, context?.responseId) >
-            MAX_GREP_TOKENS
+            contentLimit
           ) {
             resultsByFile[displayPath].pop();
             if (resultsByFile[displayPath].length === 0)
@@ -250,9 +286,9 @@ export async function parseGrepOutput(
     }
   }
 
-  try {
-    await child;
-  } catch (error: unknown) {
+  const completion = await childCompletion;
+  if ("error" in completion) {
+    const error = completion.error;
     const procError = error as ProcessErrorLike;
     const expectedCancellation =
       cancellationRequested &&
@@ -270,7 +306,7 @@ export async function parseGrepOutput(
       return {
         status: "engine_failure",
         message: boundedMessage(
-          `Ripgrep error: Search process failed (${failureDetail}).`,
+          `internal_failure: Search process failed (${failureDetail}).`,
           MAX_GREP_TOKENS,
           context?.responseId,
         ),
@@ -287,7 +323,7 @@ export async function parseGrepOutput(
       : {
           status: "no_matches",
           message: boundedMessage(
-            "No matches found.",
+            "no_matches: No matches found.",
             MAX_GREP_TOKENS,
             context?.responseId,
           ),
@@ -299,7 +335,16 @@ export async function parseGrepOutput(
       status: "output_limit_exceeded",
       message: getOutputLimitGuidance(MAX_GREP_TOKENS, context?.responseId),
     };
-  return { status: "success", value: formatResults(resultsByFile) };
+  const formatted = `success: Search completed with matches.\n${formatResults(resultsByFile)}`;
+  if (
+    getGrepResponseTokenCount(formatted, context?.responseId) > MAX_GREP_TOKENS
+  ) {
+    return {
+      status: "output_limit_exceeded",
+      message: getOutputLimitGuidance(MAX_GREP_TOKENS, context?.responseId),
+    };
+  }
+  return { status: "success", value: formatted };
 }
 
 function getOutputLimitGuidance(
@@ -318,7 +363,11 @@ function getOutputLimitGuidance(
   ];
   return (
     candidates.find(
-      (message) => getGrepResponseTokenCount(message, responseId) <= tokenLimit,
+      (message) =>
+        Math.max(
+          getGrepResponseTokenCount(message, responseId, true),
+          getTokenCount(`[ERROR] ${message}\n`),
+        ) <= tokenLimit,
     ) ?? ""
   );
 }

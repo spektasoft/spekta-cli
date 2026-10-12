@@ -92,11 +92,15 @@ describe("runRg", () => {
     const search = vi.spyOn(grepSearch, "getRgOutcome");
     await runRg(["needle", "-g"]);
     expect(search).not.toHaveBeenCalled();
-    expect(Logger.error).toHaveBeenCalledWith("Option -g requires a glob.");
+    expect(Logger.error).toHaveBeenCalledWith(
+      "usage_error: Option -g requires a glob.",
+    );
 
     await runRg(["needle", "--glob="]);
     expect(search).not.toHaveBeenCalled();
-    expect(Logger.error).toHaveBeenCalledWith("Option --glob requires a glob.");
+    expect(Logger.error).toHaveBeenCalledWith(
+      "usage_error: Option --glob requires a glob.",
+    );
   });
 
   it("accepts dash-prefixed patterns and paths after the option terminator", async () => {
@@ -118,8 +122,37 @@ describe("runRg", () => {
     await runRg(["--json"]);
     expect(search).not.toHaveBeenCalled();
     expect(Logger.error).toHaveBeenCalledWith(
-      "Unsupported ripgrep option: --json",
+      "usage_error: Unsupported ripgrep option.",
     );
+  });
+
+  it("parses one allowance before -- and rejects malformed or repeated values before searching", async () => {
+    const search = vi.spyOn(grepSearch, "getRgOutcome").mockResolvedValue({
+      status: "no_matches",
+      message: "no_matches: No matches found.",
+    });
+    await runRg(["--allowance=1200", "-e", "needle", "--", "-literal"]);
+    expect(search).toHaveBeenCalledWith({
+      patterns: ["needle"],
+      paths: ["-literal"],
+      globs: [],
+      case_mode: "sensitive",
+      allowance: "1200",
+    });
+
+    search.mockClear();
+    await runRg(["needle", "--allowance"]);
+    expect(search).not.toHaveBeenCalled();
+    expect(Logger.error).toHaveBeenCalledWith(
+      "usage_error: --allowance requires a positive whole number.",
+    );
+    await runRg(["--allowance", "100", "--allowance=200", "needle"]);
+    expect(search).not.toHaveBeenCalled();
+    expect(Logger.error).toHaveBeenCalledWith(
+      "usage_error: --allowance may be specified only once.",
+    );
+    await runRg(["needle", "--allowance=1.5"]);
+    expect(search).toHaveBeenCalledOnce();
   });
 
   it("passes standard input paths to the search policy for explicit rejection", async () => {

@@ -38,7 +38,7 @@ describe("resolveAllowanceSettings", () => {
     expect(resolveAllowanceSettings("search")).toMatchObject({
       defaultTokens: 2000,
       ceilingTokens: 16000,
-      honorsRequestAllowance: false,
+      honorsRequestAllowance: true,
     });
   });
   it("honors environment configuration while keeping the default permitted", () => {
@@ -96,5 +96,20 @@ describe("resolveRequestAllowance", () => {
     });
     expect(resolveRequestAllowance("list", "bad").status).toBe("invalid");
     expect(resolveRequestAllowance("list", 8001).status).toBe("over_ceiling");
+  });
+  it("applies search defaults and request allowances through its ceiling", () => {
+    expect(resolveRequestAllowance("search", undefined)).toMatchObject({
+      status: "ok",
+      settings: { defaultTokens: 2000, ceilingTokens: 16000 },
+    });
+    for (const value of [500, 2000, 16000]) {
+      expect(resolveRequestAllowance("search", value)).toMatchObject({
+        status: "ok",
+        requested: value,
+      });
+    }
+    expect(resolveRequestAllowance("search", 16001).status).toBe(
+      "over_ceiling",
+    );
   });
 });

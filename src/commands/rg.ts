@@ -7,6 +7,7 @@ export async function runRg(args?: string[]) {
   const operands: string[] = [];
   const globs: string[] = [];
   let caseMode: "insensitive" | "sensitive" | "smart" = "sensitive";
+  let allowance: string | undefined;
   let endOptions = false;
   const values = args ?? [];
   for (let index = 0; index < values.length; index++) {
@@ -19,9 +20,29 @@ export async function runRg(args?: string[]) {
       endOptions = true;
       continue;
     }
+    if (arg === "--allowance" || arg.startsWith("--allowance=")) {
+      if (allowance !== undefined) {
+        Logger.error("usage_error: --allowance may be specified only once.");
+        process.exitCode = 1;
+        return;
+      }
+      if (arg === "--allowance") {
+        if (index + 1 >= values.length || values[index + 1] === "--") {
+          Logger.error(
+            "usage_error: --allowance requires a positive whole number.",
+          );
+          process.exitCode = 1;
+          return;
+        }
+        allowance = values[++index];
+      } else {
+        allowance = arg.slice("--allowance=".length);
+      }
+      continue;
+    }
     if (arg === "-e" || arg === "--regexp") {
       if (index + 1 >= values.length) {
-        Logger.error(`Option ${arg} requires a pattern.`);
+        Logger.error(`usage_error: Option ${arg} requires a pattern.`);
         process.exitCode = 1;
         return;
       }
@@ -46,13 +67,13 @@ export async function runRg(args?: string[]) {
     }
     if (arg === "-g" || arg === "--glob") {
       if (index + 1 >= values.length) {
-        Logger.error(`Option ${arg} requires a glob.`);
+        Logger.error(`usage_error: Option ${arg} requires a glob.`);
         process.exitCode = 1;
         return;
       }
       const glob = values[++index];
       if (!glob) {
-        Logger.error(`Option ${arg} requires a glob.`);
+        Logger.error(`usage_error: Option ${arg} requires a glob.`);
         process.exitCode = 1;
         return;
       }
@@ -66,7 +87,7 @@ export async function runRg(args?: string[]) {
     if (arg.startsWith("--glob=")) {
       const glob = arg.slice("--glob=".length);
       if (!glob) {
-        Logger.error("Option --glob requires a glob.");
+        Logger.error("usage_error: Option --glob requires a glob.");
         process.exitCode = 1;
         return;
       }
@@ -78,7 +99,7 @@ export async function runRg(args?: string[]) {
       continue;
     }
     if (arg.startsWith("-")) {
-      Logger.error(`Unsupported ripgrep option: ${arg}`);
+      Logger.error("usage_error: Unsupported ripgrep option.");
       process.exitCode = 1;
       return;
     }
@@ -90,7 +111,7 @@ export async function runRg(args?: string[]) {
     finalPatterns.some((pattern) => !pattern.trim())
   ) {
     Logger.error(
-      "A nonempty regular expression is required. Usage: spekta rg [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]...",
+      "usage_error: A nonempty regular expression is required. Usage: spekta rg [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]...",
     );
     process.exitCode = 1;
     return;
@@ -102,12 +123,11 @@ export async function runRg(args?: string[]) {
       paths: operands,
       globs,
       case_mode: caseMode,
+      ...(allowance === undefined ? {} : { allowance }),
     });
-    if (
-      outcome.status === "engine_failure" ||
-      outcome.status === "policy_rejection"
-    ) {
-      if (outcome.message) Logger.error(outcome.message);
+    if (outcome.status !== "success" && outcome.status !== "no_matches") {
+      if ("message" in outcome && outcome.message)
+        Logger.error(outcome.message);
       process.exitCode = 1;
       return;
     }

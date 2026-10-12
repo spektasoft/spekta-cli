@@ -182,7 +182,9 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
   rg: topic(
     "rg — Search eligible workspace files",
     "Search eligible workspace files through RTK with a documented subset of native ripgrep operands.",
-    ["spekta rg [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]..."],
+    [
+      "spekta rg [--allowance TOKENS] [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]...",
+    ],
     [
       {
         heading: "Arguments and behavior",
@@ -197,7 +199,9 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Execution and response budget",
         lines: [
           "Search runs through rtk proxy rg. Missing RTK or ripgrep is reported as an engine failure.",
-          "SPEKTA_GREP_TOKEN_LIMIT (the retained historical setting) defaults to 2000 tokens; results are also bounded by 500 matches and 100 files. Overflow withholds every match and cancels the RTK search process tree.",
+          "SPEKTA_GREP_TOKEN_LIMIT (the retained historical setting) defaults to 2000 tokens. One --allowance TOKENS value may appear before --; it must be a positive whole number no greater than SPEKTA_GREP_TOKEN_CEILING (16000 by default) and covers the complete rendered response. Results are also bounded by 500 matches and 100 files.",
+          "usage_error, unavailable_access, internal_failure, no_matches, and output_limit_exceeded label the public outcome. Failures exit nonzero; no_matches is a complete successful empty search. Overflow withholds every match and cancels the RTK process tree. Narrow with a symbol/pattern (-e 'class Name'), path (src/module/file.ts), or glob (-g '*.ts').",
+          "Accepted requests budget the complete rendered response, including every success, operational failure, and final metadata, to the requested allowance. Rejected invalid, over-ceiling, or too-small allowances use the configured default whenever possible. If mandatory MCP ID echo prevents a nonempty diagnostic from fitting, only the rejected response may exceed the default; its diagnostic body is capped at 64 tokens and contains no matches or request contents. The complete response can grow with the ID and has no absolute cap. Accepted allowances are never enlarged.",
         ],
       },
     ],

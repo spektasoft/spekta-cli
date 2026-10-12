@@ -297,6 +297,13 @@ const registry: Record<string, ToolRegistryEntry> = {
             params.case_mode?.description ||
               "Case matching mode; defaults to sensitive.",
           ),
+        allowance: z
+          .unknown()
+          .optional()
+          .describe(
+            params.allowance?.description ||
+              "Optional complete response allowance in tokens, within the configured search ceiling.",
+          ),
       }),
     handler: async (rawArgs, context, requestId) => {
       const outcome = await getRgOutcome(
@@ -307,6 +314,7 @@ const registry: Record<string, ToolRegistryEntry> = {
           case_mode:
             (rawArgs.case_mode as
               "sensitive" | "insensitive" | "smart" | undefined) ?? "sensitive",
+          allowance: rawArgs.allowance,
         },
         context,
         requestId,
@@ -317,7 +325,9 @@ const registry: Record<string, ToolRegistryEntry> = {
           : outcome.message;
       return {
         ...(outcome.status === "engine_failure" ||
-        outcome.status === "policy_rejection"
+        outcome.status === "policy_rejection" ||
+        outcome.status === "usage_error" ||
+        outcome.status === "output_limit_exceeded"
           ? { isError: true }
           : {}),
         content: [{ type: "text", text }],

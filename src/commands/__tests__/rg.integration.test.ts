@@ -43,7 +43,7 @@ describe("spekta rg public boundaries", () => {
       { patterns: ["needle"], paths: ["-"], globs: [], case_mode: "sensitive" },
       { root: fixture.root },
     );
-    expect(outcome.status).toBe("policy_rejection");
+    expect(outcome.status).toBe("usage_error");
     expect(outcome.message).toContain("Standard input");
   });
 
@@ -260,7 +260,7 @@ describe("spekta rg public boundaries", () => {
       { patterns: ["missing-unique-pattern"] },
       { root: fixture.root },
     );
-    expect(noMatchMcp.content[0]?.text).toBe("No matches found.");
+    expect(noMatchMcp.content[0]?.text).toBe("no_matches: No matches found.");
   });
 
   it("reports missing RTK without exposing process diagnostics", async () => {
@@ -278,7 +278,7 @@ describe("spekta rg public boundaries", () => {
       );
       expect(outcome).toMatchObject({
         status: "engine_failure",
-        message: "Search failed: RTK is unavailable.",
+        message: "internal_failure: Search engine is unavailable.",
       });
       expect(outcome.message).not.toContain(emptyPath);
     } finally {
@@ -306,10 +306,58 @@ describe("spekta rg public boundaries", () => {
       );
       expect(outcome).toMatchObject({
         status: "engine_failure",
-        message: "Search failed: ripgrep is unavailable.",
+        message: "internal_failure: Search engine is unavailable.",
       });
       expect(outcome.message).not.toContain("controlled missing");
       expect(outcome.message).not.toContain(binPath);
+    } finally {
+      await fs.remove(binPath);
+    }
+  });
+
+  it("withholds buffered match data when the search engine fails", async () => {
+    const binPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rtk-buffered-failure-"),
+    );
+    const matchLine = JSON.stringify({
+      type: "match",
+      data: {
+        path: { text: "real.txt" },
+        line_number: 1,
+        submatches: [{ start: 0 }],
+        lines: { text: "needle buffered private match\n" },
+      },
+    });
+    await fs.writeFile(
+      path.join(binPath, "rtk"),
+      `#!/bin/sh
+if [ "$1" = "--version" ]; then exit 0; fi
+if [ "$1" = "proxy" ] && [ "$2" = "rg" ] && [ "$3" = "--version" ]; then exit 0; fi
+if [ "$1" = "proxy" ] && [ "$2" = "rg" ]; then
+  printf '%s\\n' '${matchLine}'
+  printf 'private engine detail\\n' >&2
+  exit 2
+fi
+exit 2
+`,
+      { mode: 0o755 },
+    );
+    process.env.PATH = `${binPath}${path.delimiter}${originalPath ?? ""}`;
+    try {
+      const outcome = await getRgOutcome(
+        {
+          patterns: ["needle"],
+          paths: ["real.txt"],
+          globs: [],
+          case_mode: "sensitive",
+        },
+        { root: fixture.root },
+      );
+      expect(outcome.status).toBe("engine_failure");
+      expect(outcome.message).toContain("internal_failure:");
+      expect(outcome.message).not.toContain("real.txt");
+      expect(outcome.message).not.toContain("buffered private match");
+      expect(outcome.message).not.toContain("private engine detail");
     } finally {
       await fs.remove(binPath);
     }
@@ -423,11 +471,15 @@ setInterval(()=>{}, 1000);
       ),
     );
     const matchWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const matchErrorWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockReturnValue(true);
     await runRg(["needle"]);
-    const matchCli = matchWrite.mock.calls
+    const matchCli = [...matchWrite.mock.calls, ...matchErrorWrite.mock.calls]
       .map(([chunk]) => String(chunk))
       .join("");
     matchWrite.mockRestore();
+    matchErrorWrite.mockRestore();
     const matchMcp = await TOOL_REGISTRY.spekta_rg.handler(
       { patterns: ["needle"] },
       { root: fixture.root },
@@ -453,11 +505,15 @@ setInterval(()=>{}, 1000);
       "needle eligible\n",
     );
     const fileWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const fileErrorWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockReturnValue(true);
     await runRg(["needle"]);
-    const fileCli = fileWrite.mock.calls
+    const fileCli = [...fileWrite.mock.calls, ...fileErrorWrite.mock.calls]
       .map(([chunk]) => String(chunk))
       .join("");
     fileWrite.mockRestore();
+    fileErrorWrite.mockRestore();
     const fileMcp = await TOOL_REGISTRY.spekta_rg.handler(
       { patterns: ["needle"] },
       { root: fixture.root },

@@ -36,7 +36,7 @@ const FAMILIES = {
   search: {
     ceilingEnv: "SPEKTA_GREP_TOKEN_CEILING",
     ceilingFallback: 16000,
-    honorsRequestAllowance: false,
+    honorsRequestAllowance: true,
     getDefault: getGrepTokenLimit,
   },
 } as const;

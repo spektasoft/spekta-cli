@@ -1,8 +1,11 @@
 name: spekta_rg
 description: |
   Search eligible workspace files with ripgrep using Spekta-owned output formatting,
-  workspace and ignore policies, and complete response budgets. This is a documented
-  native ripgrep subset, not full option passthrough.
+  workspace and ignore policies, and complete response budgets for accepted requests.
+  Rejected allowance diagnostics use the configured default when possible; mandatory
+  MCP request-ID echo may exceed it with a diagnostic body of at most 64 tokens. This
+  exception does not enlarge accepted allowances. This is a documented native ripgrep
+  subset, not full option passthrough.
 
 params:
   patterns:
@@ -13,6 +16,8 @@ params:
     description: "Ordered ripgrep glob filters, supplied as separate values; values retain commas and later filters follow native ripgrep precedence."
   case_mode:
     description: "Case mode: sensitive (default), insensitive (-i/--ignore-case), or smart (-S/--smart-case)."
+  allowance:
+    description: "Optional positive whole-number token allowance for the complete rendered response, within SPEKTA_GREP_TOKEN_CEILING (16000 by default)."
 
 xml_example: |
   <rg patterns="[&quot;class ReplSession&quot;,&quot;interface ReplSession&quot;]" paths="[&quot;src&quot;,&quot;docs&quot;]" />

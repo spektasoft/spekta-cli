@@ -26,6 +26,10 @@ You can configure the following environment variables to customize `spekta`'s be
 
 - `SPEKTA_COMPACT_THRESHOLD`: The token threshold above which content is compacted. Defaults to `500`.
 - `SPEKTA_GREP_TOKEN_LIMIT`: The maximum complete response size for `spekta rg`, in tokens. The historical variable name is retained; no configuration rename is required. Defaults to `2000`. Search is also bounded by 500 matches and 100 files.
+- `SPEKTA_GREP_TOKEN_CEILING`: The maximum per-request `spekta rg --allowance` or `spekta_rg.allowance`, in tokens. Defaults to `16000` and cannot be lower than the configured search default.
+
+Accepted search requests budget the complete rendered result, including outcome, formatting, operational failures, and final metadata, to the requested allowance. Invalid, over-ceiling, and too-small requests are rejected before search execution and use the configured default whenever the complete response fits. If mandatory MCP request-ID echo prevents a nonempty diagnostic from fitting, only rejected allowance responses may exceed the default: the response contains the required MCP envelope and a diagnostic body of at most 64 tokens, with no search matches or request contents. The total response can grow with the caller's ID and has no absolute complete-response cap. This exception never enlarges an accepted response allowance.
+
 - `SPEKTA_READ_TOKEN_LIMIT`: The maximum number of tokens to read from a file. Defaults to `1000`.
 - `SPEKTA_LIST_TOKEN_LIMIT`: The default complete-response allowance for `spekta ls` and `spekta find`, in tokens. Defaults to `1000`.
 - `SPEKTA_LIST_TOKEN_CEILING`: The maximum per-request allowance for `spekta ls` and `spekta find`, in tokens. Defaults to `8000` and cannot be lower than the configured default allowance.

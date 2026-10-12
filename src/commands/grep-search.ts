@@ -13,6 +13,7 @@ import {
   getGrepResponseTokenCount,
   parseGrepOutput,
   MAX_MATCHES,
+  getGrepMinimumResponseTokens,
 } from "./grep-output-parser";
 import {
   resolveWorkspace,
@@ -25,6 +26,7 @@ import {
   type FailureOutcome,
   type OperationOutcome,
 } from "../core/operation-outcome";
+import { resolveRequestAllowance } from "../core/config/allowance";
 
 function spawnRtkRg(args: string[], cwd: string, reject = true) {
   const env = { ...process.env };
@@ -41,6 +43,8 @@ function spawnRtkRg(args: string[], cwd: string, reject = true) {
 export type { GrepOptions };
 export { MAX_MATCHES };
 
+export const MAX_ALLOWANCE_REJECTION_DIAGNOSTIC_TOKENS = 64;
+
 /** Stable transport-neutral request shape for the incremental `spekta rg` interface.
  * Arrays preserve repeated patterns, multiple paths and ordered globs without
  * flattening; case mode is an explicit native ripgrep choice.
@@ -51,6 +55,7 @@ export interface SearchRequest {
   paths: string[];
   globs: string[];
   case_mode: SearchCaseMode;
+  allowance?: unknown;
 }
 
 export async function getRgOutcome(
@@ -58,23 +63,55 @@ export async function getRgOutcome(
   workspace?: WorkspaceContext,
   responseId?: string | number,
 ): Promise<OperationOutcome<string>> {
+  const allowance = resolveRequestAllowance("search", request.allowance);
+  if (allowance.status === "invalid") {
+    return failureOutcome(
+      "usage_error",
+      "usage_error: Allowance must be a positive whole number.",
+      responseId,
+      undefined,
+      true,
+    );
+  }
+  if (allowance.status === "over_ceiling") {
+    return failureOutcome(
+      "output_limit_exceeded",
+      `output_limit_exceeded: Allowance exceeds the configured ceiling of ${allowance.settings.ceilingTokens} tokens.`,
+      responseId,
+      undefined,
+      true,
+    );
+  }
+  const responseTokenLimit =
+    allowance.requested ?? allowance.settings.defaultTokens;
+  if (responseTokenLimit < getGrepMinimumResponseTokens(responseId)) {
+    return failureOutcome(
+      "output_limit_exceeded",
+      "output_limit_exceeded: Allowance is too small for a response; use the configured default or a supported allowance within the ceiling.",
+      responseId,
+      undefined,
+      true,
+    );
+  }
+
   if (
     request.patterns.length === 0 ||
-    request.patterns.some((p) => !p.trim())
+    request.patterns.some((pattern) => !pattern.trim())
   ) {
     return failureOutcome(
-      "policy_rejection",
-      "Search patterns cannot be empty or whitespace-only.",
+      "usage_error",
+      "usage_error: Search patterns cannot be empty or whitespace-only.",
       responseId,
     );
   }
   if (request.paths.includes("-")) {
     return failureOutcome(
-      "policy_rejection",
-      "Standard input search paths are not supported.",
+      "usage_error",
+      "usage_error: Standard input search paths are not supported.",
       responseId,
     );
   }
+
   return getGrepOutcome(
     {
       pattern: request.patterns[0],
@@ -82,6 +119,7 @@ export async function getRgOutcome(
       paths: request.paths.length ? request.paths : ["."],
       globs: request.globs,
       case_mode: request.case_mode,
+      responseTokenLimit,
     },
     workspace,
     responseId,
@@ -92,15 +130,66 @@ function failureOutcome(
   status: FailureOutcome["status"],
   message: string,
   responseId?: string | number,
+  responseTokenLimit?: number,
+  allowRejectedAllowanceEnvelopeException = false,
 ): OperationOutcome<string> {
   const configuredLimit = getGrepTokenLimit();
-  const minimumEnvelope =
-    responseId === undefined
-      ? 0
-      : getGrepResponseTokenCount("", responseId, true);
-  const limit = Math.max(configuredLimit, minimumEnvelope);
+  if (
+    !message.startsWith("usage_error:") &&
+    !message.startsWith("unavailable_access:") &&
+    !message.startsWith("internal_failure:") &&
+    !message.startsWith("output_limit_exceeded:")
+  ) {
+    const label =
+      status === "usage_error"
+        ? "usage_error"
+        : status === "policy_rejection"
+          ? "unavailable_access"
+          : status === "output_limit_exceeded"
+            ? "output_limit_exceeded"
+            : "internal_failure";
+    message = `${label}: ${message}`;
+  }
+
+  if (getTokenCount(message) > MAX_ALLOWANCE_REJECTION_DIAGNOSTIC_TOKENS) {
+    message =
+      status === "policy_rejection"
+        ? "unavailable_access: Search target is unavailable or not eligible."
+        : status === "output_limit_exceeded"
+          ? "output_limit_exceeded: All matches were withheld. Narrow the path or pattern."
+          : status === "usage_error"
+            ? "usage_error: Search request is invalid."
+            : "internal_failure: Search engine failed.";
+  }
+
+  let limit = responseTokenLimit ?? configuredLimit;
+  if (
+    responseTokenLimit === undefined &&
+    allowRejectedAllowanceEnvelopeException &&
+    responseId !== undefined &&
+    getGrepResponseTokenCount(message, responseId, true) > configuredLimit
+  ) {
+    const emptyEnvelopeTokens = getGrepResponseTokenCount("", responseId, true);
+    const completeDiagnosticTokens = getGrepResponseTokenCount(
+      message,
+      responseId,
+      true,
+    );
+    const measuredDiagnosticOverhead =
+      completeDiagnosticTokens - emptyEnvelopeTokens;
+    limit = Math.max(
+      configuredLimit,
+      emptyEnvelopeTokens + measuredDiagnosticOverhead,
+    );
+  }
   const fallback =
-    status === "policy_rejection" ? "Search rejected." : "Search failed.";
+    status === "policy_rejection"
+      ? "unavailable_access: Search target is unavailable or not eligible."
+      : status === "output_limit_exceeded"
+        ? "output_limit_exceeded: All matches were withheld. Narrow the path or pattern."
+        : status === "usage_error"
+          ? "usage_error: Search request is invalid."
+          : "internal_failure: Search engine failed.";
   return boundFailureOutcome(status, message, fallback, limit, (candidate) =>
     Math.max(
       getGrepResponseTokenCount(candidate, responseId, true),
@@ -216,6 +305,7 @@ export async function getGrepOutcome(
   responseId?: string | number,
 ): Promise<OperationOutcome<string>> {
   const { pattern, path: legacyPath = "." } = options;
+  const responseTokenLimit = options.responseTokenLimit ?? getGrepTokenLimit();
   const requestedPaths = options.paths ?? [legacyPath];
 
   // SECURITY: Reject empty/whitespace patterns to prevent full-codebase scans
@@ -226,9 +316,10 @@ export async function getGrepOutcome(
     requestedPatterns.some((value) => !value || value.trim() === "")
   ) {
     return failureOutcome(
-      "policy_rejection",
-      "Search pattern cannot be empty or whitespace-only.",
+      "usage_error",
+      "usage_error: Search pattern cannot be empty or whitespace-only.",
       responseId,
+      responseTokenLimit,
     );
   }
 
@@ -244,8 +335,9 @@ export async function getGrepOutcome(
   } catch {
     return failureOutcome(
       "policy_rejection",
-      "Search rejected by workspace policy or the requested location is unavailable.",
+      "unavailable_access: Search target is unavailable or not eligible.",
       responseId,
+      responseTokenLimit,
     );
   }
 
@@ -253,8 +345,9 @@ export async function getGrepOutcome(
     if (!(await isRtkAvailable())) {
       return failureOutcome(
         "engine_failure",
-        "Search failed: RTK is unavailable.",
+        "internal_failure: Search engine is unavailable.",
         responseId,
+        responseTokenLimit,
       );
     }
     const result = await spawnRtkRg(
@@ -265,15 +358,17 @@ export async function getGrepOutcome(
     if (result.exitCode !== 0) {
       return failureOutcome(
         "engine_failure",
-        "Search failed: ripgrep is unavailable.",
+        "internal_failure: Search engine is unavailable.",
         responseId,
+        responseTokenLimit,
       );
     }
   } catch {
     return failureOutcome(
       "engine_failure",
-      "Search failed: ripgrep is unavailable.",
+      "internal_failure: Search engine is unavailable.",
       responseId,
+      responseTokenLimit,
     );
   }
 
@@ -306,19 +401,21 @@ export async function getGrepOutcome(
     }
     const child = spawnRtkRg(args, resolvedWorkspace.canonicalRoot);
 
-    return parseGrepOutput(child, {
+    return await parseGrepOutput(child, {
       workspace: resolvedWorkspace,
       canonicalSearchPath: canonicalSearchPaths[0],
       requestedSearchPath: requestedPaths[0] ?? ".",
       canonicalSearchPaths,
       requestedSearchPaths: requestedPaths,
       responseId,
+      responseTokenLimit,
     });
   } catch {
     return failureOutcome(
       "engine_failure",
-      "Search failed while preparing or running the search engine.",
+      "internal_failure: Search engine failed while preparing or running.",
       responseId,
+      responseTokenLimit,
     );
   }
 }
@@ -329,7 +426,8 @@ export async function getGrepContent(
   workspace?: WorkspaceContext,
 ): Promise<string> {
   const outcome = await getGrepOutcome(options, workspace);
-  if (outcome.status === "success") return outcome.value;
+  if (outcome.status === "success" || outcome.status === "partial_result")
+    return outcome.value;
   if (outcome.status === "engine_failure") throw new Error(outcome.message);
   return outcome.message;
 }

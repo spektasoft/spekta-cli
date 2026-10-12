@@ -6,7 +6,11 @@ Related guides: [README](../README.md) · [Prompts and workflows](workflows.md) 
 
 Use `spekta rg` for searches. Without `-e`/`--regexp`, the first positional operand is a regex pattern and remaining operands are paths. With explicit patterns, all positional operands are paths. Omit paths to search the workspace root recursively. Repeat `-e`/`--regexp` for alternative patterns and `-g`/`--glob` for ordered inclusion or exclusion filters. Glob values remain intact, including commas. Search is case-sensitive by default; `-i`/`--ignore-case`, `-s`/`--case-sensitive`, and `-S`/`--smart-case` select a mode. Use `--` before a literal path that begins with a dash.
 
-The supported CLI subset runs ripgrep through RTK and keeps Spekta's formatting, eligible-file restrictions, and complete response budget. Unsupported ripgrep options, stdin, empty patterns, restricted files, paths outside the workspace, and symlink escapes are rejected. Search responses are bounded by `SPEKTA_GREP_TOKEN_LIMIT` (2000 tokens by default), 500 matches, and 100 files. The environment variable keeps its historical name; no rename is required.
+The supported CLI subset runs ripgrep through RTK and keeps Spekta's formatting, eligible-file restrictions, and complete response budget. One optional `--allowance TOKENS` value may appear before `--`; it must be a positive whole number within `SPEKTA_GREP_TOKEN_CEILING` (16000 by default). Without it, `SPEKTA_GREP_TOKEN_LIMIT` (2000 by default) applies. The complete formatted response, including its final outcome and newline, fits that allowance. Search is also bounded by 500 matches and 100 files. Unsupported ripgrep options, stdin, empty patterns, restricted files, paths outside the workspace, and symlink escapes are rejected.
+
+Outcomes are labeled `usage_error`, `unavailable_access`, `internal_failure`, `no_matches`, or `output_limit_exceeded`; errors exit nonzero, while `no_matches` is a complete empty result. Token, match, and file overflow withholds every match. Narrow with a symbol or regex (`-e 'class Name'`), a file path (`src/module/file.ts`), or a glob (`-g '*.ts'`). MCP `spekta_rg` accepts the same optional allowance field.
+
+Every accepted success or failure uses the accepted allowance for the complete rendered response, including operational failures and final metadata. Invalid, over-ceiling, and too-small allowance requests are rejected before search execution and use the configured default whenever the complete response fits. If mandatory MCP request-ID echo prevents a nonempty diagnostic from fitting, only this rejected-allowance response may exceed the default; it contains the required envelope and a diagnostic body of at most 64 tokens, without matches or request contents. Since valid IDs have no length cap, the complete rejected response can grow with the ID and has no absolute token cap. This exception never increases an accepted allowance.
 
 The MCP equivalent is `spekta_rg`, with `patterns`, `paths`, `globs`, and `case_mode` fields. Existing MCP clients should replace `spekta_grep` and its singular `pattern`, `path`, and comma-separated `globs` with the new tool and array fields. Existing `~/.spekta/tools/grep.yaml` custom definitions are no longer loaded; migrate them to `rg.yaml`, update the definition name and four parameters, and restart Spekta.
 
@@ -22,13 +26,13 @@ Commands without a native Spekta handler and MCP `spekta_shell` requests use one
 
 `find` accepts zero or more roots before predicates. Omitting roots uses `.`; root order and duplicates are preserved. CLI and MCP requests use the same grammar and independent eligibility checks.
 
-| Component      | Supported forms                                                                          |
-| -------------- | ---------------------------------------------------------------------------------------- |
+| Component      | Supported forms                                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | Root           | Zero or more roots before predicates; `.`, relative names, `./-directory`, ordinary parent references, and POSIX absolute paths |
-| Type predicate | At most one `-type f` or `-type d`                                                       |
-| Name predicate | At most one `-name PATTERN`                                                              |
-| Combination    | Implicit conjunction; predicates may appear in either order                              |
-| Output         | Default printing or one terminal `-print`                                                |
+| Type predicate | At most one `-type f` or `-type d`                                                                                              |
+| Name predicate | At most one `-name PATTERN`                                                                                                     |
+| Combination    | Implicit conjunction; predicates may appear in either order                                                                     |
+| Output         | Default printing or one terminal `-print`                                                                                       |
 
 Patterns must be nonempty strings without control characters. Pass each pattern as one argument. Wildcards remain literal argument contents until native find interprets them. Name values such as `.env`, `../outside`, `--help`, `--allowance`, and `-exec` are filters, not filesystem roots, options, or executable actions. The shared reserved `--spekta-force` option remains rejected wherever it appears.
 
