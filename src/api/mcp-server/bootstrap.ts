@@ -98,6 +98,7 @@ export async function runMcpServer() {
               extra?._meta?.progressToken === undefined
                 ? undefined
                 : getProgressReserveTokens(extra._meta.progressToken),
+              extra?.signal,
             );
           } catch {
             // Exception messages can contain denied paths, file content, or

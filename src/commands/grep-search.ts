@@ -33,16 +33,44 @@ import {
 } from "../core/batch-planning";
 import { resolveRequestAllowance } from "../core/config/allowance";
 
-function spawnRtkRg(args: string[], cwd: string, reject = true) {
+function spawnRtkRg(
+  args: string[],
+  cwd: string,
+  reject = true,
+  signal?: AbortSignal,
+) {
   const env = { ...process.env };
   delete env.RG_CONFIG_PATH;
   delete env.RIPGREP_CONFIG_PATH;
-  return execa("rtk", ["proxy", "rg", ...args], {
+  const child = execa("rtk", ["proxy", "rg", ...args], {
     cwd,
     env: { ...env, NO_COLOR: "1", TERM: "dumb" },
     detached: process.platform !== "win32",
     reject,
+    cancelSignal: signal,
   });
+  if (signal) {
+    const terminateOwnedProcessGroup = () => {
+      if (child.pid && process.platform !== "win32") {
+        try {
+          process.kill(-child.pid, "SIGTERM");
+          return;
+        } catch {
+          // Fall back to the direct process if its group has already exited.
+        }
+      }
+      child.kill("SIGTERM");
+    };
+    const removeAbortListener = () =>
+      signal.removeEventListener("abort", terminateOwnedProcessGroup);
+    if (signal.aborted) terminateOwnedProcessGroup();
+    else
+      signal.addEventListener("abort", terminateOwnedProcessGroup, {
+        once: true,
+      });
+    void child.then(removeAbortListener, removeAbortListener);
+  }
+  return child;
 }
 
 export type { GrepOptions };
@@ -50,6 +78,8 @@ export { MAX_MATCHES };
 
 export const MAX_ALLOWANCE_REJECTION_DIAGNOSTIC_TOKENS = 64;
 export const MAX_SEARCH_PROGRESS_EVENTS = 4;
+/** Experimental ceiling; the recorded baseline search workflows completed in roughly 0.6–1.6 s. */
+export const SEARCH_DEADLINE_MS = 30_000;
 
 /** Stable transport-neutral request shape for the incremental `spekta rg` interface.
  * Arrays preserve repeated patterns, multiple paths and ordered globs without
@@ -67,10 +97,14 @@ export interface SearchRequest {
   onProgress?: (phase: "preparing" | "searching") => void;
   onTimings?: (timings: { preparationMs: number; executionMs: number }) => void;
   progressAllowanceTokens?: number;
+  signal?: AbortSignal;
+  deadlineMs?: number;
 }
 
 export interface SearchLifecycle {
   onProgress?: (phase: "preparing" | "searching") => void;
+  signal: AbortSignal;
+  getTermination(): "cancelled" | "deadline_exceeded" | undefined;
   setPhase(phase: "preparing" | "searching"): void;
   finish(): { preparationMs: number; executionMs: number };
 }
@@ -108,6 +142,8 @@ export function createSearchLifecycle(
   clock: () => number = Date.now,
   schedule: typeof setTimeout = setTimeout,
   cancel: typeof clearTimeout = clearTimeout,
+  parentSignal?: AbortSignal,
+  deadlineMs = SEARCH_DEADLINE_MS,
 ): SearchLifecycle {
   const started = clock();
   let phase: "preparing" | "searching" = "preparing";
@@ -116,10 +152,30 @@ export function createSearchLifecycle(
   let emitted = false;
   let sent = 0;
   let stopped = false;
+  let termination: "cancelled" | "deadline_exceeded" | undefined;
+  const controller = new AbortController();
+  const terminate = (reason: "cancelled" | "deadline_exceeded") => {
+    if (stopped || controller.signal.aborted) return;
+    termination = reason;
+    controller.abort(reason);
+  };
+  const parentAbort = () => terminate("cancelled");
+  if (parentSignal?.aborted) parentAbort();
+  else parentSignal?.addEventListener("abort", parentAbort, { once: true });
+  const deadlineTimer = schedule(
+    () => terminate("deadline_exceeded"),
+    deadlineMs,
+  );
   let timer: ReturnType<typeof setTimeout> | undefined;
   let heartbeat: ReturnType<typeof setTimeout> | undefined;
   const publish = () => {
-    if (stopped || !onProgress || sent >= MAX_SEARCH_PROGRESS_EVENTS) return;
+    if (
+      stopped ||
+      controller.signal.aborted ||
+      !onProgress ||
+      sent >= MAX_SEARCH_PROGRESS_EVENTS
+    )
+      return;
     try {
       onProgress(phase);
       emitted = true;
@@ -132,7 +188,12 @@ export function createSearchLifecycle(
     timer = schedule(() => {
       publish();
       const pulse = () => {
-        if (stopped || sent >= MAX_SEARCH_PROGRESS_EVENTS) return;
+        if (
+          stopped ||
+          controller.signal.aborted ||
+          sent >= MAX_SEARCH_PROGRESS_EVENTS
+        )
+          return;
         publish();
         heartbeat = schedule(pulse, 5000);
       };
@@ -140,6 +201,8 @@ export function createSearchLifecycle(
     }, 2000);
   return {
     onProgress,
+    signal: controller.signal,
+    getTermination: () => termination,
     setPhase(next) {
       if (next === phase) return;
       const now = clock();
@@ -152,6 +215,8 @@ export function createSearchLifecycle(
     },
     finish() {
       stopped = true;
+      if (parentSignal) parentSignal.removeEventListener("abort", parentAbort);
+      cancel(deadlineTimer);
       if (timer) cancel(timer);
       if (heartbeat) cancel(heartbeat);
       const now = clock();
@@ -236,6 +301,10 @@ export async function getRgOutcome(
       case_mode: request.case_mode,
       responseTokenLimit: responseTokenLimit - budget.reservedTokens,
       onProgress: budget.progressEnabled ? request.onProgress : undefined,
+      signal: request.signal,
+      ...(request.deadlineMs === undefined
+        ? {}
+        : { deadlineMs: request.deadlineMs }),
       profile,
       onTimings: (value) => {
         timings = value;
@@ -341,6 +410,7 @@ async function findWhitelistedGitIgnoredFiles(
   canonicalSearchPath: string,
   workspace: ResolvedWorkspace,
   spektaIgnorePatterns: string[],
+  signal?: AbortSignal,
 ): Promise<string[]> {
   if (!spektaIgnorePatterns.some((pattern) => pattern.startsWith("!"))) {
     return [];
@@ -358,7 +428,12 @@ async function findWhitelistedGitIgnoredFiles(
   );
   const listFiles = async (args: string[]): Promise<string[]> => {
     try {
-      const result = await spawnRtkRg(args, workspace.canonicalRoot, false);
+      const result = await spawnRtkRg(
+        args,
+        workspace.canonicalRoot,
+        false,
+        signal,
+      );
       if (result.exitCode !== 0 && result.exitCode !== 1) {
         throw new Error("Ripgrep file listing failed.");
       }
@@ -442,16 +517,29 @@ export async function getGrepOutcome(
   workspace?: WorkspaceContext,
   responseId?: string | number,
 ): Promise<OperationOutcome<string>> {
-  const lifecycle = createSearchLifecycle(options.onProgress);
+  const lifecycle = createSearchLifecycle(
+    options.onProgress,
+    undefined,
+    undefined,
+    undefined,
+    options.signal,
+    options.deadlineMs ?? SEARCH_DEADLINE_MS,
+  );
   try {
     return await getGrepOutcomeInternal(
-      { ...options, setSearchPhase: () => lifecycle.setPhase("searching") },
+      {
+        ...options,
+        signal: lifecycle.signal,
+        getTermination: () => lifecycle.getTermination(),
+        setSearchPhase: () => lifecycle.setPhase("searching"),
+      },
       workspace,
       responseId,
     );
   } finally {
     const timings = lifecycle.finish();
-    if (options.profile) options.onTimings?.(timings);
+    if (options.profile && !lifecycle.signal.aborted)
+      options.onTimings?.(timings);
   }
 }
 
@@ -463,6 +551,18 @@ async function getGrepOutcomeInternal(
   const { pattern, path: legacyPath = "." } = options;
   const responseTokenLimit = options.responseTokenLimit ?? getGrepTokenLimit();
   const requestedPaths = options.paths ?? [legacyPath];
+  const interrupted = (): OperationOutcome<string> | undefined => {
+    const reason = options.getTermination?.();
+    if (!reason) return undefined;
+    return {
+      status: reason,
+      message:
+        reason === "cancelled"
+          ? "cancelled: Search cancelled; no complete results returned."
+          : "deadline_exceeded: Search deadline reached; no complete results returned.",
+    };
+  };
+  if (interrupted()) return interrupted()!;
 
   // SECURITY: Reject empty/whitespace patterns to prevent full-codebase scans
   const requestedPatterns =
@@ -493,6 +593,7 @@ async function getGrepOutcomeInternal(
       responseTokenLimit,
     );
   }
+  if (interrupted()) return interrupted()!;
 
   const uniquePaths = new Map<string, string>();
   for (const [index, searchPath] of requestedPaths.entries()) {
@@ -546,6 +647,20 @@ async function getGrepOutcomeInternal(
           : `Operand ${item.position}: incomplete; matches withheld\n`,
       )
       .join("");
+  const terminationText = (status: "cancelled" | "deadline_exceeded") =>
+    `${status === "cancelled" ? "cancelled: Search cancelled; no complete results returned.\n" : "deadline_exceeded: Search deadline reached; no complete results returned.\n"}` +
+    (unavailable ? "Batch: partial_result\n" : "") +
+    `Scope: ${availableCount}/${requestedPaths.length} roots admitted; search incomplete.\n` +
+    (unavailable
+      ? "Recovery: Retry unavailable roots when access is available.\n"
+      : "") +
+    operandOutcomes
+      .map((item) =>
+        item.status === "unavailable"
+          ? `Operand ${item.position}: unavailable; unavailable_access\n`
+          : `Operand ${item.position}: incomplete; ${status}\n`,
+      )
+      .join("");
   const engineFailureText =
     `internal_failure: Search failed.\n` +
     (unavailable ? "Batch: partial_result\n" : "") +
@@ -587,6 +702,8 @@ async function getGrepOutcomeInternal(
       cliError: false,
     },
     { text: withheldText, error: true, cliError: true },
+    { text: terminationText("cancelled"), error: true, cliError: true },
+    { text: terminationText("deadline_exceeded"), error: true, cliError: true },
     { text: engineFailureText, error: true, cliError: !unavailable },
     ...(availableCount === 0
       ? [{ text: allUnavailableText, error: true, cliError: true }]
@@ -640,6 +757,7 @@ async function getGrepOutcomeInternal(
   const canonicalSearchPaths = admittedPaths;
 
   try {
+    if (interrupted()) return interrupted()!;
     if (!(await isRtkAvailable())) {
       return engineFailureOutcome();
     }
@@ -647,15 +765,18 @@ async function getGrepOutcomeInternal(
       ["--version"],
       resolvedWorkspace.canonicalRoot,
       false,
+      options.signal,
     );
     if (result.exitCode !== 0) {
       return engineFailureOutcome();
     }
   } catch {
+    if (interrupted()) return interrupted()!;
     return engineFailureOutcome();
   }
 
   try {
+    if (interrupted()) return interrupted()!;
     const args = await buildGrepArgs(
       { ...options, patterns: requestedPatterns, paths: canonicalSearchPaths },
       resolvedWorkspace.canonicalRoot,
@@ -673,6 +794,7 @@ async function getGrepOutcomeInternal(
                 searchPath,
                 resolvedWorkspace,
                 ignorePatterns,
+                options.signal,
               ),
             ),
           )
@@ -682,7 +804,13 @@ async function getGrepOutcomeInternal(
     if (additionalPaths.length > 0) {
       args.splice(args.length - 1, 0, ...additionalPaths);
     }
-    const child = spawnRtkRg(args, resolvedWorkspace.canonicalRoot);
+    if (interrupted()) return interrupted()!;
+    const child = spawnRtkRg(
+      args,
+      resolvedWorkspace.canonicalRoot,
+      true,
+      options.signal,
+    );
     options.setSearchPhase?.();
 
     const search: OperationOutcome<string> = await parseGrepOutput(child, {
@@ -695,9 +823,17 @@ async function getGrepOutcomeInternal(
       responseTokenLimit,
       responsePrefix: scopeText,
       responseIsError: unavailable,
+      signal: options.signal,
+      getTermination: options.getTermination,
     });
     if (search.status === "output_limit_exceeded") return overflowOutcome();
     if (search.status === "engine_failure") return engineFailureOutcome();
+    if (
+      search.status === "cancelled" ||
+      search.status === "deadline_exceeded"
+    ) {
+      return { status: search.status, message: terminationText(search.status) };
+    }
     const body = String(
       search.status === "success" ? search.value : search.message,
     );
@@ -713,6 +849,7 @@ async function getGrepOutcomeInternal(
       ? { status: "no_matches", message: value }
       : { status: "success", value };
   } catch {
+    if (interrupted()) return interrupted()!;
     return engineFailureOutcome();
   }
 }

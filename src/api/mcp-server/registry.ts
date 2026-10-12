@@ -98,6 +98,7 @@ export type McpToolHandler = (
   requestId?: string | number,
   reportProgress?: (phase: "preparing" | "searching") => void,
   progressAllowanceTokens?: number,
+  signal?: AbortSignal,
 ) => Promise<McpToolResponse>;
 
 export interface ToolRegistryEntry {
@@ -312,6 +313,14 @@ const registry: Record<string, ToolRegistryEntry> = {
           .describe(
             "Include aggregate preparation and search timings in the final response when they fit the response allowance.",
           ),
+        deadline_ms: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            "Optional cancellation deadline in milliseconds; defaults to the experimental 30000 ms limit.",
+          ),
       }),
     handler: async (
       rawArgs,
@@ -319,6 +328,7 @@ const registry: Record<string, ToolRegistryEntry> = {
       requestId,
       reportProgress,
       progressAllowanceTokens,
+      signal,
     ) => {
       const outcome = await getRgOutcome(
         {
@@ -330,8 +340,12 @@ const registry: Record<string, ToolRegistryEntry> = {
               "sensitive" | "insensitive" | "smart" | undefined) ?? "sensitive",
           allowance: rawArgs.allowance,
           profile: rawArgs.profile === true,
+          ...(typeof rawArgs.deadline_ms === "number"
+            ? { deadlineMs: rawArgs.deadline_ms }
+            : {}),
           onProgress: reportProgress,
           progressAllowanceTokens,
+          signal,
         },
         context,
         requestId,
@@ -345,6 +359,8 @@ const registry: Record<string, ToolRegistryEntry> = {
         outcome.status === "policy_rejection" ||
         outcome.status === "usage_error" ||
         outcome.status === "output_limit_exceeded" ||
+        outcome.status === "cancelled" ||
+        outcome.status === "deadline_exceeded" ||
         outcome.status === "partial_result"
           ? { isError: true }
           : {}),
@@ -725,7 +741,18 @@ export function createToolRegistry(
           args: Record<string, unknown>,
           _context?: WorkspaceContext,
           requestId?: string | number,
-        ) => implementation.handler(args, boundContext, requestId),
+          reportProgress?: (phase: "preparing" | "searching") => void,
+          progressAllowanceTokens?: number,
+          signal?: AbortSignal,
+        ) =>
+          implementation.handler(
+            args,
+            boundContext,
+            requestId,
+            reportProgress,
+            progressAllowanceTokens,
+            signal,
+          ),
       },
     ]),
   );

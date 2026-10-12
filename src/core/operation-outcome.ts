@@ -17,7 +17,9 @@ export type OperationOutcome<T> =
       message: string;
       operands?: BatchOperandOutcome[];
     }
-  | { status: "engine_failure"; message: string };
+  | { status: "engine_failure"; message: string }
+  | { status: "cancelled"; message: string }
+  | { status: "deadline_exceeded"; message: string };
 
 export type FailureOutcome = Exclude<
   OperationOutcome<string>,

@@ -3,6 +3,7 @@ import { runRg } from "../rg";
 import { Logger } from "../../utils/logger";
 import * as grepSearch from "../grep-search";
 import { createSearchLifecycle } from "../grep-search";
+import { getRgOutcome, SEARCH_DEADLINE_MS } from "../grep-search";
 
 describe("runRg", () => {
   beforeEach(() => {
@@ -14,6 +15,50 @@ describe("runRg", () => {
     vi.restoreAllMocks();
     vi.useRealTimers();
     process.exitCode = 0;
+  });
+
+  it("supports a finite experimental deadline override from the CLI", async () => {
+    const search = vi.spyOn(grepSearch, "getRgOutcome").mockResolvedValue({
+      status: "no_matches",
+      message: "No matches found.",
+    });
+    await runRg(["--deadline-ms", "1250", "needle"]);
+    expect(search).toHaveBeenCalledWith(
+      expect.objectContaining({ deadlineMs: 1250 }),
+    );
+    expect(SEARCH_DEADLINE_MS).toBe(30_000);
+  });
+
+  it("returns a distinct cancellation outcome before preparation starts", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const outcome = await getRgOutcome({
+      patterns: ["needle"],
+      paths: ["."],
+      globs: [],
+      case_mode: "sensitive",
+      signal: controller.signal,
+    });
+    expect(outcome.status).toBe("cancelled");
+    expect(outcome.status === "cancelled" && outcome.message).toContain(
+      "no complete results",
+    );
+  });
+
+  it("aborts the lifecycle at its configured deadline", () => {
+    vi.useFakeTimers();
+    const lifecycle = createSearchLifecycle(
+      undefined,
+      Date.now,
+      setTimeout,
+      clearTimeout,
+      undefined,
+      25,
+    );
+    vi.advanceTimersByTime(25);
+    expect(lifecycle.signal.aborted).toBe(true);
+    expect(lifecycle.getTermination()).toBe("deadline_exceeded");
+    lifecycle.finish();
   });
 
   it("uses one pattern, an optional path, and case-sensitive matching by default", async () => {

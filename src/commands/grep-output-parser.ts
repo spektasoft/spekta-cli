@@ -49,6 +49,8 @@ export interface GrepOutputContext {
   /** Text rendered before this search result in the complete response. */
   responsePrefix?: string;
   responseIsError?: boolean;
+  signal?: AbortSignal;
+  getTermination?: () => "cancelled" | "deadline_exceeded" | undefined;
 }
 
 const OUTPUT_LIMIT_GUIDANCE =
@@ -206,6 +208,23 @@ export async function parseGrepOutput(
     }
     child.kill?.();
   };
+  const stopForInterrupt = () => {
+    cancellationRequested = true;
+    if (child.pid && process.platform !== "win32") {
+      try {
+        process.kill(-child.pid, "SIGTERM");
+        return;
+      } catch {
+        /* already exited */
+      }
+    }
+    child.kill?.();
+  };
+  if (context?.signal?.aborted) stopForInterrupt();
+  else
+    context?.signal?.addEventListener("abort", stopForInterrupt, {
+      once: true,
+    });
 
   if (child.stdout) {
     const rl = readline.createInterface({
@@ -326,6 +345,16 @@ export async function parseGrepOutput(
   }
 
   const completion = await childCompletion;
+  context?.signal?.removeEventListener("abort", stopForInterrupt);
+  const termination = context?.getTermination?.();
+  if (termination)
+    return {
+      status: termination,
+      message:
+        termination === "cancelled"
+          ? "cancelled: Search cancelled; no complete results returned."
+          : "deadline_exceeded: Search deadline reached; no complete results returned.",
+    };
   if ("error" in completion) {
     const error = completion.error;
     const procError = error as ProcessErrorLike;

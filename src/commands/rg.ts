@@ -10,6 +10,7 @@ export async function runRg(args?: string[]) {
   let caseMode: "insensitive" | "sensitive" | "smart" = "sensitive";
   let allowance: string | undefined;
   let profile = false;
+  let deadlineMs: number | undefined;
   let endOptions = false;
   const values = args ?? [];
   for (let index = 0; index < values.length; index++) {
@@ -24,6 +25,19 @@ export async function runRg(args?: string[]) {
     }
     if (arg === "--profile") {
       profile = true;
+      continue;
+    }
+    if (arg === "--deadline-ms" || arg.startsWith("--deadline-ms=")) {
+      const raw = arg === "--deadline-ms" ? values[++index] : arg.slice(14);
+      const parsed = Number(raw);
+      if (!raw || !Number.isSafeInteger(parsed) || parsed < 1) {
+        Logger.error(
+          "usage_error: --deadline-ms requires a positive whole number.",
+        );
+        process.exitCode = 1;
+        return;
+      }
+      deadlineMs = parsed;
       continue;
     }
     if (arg === "--allowance" || arg.startsWith("--allowance=")) {
@@ -123,6 +137,10 @@ export async function runRg(args?: string[]) {
     return;
   }
 
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  process.once("SIGINT", abort);
+  process.once("SIGTERM", abort);
   try {
     const outcome = await getRgOutcome({
       patterns: finalPatterns,
@@ -131,6 +149,8 @@ export async function runRg(args?: string[]) {
       case_mode: caseMode,
       ...(allowance === undefined ? {} : { allowance }),
       profile,
+      signal: controller.signal,
+      ...(deadlineMs === undefined ? {} : { deadlineMs }),
       onProgress: (phase) => process.stderr.write(`Search ${phase}.\n`),
       progressAllowanceTokens:
         MAX_SEARCH_PROGRESS_EVENTS * getTokenCount("Search searching.\n"),
@@ -152,5 +172,8 @@ export async function runRg(args?: string[]) {
   } catch {
     Logger.error("Search failed.");
     process.exitCode = 1;
+  } finally {
+    process.removeListener("SIGINT", abort);
+    process.removeListener("SIGTERM", abort);
   }
 }

@@ -160,6 +160,33 @@ describe("runMcpServer", () => {
       requestId,
       undefined,
       undefined,
+      undefined,
+    );
+  });
+
+  it("forwards MCP caller cancellation signals to the tool handler", async () => {
+    vi.mocked(loadToolDefinitions).mockResolvedValue([
+      {
+        name: "spekta_rg",
+        description: "Search",
+        params: {},
+        xml_example: "<spekta_rg />",
+      },
+    ]);
+    await runMcpServer();
+    const callback = registerTool.mock.calls[0][2] as (
+      args: Record<string, unknown>,
+      extra: { signal: AbortSignal },
+    ) => Promise<unknown>;
+    const controller = new AbortController();
+    await callback({ pattern: "needle" }, { signal: controller.signal });
+    expect(toolHandler).toHaveBeenCalledWith(
+      { pattern: "needle" },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      controller.signal,
     );
   });
 

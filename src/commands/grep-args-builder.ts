@@ -16,6 +16,9 @@ export interface GrepOptions {
   setSearchPhase?: () => void;
   profile?: boolean;
   onTimings?: (timings: { preparationMs: number; executionMs: number }) => void;
+  signal?: AbortSignal;
+  deadlineMs?: number;
+  getTermination?: () => "cancelled" | "deadline_exceeded" | undefined;
 }
 
 async function buildIgnoreArgs(
