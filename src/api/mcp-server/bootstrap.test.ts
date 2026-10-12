@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
 const { registerTool, connect, toolHandler, serverInstances } = vi.hoisted(
@@ -72,6 +72,10 @@ import { validateToolDefinitions } from "./validate";
 import { createToolRegistry } from "./registry";
 import { resolveWorkspace } from "../../utils/workspace";
 import { runMcpServer } from "./bootstrap";
+import { createSearchLifecycle } from "../../commands/grep-search";
+import { getTokenCount } from "../../utils/read-utils";
+
+afterEach(() => vi.useRealTimers());
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -154,7 +158,128 @@ describe("runMcpServer", () => {
       { pattern: "needle" },
       undefined,
       requestId,
+      undefined,
+      undefined,
     );
+  });
+
+  it("sends progress only with the caller token and uses fixed phase labels", async () => {
+    vi.mocked(loadToolDefinitions).mockResolvedValue([
+      {
+        name: "spekta_rg",
+        description: "Search",
+        params: {},
+        xml_example: "<spekta_rg></spekta_rg>",
+      },
+    ]);
+    toolHandler.mockImplementation(
+      (
+        _args,
+        _workspace,
+        _requestId,
+        progress: ((phase: "preparing" | "searching") => void) | undefined,
+        _reserve: number | undefined,
+      ) => {
+        void _reserve;
+        const lifecycle = createSearchLifecycle(progress, () => Date.now());
+        return new Promise((resolve) => {
+          setTimeout(() => {
+            lifecycle.setPhase("searching");
+            lifecycle.finish();
+            resolve({ content: [{ type: "text", text: "final" }] });
+          }, 3000);
+        });
+      },
+    );
+    await runMcpServer();
+
+    const callback = registerTool.mock.calls[0][2] as (
+      args: Record<string, unknown>,
+      extra: {
+        requestId: string | number;
+        _meta?: { progressToken?: string | number };
+        sendNotification: (notification: unknown) => Promise<void>;
+      },
+    ) => Promise<unknown>;
+    const sendNotification = vi.fn().mockResolvedValue(undefined);
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const response = callback(
+      {},
+      {
+        requestId: "request-with-progress",
+        _meta: { progressToken: "progress-token" },
+        sendNotification,
+      },
+    );
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(sendNotification).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    await response;
+    expect(sendNotification).toHaveBeenCalledTimes(2);
+    const notificationTokens = [
+      {
+        progressToken: "progress-token",
+        progress: 1,
+        total: 2,
+        message: "Search preparing.",
+      },
+      {
+        progressToken: "progress-token",
+        progress: 2,
+        total: 2,
+        message: "Search searching.",
+      },
+    ].map((params) =>
+      getTokenCount(
+        `${JSON.stringify({ jsonrpc: "2.0", method: "notifications/progress", params })}\n`,
+      ),
+    );
+    expect(toolHandler.mock.calls.at(-1)?.[4]).toBe(
+      4 * Math.max(...notificationTokens),
+    );
+    expect(sendNotification).toHaveBeenNthCalledWith(1, {
+      method: "notifications/progress",
+      params: {
+        progressToken: "progress-token",
+        progress: 1,
+        total: 2,
+        message: "Search preparing.",
+      },
+    });
+    expect(sendNotification).toHaveBeenNthCalledWith(2, {
+      method: "notifications/progress",
+      params: {
+        progressToken: "progress-token",
+        progress: 2,
+        total: 2,
+        message: "Search searching.",
+      },
+    });
+
+    sendNotification.mockClear();
+    const withoutToken = callback(
+      {},
+      { requestId: "without-token", sendNotification },
+    );
+    await vi.advanceTimersByTimeAsync(3000);
+    await withoutToken;
+    expect(sendNotification).not.toHaveBeenCalled();
+
+    const longToken = "x".repeat(1200);
+    const longTokenResponse = callback(
+      {},
+      {
+        requestId: "long-token",
+        _meta: { progressToken: longToken },
+        sendNotification,
+      },
+    );
+    await vi.advanceTimersByTimeAsync(3000);
+    await longTokenResponse;
+    expect(toolHandler.mock.calls.at(-1)?.[4]).toBeGreaterThan(256);
   });
 
   it("anchors configuration to launch cwd when cwd changes during workspace validation", async () => {

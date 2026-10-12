@@ -183,7 +183,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
     "rg — Search eligible workspace files",
     "Search eligible workspace files through RTK with a documented subset of native ripgrep operands.",
     [
-      "spekta rg [--allowance TOKENS] [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]...",
+      "spekta rg [--allowance TOKENS] [--profile] [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]...",
     ],
     [
       {
@@ -200,6 +200,8 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Execution and response budget",
         lines: [
           "Search runs through rtk proxy rg. Missing RTK or ripgrep is reported as an engine failure.",
+          "After two seconds, long searches report a fixed phase on stderr; subsequent phase changes and five-second heartbeats follow, capped at four progress events. Fast searches emit no progress. MCP sends notifications/progress only when the caller supplied a progressToken. Progress contains no roots, counts, matches, or backend text.",
+          "Use --profile to add aggregate preparation and search timings to the final response when the allowance has room. MCP accepts profile: true. Timing metadata reserves response allowance and is suppressed for denied or partial scopes.",
           "SPEKTA_GREP_TOKEN_LIMIT (the retained historical setting) defaults to 2000 tokens. One --allowance TOKENS value may appear before --; it must be a positive whole number no greater than SPEKTA_GREP_TOKEN_CEILING (16000 by default) and covers the complete rendered response. Results are also bounded by 500 matches and 100 files.",
           "usage_error, unavailable_access, internal_failure, no_matches, and output_limit_exceeded label the public outcome. Failures exit nonzero; no_matches is a complete successful empty search. Overflow withholds every match and cancels the RTK process tree. Narrow with a symbol/pattern (-e 'class Name'), path (src/module/file.ts), or glob (-g '*.ts').",
           "Accepted requests budget the complete rendered response, including every success, operational failure, and final metadata, to the requested allowance. Rejected invalid, over-ceiling, or too-small allowances use the configured default whenever possible. If mandatory MCP ID echo prevents a nonempty diagnostic from fitting, only the rejected response may exceed the default; its diagnostic body is capped at 64 tokens and contains no matches or request contents. The complete response can grow with the ID and has no absolute cap. Accepted allowances are never enlarged.",

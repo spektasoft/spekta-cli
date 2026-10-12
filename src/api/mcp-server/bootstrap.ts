@@ -7,6 +7,31 @@ import { Logger } from "../../utils/logger";
 import { createToolRegistry } from "./registry";
 import { validateToolDefinitions } from "./validate";
 import { resolveWorkspace } from "../../utils/workspace";
+import { getTokenCount } from "../../utils/read-utils";
+import { MAX_SEARCH_PROGRESS_EVENTS } from "../../commands/grep-search";
+
+function getProgressReserveTokens(progressToken: string | number): number {
+  const countNotification = (progress: number, phase: string) =>
+    getTokenCount(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        method: "notifications/progress",
+        params: {
+          progressToken,
+          progress,
+          total: 2,
+          message: `Search ${phase}.`,
+        },
+      })}\n`,
+    );
+  return (
+    MAX_SEARCH_PROGRESS_EVENTS *
+    Math.max(
+      countNotification(1, "preparing"),
+      countNotification(2, "searching"),
+    )
+  );
+}
 
 export async function runMcpServer() {
   // Capture the launch directory before any await; other servers or callers
@@ -54,6 +79,25 @@ export async function runMcpServer() {
               args,
               undefined,
               extra?.requestId,
+              extra?._meta?.progressToken === undefined
+                ? undefined
+                : (phase) => {
+                    void extra
+                      .sendNotification({
+                        method: "notifications/progress",
+                        params: {
+                          progressToken: extra._meta.progressToken as
+                            string | number,
+                          progress: phase === "preparing" ? 1 : 2,
+                          total: 2,
+                          message: `Search ${phase}.`,
+                        },
+                      })
+                      .catch(() => undefined);
+                  },
+              extra?._meta?.progressToken === undefined
+                ? undefined
+                : getProgressReserveTokens(extra._meta.progressToken),
             );
           } catch {
             // Exception messages can contain denied paths, file content, or

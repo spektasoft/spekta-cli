@@ -1,5 +1,6 @@
 import { Logger } from "../utils/logger";
-import { getRgOutcome } from "./grep-search";
+import { getRgOutcome, MAX_SEARCH_PROGRESS_EVENTS } from "./grep-search";
+import { getTokenCount } from "../utils/read-utils";
 
 /** Supported native subset of `spekta rg` operand parsing. */
 export async function runRg(args?: string[]) {
@@ -8,6 +9,7 @@ export async function runRg(args?: string[]) {
   const globs: string[] = [];
   let caseMode: "insensitive" | "sensitive" | "smart" = "sensitive";
   let allowance: string | undefined;
+  let profile = false;
   let endOptions = false;
   const values = args ?? [];
   for (let index = 0; index < values.length; index++) {
@@ -18,6 +20,10 @@ export async function runRg(args?: string[]) {
     }
     if (arg === "--") {
       endOptions = true;
+      continue;
+    }
+    if (arg === "--profile") {
+      profile = true;
       continue;
     }
     if (arg === "--allowance" || arg.startsWith("--allowance=")) {
@@ -124,6 +130,10 @@ export async function runRg(args?: string[]) {
       globs,
       case_mode: caseMode,
       ...(allowance === undefined ? {} : { allowance }),
+      profile,
+      onProgress: (phase) => process.stderr.write(`Search ${phase}.\n`),
+      progressAllowanceTokens:
+        MAX_SEARCH_PROGRESS_EVENTS * getTokenCount("Search searching.\n"),
     });
     if (outcome.status === "partial_result") {
       process.stdout.write(`${outcome.value}\n`);

@@ -12,6 +12,10 @@ export interface GrepOptions {
   case_insensitive?: boolean;
   case_mode?: "insensitive" | "sensitive" | "smart";
   responseTokenLimit?: number;
+  onProgress?: (phase: "preparing" | "searching") => void;
+  setSearchPhase?: () => void;
+  profile?: boolean;
+  onTimings?: (timings: { preparationMs: number; executionMs: number }) => void;
 }
 
 async function buildIgnoreArgs(

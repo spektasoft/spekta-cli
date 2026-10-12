@@ -96,6 +96,8 @@ export type McpToolHandler = (
   args: Record<string, unknown>,
   context?: WorkspaceContext,
   requestId?: string | number,
+  reportProgress?: (phase: "preparing" | "searching") => void,
+  progressAllowanceTokens?: number,
 ) => Promise<McpToolResponse>;
 
 export interface ToolRegistryEntry {
@@ -304,8 +306,20 @@ const registry: Record<string, ToolRegistryEntry> = {
             params.allowance?.description ||
               "Optional complete response allowance in tokens, within the configured search ceiling.",
           ),
+        profile: z
+          .boolean()
+          .optional()
+          .describe(
+            "Include aggregate preparation and search timings in the final response when they fit the response allowance.",
+          ),
       }),
-    handler: async (rawArgs, context, requestId) => {
+    handler: async (
+      rawArgs,
+      context,
+      requestId,
+      reportProgress,
+      progressAllowanceTokens,
+    ) => {
       const outcome = await getRgOutcome(
         {
           patterns: rawArgs.patterns as string[],
@@ -315,6 +329,9 @@ const registry: Record<string, ToolRegistryEntry> = {
             (rawArgs.case_mode as
               "sensitive" | "insensitive" | "smart" | undefined) ?? "sensitive",
           allowance: rawArgs.allowance,
+          profile: rawArgs.profile === true,
+          onProgress: reportProgress,
+          progressAllowanceTokens,
         },
         context,
         requestId,

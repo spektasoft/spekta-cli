@@ -49,6 +49,7 @@ export type { GrepOptions };
 export { MAX_MATCHES };
 
 export const MAX_ALLOWANCE_REJECTION_DIAGNOSTIC_TOKENS = 64;
+export const MAX_SEARCH_PROGRESS_EVENTS = 4;
 
 /** Stable transport-neutral request shape for the incremental `spekta rg` interface.
  * Arrays preserve repeated patterns, multiple paths and ordered globs without
@@ -61,6 +62,106 @@ export interface SearchRequest {
   globs: string[];
   case_mode: SearchCaseMode;
   allowance?: unknown;
+  profile?: boolean;
+  /** Called with fixed, non-sensitive lifecycle phase labels. */
+  onProgress?: (phase: "preparing" | "searching") => void;
+  onTimings?: (timings: { preparationMs: number; executionMs: number }) => void;
+  progressAllowanceTokens?: number;
+}
+
+export interface SearchLifecycle {
+  onProgress?: (phase: "preparing" | "searching") => void;
+  setPhase(phase: "preparing" | "searching"): void;
+  finish(): { preparationMs: number; executionMs: number };
+}
+
+export function resolveSearchTelemetryBudget(
+  responseTokenLimit: number,
+  minimumResponseTokens: number,
+  progressRequested: boolean,
+  progressAllowanceTokens: number,
+  profileRequested: boolean,
+) {
+  const maxProgressReserve = Math.min(256, Math.floor(responseTokenLimit / 4));
+  const progressEnabled =
+    progressRequested &&
+    progressAllowanceTokens > 0 &&
+    progressAllowanceTokens <= maxProgressReserve &&
+    responseTokenLimit >= minimumResponseTokens + progressAllowanceTokens;
+  const profileEnabled =
+    profileRequested &&
+    responseTokenLimit >=
+      minimumResponseTokens +
+        (progressEnabled ? progressAllowanceTokens : 0) +
+        32;
+  return {
+    progressEnabled,
+    profileEnabled,
+    reservedTokens:
+      (progressEnabled ? progressAllowanceTokens : 0) +
+      (profileEnabled ? 32 : 0),
+  };
+}
+
+export function createSearchLifecycle(
+  onProgress?: SearchLifecycle["onProgress"],
+  clock: () => number = Date.now,
+  schedule: typeof setTimeout = setTimeout,
+  cancel: typeof clearTimeout = clearTimeout,
+): SearchLifecycle {
+  const started = clock();
+  let phase: "preparing" | "searching" = "preparing";
+  let preparationEnd: number | undefined;
+  let executionStart: number | undefined;
+  let emitted = false;
+  let sent = 0;
+  let stopped = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let heartbeat: ReturnType<typeof setTimeout> | undefined;
+  const publish = () => {
+    if (stopped || !onProgress || sent >= MAX_SEARCH_PROGRESS_EVENTS) return;
+    try {
+      onProgress(phase);
+      emitted = true;
+      sent++;
+    } catch {
+      /* telemetry is best effort */
+    }
+  };
+  if (onProgress)
+    timer = schedule(() => {
+      publish();
+      const pulse = () => {
+        if (stopped || sent >= MAX_SEARCH_PROGRESS_EVENTS) return;
+        publish();
+        heartbeat = schedule(pulse, 5000);
+      };
+      heartbeat = schedule(pulse, 5000);
+    }, 2000);
+  return {
+    onProgress,
+    setPhase(next) {
+      if (next === phase) return;
+      const now = clock();
+      if (next === "searching") {
+        preparationEnd = now;
+        executionStart = now;
+      }
+      phase = next;
+      if (emitted) publish();
+    },
+    finish() {
+      stopped = true;
+      if (timer) cancel(timer);
+      if (heartbeat) cancel(heartbeat);
+      const now = clock();
+      const boundary = preparationEnd ?? now;
+      return {
+        preparationMs: Math.max(0, boundary - started),
+        executionMs: Math.max(0, now - (executionStart ?? now)),
+      };
+    },
+  };
 }
 
 export async function getRgOutcome(
@@ -117,18 +218,50 @@ export async function getRgOutcome(
     );
   }
 
-  return getGrepOutcome(
+  const budget = resolveSearchTelemetryBudget(
+    responseTokenLimit,
+    getGrepMinimumResponseTokens(responseId),
+    Boolean(request.onProgress),
+    request.progressAllowanceTokens ?? 0,
+    Boolean(request.profile),
+  );
+  const profile = budget.profileEnabled;
+  let timings: { preparationMs: number; executionMs: number } | undefined;
+  const outcome = await getGrepOutcome(
     {
       pattern: request.patterns[0],
       patterns: request.patterns,
       paths: request.paths.length ? request.paths : ["."],
       globs: request.globs,
       case_mode: request.case_mode,
-      responseTokenLimit,
+      responseTokenLimit: responseTokenLimit - budget.reservedTokens,
+      onProgress: budget.progressEnabled ? request.onProgress : undefined,
+      profile,
+      onTimings: (value) => {
+        timings = value;
+      },
     },
     workspace,
     responseId,
   );
+  if (
+    profile &&
+    timings &&
+    (outcome.status === "success" || outcome.status === "no_matches")
+  ) {
+    const line = `\nTimings: preparation ${timings.preparationMs} ms; search ${timings.executionMs} ms.`;
+    const text =
+      outcome.status === "success"
+        ? outcome.value + line
+        : outcome.message + line;
+    if (getGrepResponseTokenCount(text, responseId) <= responseTokenLimit) {
+      request.onTimings?.(timings);
+      return outcome.status === "success"
+        ? { ...outcome, value: text }
+        : { ...outcome, message: text };
+    }
+  }
+  return outcome;
 }
 
 function failureOutcome(
@@ -305,6 +438,24 @@ async function findWhitelistedGitIgnoredFiles(
 }
 
 export async function getGrepOutcome(
+  options: GrepOptions,
+  workspace?: WorkspaceContext,
+  responseId?: string | number,
+): Promise<OperationOutcome<string>> {
+  const lifecycle = createSearchLifecycle(options.onProgress);
+  try {
+    return await getGrepOutcomeInternal(
+      { ...options, setSearchPhase: () => lifecycle.setPhase("searching") },
+      workspace,
+      responseId,
+    );
+  } finally {
+    const timings = lifecycle.finish();
+    if (options.profile) options.onTimings?.(timings);
+  }
+}
+
+async function getGrepOutcomeInternal(
   options: GrepOptions,
   workspace?: WorkspaceContext,
   responseId?: string | number,
@@ -532,6 +683,7 @@ export async function getGrepOutcome(
       args.splice(args.length - 1, 0, ...additionalPaths);
     }
     const child = spawnRtkRg(args, resolvedWorkspace.canonicalRoot);
+    options.setSearchPhase?.();
 
     const search: OperationOutcome<string> = await parseGrepOutput(child, {
       workspace: resolvedWorkspace,

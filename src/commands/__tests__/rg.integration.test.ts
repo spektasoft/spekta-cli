@@ -62,6 +62,7 @@ describe("spekta rg public boundaries", () => {
       {
         patterns: ["needle"],
         paths: ["real.txt", "private-missing.txt", "real.txt"],
+        profile: true,
       },
       { root: fixture.root },
     );
@@ -72,6 +73,35 @@ describe("spekta rg public boundaries", () => {
     expect(mcp.content[0]?.text).toBe(cliText.trimEnd());
     expect(mcp.isError).toBe(true);
     expect(mcp.content[0]?.text).not.toContain("private-missing.txt");
+    expect(mcp.content[0]?.text).not.toContain("Timings:");
+  });
+
+  it("includes reserved aggregate timings only for complete profiled searches", async ({
+    skip,
+  }) => {
+    if (!rtkAvailable) skip();
+    await fs.writeFile(path.join(fixture.root, "timed.txt"), "timed needle\n");
+    const outcome = await getRgOutcome(
+      {
+        patterns: ["needle"],
+        paths: ["timed.txt"],
+        globs: [],
+        case_mode: "sensitive",
+        allowance: 1000,
+        profile: true,
+      },
+      { root: fixture.root },
+      "profile-test",
+    );
+    expect(outcome.status).toBe("success");
+    if (outcome.status === "success") {
+      expect(outcome.value).toMatch(
+        /Timings: preparation \d+ ms; search \d+ ms\./,
+      );
+      expect(
+        getGrepResponseTokenCount(outcome.value, "profile-test"),
+      ).toBeLessThanOrEqual(1000);
+    }
   });
 
   it("reports partial scope when valid roots have no matches", async ({
@@ -533,6 +563,7 @@ describe("spekta rg public boundaries", () => {
           paths: [],
           globs: [],
           case_mode: "sensitive",
+          profile: true,
         },
         { root: fixture.root },
       );
@@ -567,6 +598,7 @@ describe("spekta rg public boundaries", () => {
       if (outcome.status === "engine_failure")
         expect(outcome.message).toContain("internal_failure: Search failed.");
       expect(outcome.message).not.toContain("controlled missing");
+      expect(outcome.message).not.toContain("Timings:");
       expect(outcome.message).not.toContain(binPath);
     } finally {
       await fs.remove(binPath);
