@@ -495,7 +495,7 @@ describe("registered spekta_rg allowance boundary", () => {
       expect(await fs.pathExists(server.rtkLog)).toBe(false);
       expect(await fs.readFile(server.rtkLog, "utf8").catch(() => "")).toBe("");
 
-      const unavailable = await server.call(longId, {
+      const unavailable = await server.call("protected-target", {
         patterns: ["needle"],
         paths: [".env"],
         allowance: 3500,
@@ -528,7 +528,7 @@ describe("registered spekta_rg allowance boundary", () => {
       expect(noMatches.tokens).toBeLessThanOrEqual(1000);
 
       const exactAllowance = getGrepResponseTokenCount(
-        `success: Search completed with matches.\n${[
+        `Scope: 1/1 roots searched.\nOperand 1: searched\nsuccess: Search completed with matches.\n${[
           "#### src/near.ts",
           "```ts",
           ...Array.from(
@@ -561,15 +561,17 @@ describe("registered spekta_rg allowance boundary", () => {
       const overflow = await server.call("overflow", {
         patterns: ["needle"],
         paths: ["src/bulk.ts"],
-        allowance: 100,
+        allowance: 1200,
       });
       expect(overflow.body.isError).toBe(true);
+      expect(await fs.readFile(server.rtkLog, "utf8")).toContain("src/bulk.ts");
       expect(overflow.text).toContain("output_limit_exceeded:");
-      expect(overflow.text).toContain("Narrow with a symbol or pattern");
+      expect(overflow.text).toContain("All matches withheld");
+      expect(overflow.text).toContain("Recovery: Narrow path/pattern.");
       expect(overflow.text).not.toContain("needle 0");
       expect(overflow.text).not.toContain("needle 500");
       expect(overflow.text).not.toMatch(/\b\d+ matches?\b/i);
-      expect(overflow.tokens).toBeLessThanOrEqual(100);
+      expect(overflow.tokens).toBeLessThanOrEqual(1200);
 
       const matchCap = await server.call("match-cap", {
         patterns: ["needle"],
@@ -683,6 +685,65 @@ describe("registered spekta_rg allowance boundary", () => {
         "success: Search completed with matches.",
       );
       expect(cliSuccess.tokens).toBeLessThanOrEqual(1000);
+
+      const cliMixed = await server.runCli([
+        "--allowance=1200",
+        "-e",
+        "needle",
+        "src/example.ts",
+        ".env",
+      ]);
+      expect(cliMixed.code).toBe(1);
+      expect(cliMixed.output).toContain("Batch: partial_result");
+      expect(cliMixed.output).toContain(
+        "Operand 2: unavailable; unavailable_access",
+      );
+      expect(cliMixed.output).toContain("safe match");
+      expect(cliMixed.output).not.toContain(".env");
+      expect(cliMixed.output).not.toContain("protected secret");
+      const mcpMixed = await server.call("mixed-transport", {
+        patterns: ["needle"],
+        paths: ["src/example.ts", ".env"],
+        allowance: 1200,
+      });
+      expect(mcpMixed.body.isError).toBe(true);
+      expect(mcpMixed.text).toContain("Batch: partial_result");
+      expect(mcpMixed.text).toContain(
+        "Operand 2: unavailable; unavailable_access",
+      );
+      expect(mcpMixed.text).toContain("safe match");
+      expect(mcpMixed.text).not.toContain(".env");
+      expect(mcpMixed.tokens).toBe(encode(`${mcpMixed.line}\n`).length);
+      expect(mcpMixed.tokens).toBeLessThanOrEqual(1200);
+
+      const cliMixedOverflow = await server.runCli([
+        "--allowance=1200",
+        "-e",
+        "needle",
+        "src/bulk.ts",
+        ".env",
+      ]);
+      expect(cliMixedOverflow.code).toBe(1);
+      expect(cliMixedOverflow.stderr).toContain("All matches withheld");
+      expect(cliMixedOverflow.stderr).toContain(
+        "Requested scope is incomplete",
+      );
+      expect(cliMixedOverflow.output).not.toContain("needle 0");
+      expect(cliMixedOverflow.output).not.toContain(".env");
+      const mcpMixedOverflow = await server.call("mixed-overflow-transport", {
+        patterns: ["needle"],
+        paths: ["src/bulk.ts", ".env"],
+        allowance: 1200,
+      });
+      expect(mcpMixedOverflow.body.isError).toBe(true);
+      expect(mcpMixedOverflow.text).toContain("All matches withheld");
+      expect(mcpMixedOverflow.text).toContain("Requested scope is incomplete");
+      expect(mcpMixedOverflow.text).not.toContain("needle 0");
+      expect(mcpMixedOverflow.text).not.toContain(".env");
+      expect(mcpMixedOverflow.tokens).toBe(
+        encode(`${mcpMixedOverflow.line}\n`).length,
+      );
+      expect(mcpMixedOverflow.tokens).toBeLessThanOrEqual(1200);
 
       const cliNearSizing = await server.runCli([
         "--allowance=16000",

@@ -327,7 +327,8 @@ const registry: Record<string, ToolRegistryEntry> = {
         ...(outcome.status === "engine_failure" ||
         outcome.status === "policy_rejection" ||
         outcome.status === "usage_error" ||
-        outcome.status === "output_limit_exceeded"
+        outcome.status === "output_limit_exceeded" ||
+        outcome.status === "partial_result"
           ? { isError: true }
           : {}),
         content: [{ type: "text", text }],

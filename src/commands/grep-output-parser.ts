@@ -46,6 +46,9 @@ export interface GrepOutputContext {
   requestedSearchPaths?: string[];
   responseId?: string | number;
   responseTokenLimit?: number;
+  /** Text rendered before this search result in the complete response. */
+  responsePrefix?: string;
+  responseIsError?: boolean;
 }
 
 const OUTPUT_LIMIT_GUIDANCE =
@@ -87,18 +90,45 @@ export function getGrepResponseTokenCount(
   return Math.max(cliTokens, getTokenCount(`${mcpResponse}\n`));
 }
 
+/** Conservative UTF-8 bound for the complete CLI or MCP response. */
+export function getGrepResponseByteCount(
+  text: string,
+  responseId?: string | number,
+  isError = false,
+): number {
+  const cliBytes = Buffer.byteLength(`${text}\n`, "utf8");
+  if (responseId === undefined) return cliBytes;
+  const mcpResponse = JSON.stringify({
+    result: {
+      content: [{ type: "text", text }],
+      ...(isError ? { isError: true } : {}),
+    },
+    jsonrpc: "2.0",
+    id: responseId,
+  });
+  return Math.max(cliBytes, Buffer.byteLength(`${mcpResponse}\n`, "utf8"));
+}
+
 function boundedMessage(
   message: string,
   tokenLimit: number,
   responseId?: string | number,
+  responsePrefix = "",
+  responsePrefixIsError = false,
 ): string {
   const isFailure =
+    responsePrefixIsError ||
     /^(?:internal_failure|usage_error|unavailable_access|output_limit_exceeded):/.test(
       message,
     );
   if (
-    getGrepResponseTokenCount(message, responseId, isFailure) <= tokenLimit &&
-    (!isFailure || getTokenCount(`[ERROR] ${message}\n`) <= tokenLimit)
+    getGrepResponseTokenCount(
+      `${responsePrefix}${message}`,
+      responseId,
+      isFailure,
+    ) <= tokenLimit &&
+    (!isFailure ||
+      getTokenCount(`[ERROR] ${responsePrefix}${message}\n`) <= tokenLimit)
   ) {
     return message;
   }
@@ -112,9 +142,14 @@ function boundedMessage(
   return (
     shortMessages.find(
       (candidate) =>
-        getGrepResponseTokenCount(candidate, responseId, isFailure) <=
-          tokenLimit &&
-        (!isFailure || getTokenCount(`[ERROR] ${candidate}\n`) <= tokenLimit),
+        getGrepResponseTokenCount(
+          `${responsePrefix}${candidate}`,
+          responseId,
+          isFailure,
+        ) <= tokenLimit &&
+        (!isFailure ||
+          getTokenCount(`[ERROR] ${responsePrefix}${candidate}\n`) <=
+            tokenLimit),
     ) ?? ""
   );
 }
@@ -144,11 +179,14 @@ export async function parseGrepOutput(
   const resultsByFile: Record<string, string[]> = {};
   let totalMatches = 0;
   const MAX_GREP_TOKENS = context?.responseTokenLimit ?? getGrepTokenLimit();
-  const finalOutcomeReserve = getGrepResponseTokenCount(
-    "success: Search completed with matches.",
-    undefined,
-  );
-  const contentLimit = Math.max(0, MAX_GREP_TOKENS - finalOutcomeReserve);
+  const responsePrefix = context?.responsePrefix ?? "";
+  const responsePrefixIsError = context?.responseIsError ?? false;
+  const responseCount = (text: string, isError = responsePrefixIsError) =>
+    getGrepResponseTokenCount(
+      `${responsePrefix}${text}`,
+      context?.responseId,
+      isError,
+    );
   let exceeded = false;
   let cancellationRequested = false;
   const eligibilityCache = new Map<string, string | null>();
@@ -269,8 +307,9 @@ export async function parseGrepOutput(
           totalMatches++;
           const candidate = formatResults(resultsByFile);
           if (
-            getGrepResponseTokenCount(candidate, context?.responseId) >
-            contentLimit
+            responseCount(
+              `success: Search completed with matches.\n${candidate}`,
+            ) > MAX_GREP_TOKENS
           ) {
             resultsByFile[displayPath].pop();
             if (resultsByFile[displayPath].length === 0)
@@ -309,6 +348,8 @@ export async function parseGrepOutput(
           `internal_failure: Search process failed (${failureDetail}).`,
           MAX_GREP_TOKENS,
           context?.responseId,
+          responsePrefix,
+          responsePrefixIsError,
         ),
       };
     }
@@ -318,7 +359,11 @@ export async function parseGrepOutput(
     return exceeded
       ? {
           status: "output_limit_exceeded",
-          message: getOutputLimitGuidance(MAX_GREP_TOKENS, context?.responseId),
+          message: getOutputLimitGuidance(
+            MAX_GREP_TOKENS,
+            context?.responseId,
+            responsePrefix,
+          ),
         }
       : {
           status: "no_matches",
@@ -326,6 +371,8 @@ export async function parseGrepOutput(
             "no_matches: No matches found.",
             MAX_GREP_TOKENS,
             context?.responseId,
+            responsePrefix,
+            responsePrefixIsError,
           ),
         };
   }
@@ -333,15 +380,21 @@ export async function parseGrepOutput(
   if (exceeded)
     return {
       status: "output_limit_exceeded",
-      message: getOutputLimitGuidance(MAX_GREP_TOKENS, context?.responseId),
+      message: getOutputLimitGuidance(
+        MAX_GREP_TOKENS,
+        context?.responseId,
+        responsePrefix,
+      ),
     };
   const formatted = `success: Search completed with matches.\n${formatResults(resultsByFile)}`;
-  if (
-    getGrepResponseTokenCount(formatted, context?.responseId) > MAX_GREP_TOKENS
-  ) {
+  if (responseCount(formatted) > MAX_GREP_TOKENS) {
     return {
       status: "output_limit_exceeded",
-      message: getOutputLimitGuidance(MAX_GREP_TOKENS, context?.responseId),
+      message: getOutputLimitGuidance(
+        MAX_GREP_TOKENS,
+        context?.responseId,
+        responsePrefix,
+      ),
     };
   }
   return { status: "success", value: formatted };
@@ -350,6 +403,7 @@ export async function parseGrepOutput(
 function getOutputLimitGuidance(
   tokenLimit: number,
   responseId?: string | number,
+  responsePrefix = "",
 ): string {
   const candidates = [
     OUTPUT_LIMIT_GUIDANCE,
@@ -365,7 +419,11 @@ function getOutputLimitGuidance(
     candidates.find(
       (message) =>
         Math.max(
-          getGrepResponseTokenCount(message, responseId, true),
+          getGrepResponseTokenCount(
+            `${responsePrefix}${message}`,
+            responseId,
+            true,
+          ),
           getTokenCount(`[ERROR] ${message}\n`),
         ) <= tokenLimit,
     ) ?? ""

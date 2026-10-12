@@ -11,6 +11,7 @@ import {
 } from "./grep-args-builder";
 import {
   getGrepResponseTokenCount,
+  getGrepResponseByteCount,
   parseGrepOutput,
   MAX_MATCHES,
   getGrepMinimumResponseTokens,
@@ -26,6 +27,10 @@ import {
   type FailureOutcome,
   type OperationOutcome,
 } from "../core/operation-outcome";
+import {
+  admitBatchMetadata,
+  type BatchOperandOutcome,
+} from "../core/batch-planning";
 import { resolveRequestAllowance } from "../core/config/allowance";
 
 function spawnRtkRg(args: string[], cwd: string, reject = true) {
@@ -324,14 +329,11 @@ export async function getGrepOutcome(
   }
 
   let resolvedWorkspace: ResolvedWorkspace;
-  let canonicalSearchPaths: string[];
+  const operandOutcomes: BatchOperandOutcome[] = [];
+  const admittedPaths: string[] = [];
+  const admittedRequestedPaths: string[] = [];
   try {
     resolvedWorkspace = await resolveWorkspace(workspace);
-    canonicalSearchPaths = await Promise.all(
-      requestedPaths.map((searchPath) =>
-        validateReadPathAccess(searchPath, resolvedWorkspace),
-      ),
-    );
   } catch {
     return failureOutcome(
       "policy_rejection",
@@ -341,14 +343,154 @@ export async function getGrepOutcome(
     );
   }
 
+  const uniquePaths = new Map<string, string>();
+  for (const [index, searchPath] of requestedPaths.entries()) {
+    try {
+      const canonical = await validateReadPathAccess(
+        searchPath,
+        resolvedWorkspace,
+      );
+      operandOutcomes.push({ position: index + 1, status: "returned" });
+      if (!uniquePaths.has(canonical)) uniquePaths.set(canonical, searchPath);
+    } catch {
+      operandOutcomes.push({ position: index + 1, status: "unavailable" });
+    }
+  }
+  const unavailable = operandOutcomes.some(
+    (item) => item.status === "unavailable",
+  );
+  const availableCount = operandOutcomes.filter(
+    (item) => item.status === "returned",
+  ).length;
+  const operandRows = (availableLabel: string) =>
+    operandOutcomes
+      .map((item) =>
+        item.status === "unavailable"
+          ? `Operand ${item.position}: unavailable; unavailable_access\n`
+          : `Operand ${item.position}: ${availableLabel}\n`,
+      )
+      .join("");
+  const batchStatus = unavailable ? "Batch: partial_result\n" : "";
+  const scopeText =
+    batchStatus +
+    `Scope: ${availableCount}/${requestedPaths.length} roots searched.\n` +
+    (unavailable
+      ? "Recovery: Retry unavailable roots when access is available.\n"
+      : "") +
+    operandRows("searched");
+  const withheldText =
+    `output_limit_exceeded: All matches withheld; search cancelled.\n` +
+    (unavailable ? "Batch: partial_result\n" : "") +
+    `Scope: ${availableCount}/${requestedPaths.length} roots admitted; search incomplete, matches withheld.\n` +
+    (unavailable
+      ? "Requested scope is incomplete; some roots were unavailable.\n"
+      : "") +
+    (unavailable
+      ? "Recovery: Retry unavailable; narrow path/pattern.\n"
+      : "Recovery: Narrow path/pattern.\n") +
+    operandOutcomes
+      .map((item) =>
+        item.status === "unavailable"
+          ? `Operand ${item.position}: unavailable; unavailable_access\n`
+          : `Operand ${item.position}: incomplete; matches withheld\n`,
+      )
+      .join("");
+  const engineFailureText =
+    `internal_failure: Search failed.\n` +
+    (unavailable ? "Batch: partial_result\n" : "") +
+    `Scope: ${availableCount}/${requestedPaths.length}; incomplete.\n` +
+    (unavailable
+      ? "Recovery: Retry unavailable roots; retry search.\n"
+      : "Recovery: Retry search.\n") +
+    operandRows("search incomplete; internal_failure");
+  const overflowOperands = operandOutcomes.map((item) => ({
+    ...item,
+    ...(item.status === "returned" ? { status: "incomplete" as const } : {}),
+  }));
+  const overflowOutcome = (): OperationOutcome<string> => ({
+    status: "output_limit_exceeded",
+    message: withheldText,
+    operands: overflowOperands,
+  });
+  const allUnavailableText =
+    `unavailable_access: Search targets are unavailable or not eligible.\n` +
+    `Batch: partial_result\nScope: 0/${requestedPaths.length} eligible roots.\n` +
+    "Recovery: Retry unavailable roots.\n" +
+    operandRows("unavailable; unavailable_access");
+  const rejectMetadata = () =>
+    failureOutcome(
+      "output_limit_exceeded",
+      "output_limit_exceeded: Search scope metadata exceeds the response budget. Reduce the number of roots or increase the allowance.",
+      responseId,
+      responseTokenLimit,
+    );
+  const reservationCandidates = [
+    {
+      text: `${scopeText}success: Search completed with matches.\n`,
+      error: unavailable,
+      cliError: false,
+    },
+    {
+      text: `${scopeText}no_matches: No matches found.`,
+      error: unavailable,
+      cliError: false,
+    },
+    { text: withheldText, error: true, cliError: true },
+    { text: engineFailureText, error: true, cliError: !unavailable },
+    ...(availableCount === 0
+      ? [{ text: allUnavailableText, error: true, cliError: true }]
+      : []),
+  ];
+  const metadataBytes = Math.max(
+    ...reservationCandidates.map(({ text, error, cliError }) =>
+      Math.max(
+        getGrepResponseByteCount(text, responseId, error),
+        cliError ? Buffer.byteLength(`[ERROR] ${text}\n`, "utf8") : 0,
+      ),
+    ),
+  );
+  const metadataTokens = Math.max(
+    ...reservationCandidates.map(({ text, error, cliError }) =>
+      Math.max(
+        getGrepResponseTokenCount(text, responseId, error),
+        cliError ? getTokenCount(`[ERROR] ${text}\n`) : 0,
+      ),
+    ),
+  );
+  if (
+    metadataTokens > responseTokenLimit ||
+    !admitBatchMetadata(metadataBytes, responseTokenLimit)
+  )
+    return rejectMetadata();
+  if (uniquePaths.size === 0) {
+    return {
+      status: "policy_rejection",
+      message: allUnavailableText,
+      operands: operandOutcomes,
+    };
+  }
+  const engineFailureOutcome = (): OperationOutcome<string> =>
+    unavailable
+      ? {
+          status: "partial_result",
+          value: engineFailureText,
+          operands: operandOutcomes.map((item) => ({
+            ...item,
+            ...(item.status === "returned"
+              ? { status: "internal_failure" as const }
+              : {}),
+          })),
+        }
+      : { status: "engine_failure", message: engineFailureText };
+  for (const [canonical, requested] of uniquePaths) {
+    admittedPaths.push(canonical);
+    admittedRequestedPaths.push(requested);
+  }
+  const canonicalSearchPaths = admittedPaths;
+
   try {
     if (!(await isRtkAvailable())) {
-      return failureOutcome(
-        "engine_failure",
-        "internal_failure: Search engine is unavailable.",
-        responseId,
-        responseTokenLimit,
-      );
+      return engineFailureOutcome();
     }
     const result = await spawnRtkRg(
       ["--version"],
@@ -356,20 +498,10 @@ export async function getGrepOutcome(
       false,
     );
     if (result.exitCode !== 0) {
-      return failureOutcome(
-        "engine_failure",
-        "internal_failure: Search engine is unavailable.",
-        responseId,
-        responseTokenLimit,
-      );
+      return engineFailureOutcome();
     }
   } catch {
-    return failureOutcome(
-      "engine_failure",
-      "internal_failure: Search engine is unavailable.",
-      responseId,
-      responseTokenLimit,
-    );
+    return engineFailureOutcome();
   }
 
   try {
@@ -401,22 +533,35 @@ export async function getGrepOutcome(
     }
     const child = spawnRtkRg(args, resolvedWorkspace.canonicalRoot);
 
-    return await parseGrepOutput(child, {
+    const search: OperationOutcome<string> = await parseGrepOutput(child, {
       workspace: resolvedWorkspace,
       canonicalSearchPath: canonicalSearchPaths[0],
-      requestedSearchPath: requestedPaths[0] ?? ".",
+      requestedSearchPath: admittedRequestedPaths[0] ?? ".",
       canonicalSearchPaths,
-      requestedSearchPaths: requestedPaths,
+      requestedSearchPaths: admittedRequestedPaths,
       responseId,
       responseTokenLimit,
+      responsePrefix: scopeText,
+      responseIsError: unavailable,
     });
-  } catch {
-    return failureOutcome(
-      "engine_failure",
-      "internal_failure: Search engine failed while preparing or running.",
-      responseId,
-      responseTokenLimit,
+    if (search.status === "output_limit_exceeded") return overflowOutcome();
+    if (search.status === "engine_failure") return engineFailureOutcome();
+    const body = String(
+      search.status === "success" ? search.value : search.message,
     );
+    const value = `${scopeText}${body}`;
+    if (
+      getGrepResponseTokenCount(value, responseId, unavailable) >
+      responseTokenLimit
+    )
+      return overflowOutcome();
+    if (unavailable)
+      return { status: "partial_result", value, operands: operandOutcomes };
+    return search.status === "no_matches"
+      ? { status: "no_matches", message: value }
+      : { status: "success", value };
+  } catch {
+    return engineFailureOutcome();
   }
 }
 

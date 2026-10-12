@@ -266,6 +266,21 @@ describe("Codex inspection hook parser", () => {
     );
   });
 
+  it("routes mixed-root rg operands at the PreToolUse event boundary", () => {
+    const raw = rewriteEvent(event("rg -e needle src/example.ts .env"));
+    expect(raw).toBe(
+      JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "allow",
+          updatedInput: {
+            command: "'spekta' 'rg' '-e' 'needle' 'src/example.ts' '.env'",
+          },
+        },
+      }),
+    );
+  });
+
   it("preserves every execution setting while changing only the command", () => {
     const originalInput = {
       command: "cat README.md",

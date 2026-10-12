@@ -6,9 +6,17 @@ export type OperationOutcome<T> =
   | { status: "partial_result"; value: T; operands: BatchOperandOutcome[] }
   | { status: "usage_error"; message: string }
   | { status: "version_mismatch"; message: string }
-  | { status: "policy_rejection"; message: string }
+  | {
+      status: "policy_rejection";
+      message: string;
+      operands?: BatchOperandOutcome[];
+    }
   | { status: "no_matches"; message: string }
-  | { status: "output_limit_exceeded"; message: string }
+  | {
+      status: "output_limit_exceeded";
+      message: string;
+      operands?: BatchOperandOutcome[];
+    }
   | { status: "engine_failure"; message: string };
 
 export type FailureOutcome = Exclude<

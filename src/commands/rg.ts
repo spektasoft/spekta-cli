@@ -125,6 +125,11 @@ export async function runRg(args?: string[]) {
       case_mode: caseMode,
       ...(allowance === undefined ? {} : { allowance }),
     });
+    if (outcome.status === "partial_result") {
+      process.stdout.write(`${outcome.value}\n`);
+      process.exitCode = 1;
+      return;
+    }
     if (outcome.status !== "success" && outcome.status !== "no_matches") {
       if ("message" in outcome && outcome.message)
         Logger.error(outcome.message);

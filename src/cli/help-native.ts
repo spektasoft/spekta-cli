@@ -193,6 +193,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
           "Repeat -e/--regexp for alternative patterns and -g/--glob for ordered inclusion or exclusion filters; glob values retain commas. Use -i/--ignore-case, -s/--case-sensitive, or -S/--smart-case (case-sensitive by default). Use -- before literal dash-prefixed operands. Spekta keeps eligible-file restrictions and its own output formatting; unsupported options are rejected. MCP accepts patterns, paths, globs, and case_mode as separate values.",
           "Only the documented options are supported; other ripgrep flags, stdin, and empty or whitespace-only patterns are rejected. Spekta applies workspace eligibility and response limits, so this is not full native ripgrep compatibility.",
           "Search is limited to eligible workspace files and applies Git and Spekta ignore rules. Restricted paths and symlink escapes are rejected.",
+          "Multiple requested roots report positional outcomes. Unavailable operands conceal their names; requested scope is incomplete even when eligible roots have no matches. Overflow cancels search and withholds every match. Reduce roots or narrow the pattern/path/glob, or increase --allowance within its configured ceiling.",
         ],
       },
       {
