@@ -421,7 +421,9 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Arguments and output",
         lines: [
           "Both --global and --codex are required in that order. No other arguments are accepted.",
-          "The report lists component states, trust and activation status, followed by runtime verification steps.",
+          "The report identifies the invoked executable and its artifact SHA-256, build version, build source revision and source state, configured hook routing, component states, trust and activation, followed by runtime verification steps. Unavailable identity or provenance is unknown; protected configuration values and denied paths are withheld.",
+          "To attribute a running command, invoke status through the same executable or absolute entrypoint used for that command. Status resolves its own invocation rather than another installation on PATH. The artifact SHA-256 identifies the on-disk entrypoint; a running process may have loaded earlier bytes.",
+          "Source revision and clean/modified state are captured at build time. They do not verify correspondence to the source currently being inspected: source correspondence remains unknown. Modification timestamps alone prove neither source correspondence nor host activation.",
           "Configuration presence does not establish that Codex trusts or has activated the integration. Status is read-only; help does not inspect configuration.",
         ],
       },

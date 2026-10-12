@@ -10,6 +10,11 @@ import { constants } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
+import {
+  buildMetadata,
+  runningIdentity,
+  type BuildMetadata,
+} from "../build-identity";
 
 const execFile = promisify(execFileCallback);
 
@@ -52,6 +57,12 @@ export interface CodexComponentStatus {
 }
 
 export interface CodexStatus {
+  running: { executable: string; artifactSha256: string };
+  build: BuildMetadata;
+  sourceCorrespondence: "unknown";
+  routing:
+    | { event: "PreToolUse"; matcher: string; target: "spekta-codex-hook" }
+    | "unknown";
   components: {
     hooks: CodexComponentStatus;
     instructions: CodexComponentStatus;
@@ -473,14 +484,16 @@ function componentStatus(
   return { state, details };
 }
 
-async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
+async function inspectOwnedHook(
+  path: string,
+): Promise<CodexComponentStatus & { recognizedRouting?: true }> {
   let content: string | undefined;
   try {
     content = await readOptional(path);
-  } catch (error) {
+  } catch {
     return componentStatus(
       "broken",
-      `Unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      "Unable to read global hook configuration; inspect it manually.",
     );
   }
   if (content === undefined) return componentStatus("absent");
@@ -488,12 +501,15 @@ async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
   try {
     parsed = JSON.parse(content);
   } catch {
-    return componentStatus("conflicting", `${path} contains malformed JSON.`);
+    return componentStatus(
+      "conflicting",
+      "Global hook configuration contains malformed JSON.",
+    );
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
     return componentStatus(
       "conflicting",
-      `${path} has an ambiguous structure.`,
+      "Global hook configuration has an ambiguous structure.",
     );
   const hooks = (parsed as Record<string, unknown>).hooks;
   if (
@@ -508,7 +524,7 @@ async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
   if (!Array.isArray(entries))
     return componentStatus(
       "conflicting",
-      `${path} has an ambiguous PreToolUse definition.`,
+      "Global hook configuration has an ambiguous PreToolUse definition.",
     );
   const owned = entries.filter((entry) =>
     JSON.stringify(entry).includes("spekta-codex-hook"),
@@ -517,7 +533,7 @@ async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
   if (owned.length !== 1 || !isRecognizedOwnedHook(owned[0]))
     return componentStatus(
       "conflicting",
-      `${path} has malformed or duplicate Spekta hook ownership.`,
+      "Global hook configuration has malformed or duplicate Spekta hook ownership.",
     );
   const command = JSON.parse(
     String((owned[0] as { hooks: { command: string }[] }).hooks[0].command),
@@ -525,12 +541,18 @@ async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
   try {
     await access(command, constants.X_OK);
   } catch {
-    return componentStatus(
-      "broken",
-      `Configured hook executable is missing or not executable: ${command}`,
-    );
+    return {
+      ...componentStatus(
+        "broken",
+        "Configured Spekta hook executable is missing or not executable.",
+      ),
+      recognizedRouting: true,
+    };
   }
-  return componentStatus("configured", `Owned hook is configured in ${path}.`);
+  return {
+    ...componentStatus("configured", "Owned global Spekta hook is configured."),
+    recognizedRouting: true,
+  };
 }
 
 async function inspectInstructions(
@@ -539,10 +561,10 @@ async function inspectInstructions(
   let content: string | undefined;
   try {
     content = await readOptional(path);
-  } catch (error) {
+  } catch {
     return componentStatus(
       "broken",
-      `Unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      "Unable to read global usage instructions; inspect them manually.",
     );
   }
   if (content === undefined) return componentStatus("absent");
@@ -552,23 +574,23 @@ async function inspectInstructions(
   if (starts !== 1 || ends !== 1)
     return componentStatus(
       "conflicting",
-      `${path} has malformed or duplicate Spekta ownership markers.`,
+      "Global usage instructions have malformed or duplicate Spekta ownership markers.",
     );
   try {
     const owned = buildInstructions(content);
     return owned === content
       ? componentStatus(
           "configured",
-          `Owned usage instructions are present in ${path}.`,
+          "Owned global usage instructions are present.",
         )
       : componentStatus(
           "conflicting",
-          `${path} contains unfamiliar changes to the Spekta instructions.`,
+          "Global usage instructions contain unfamiliar changes to the Spekta instructions.",
         );
-  } catch (error) {
+  } catch {
     return componentStatus(
       "conflicting",
-      `${path}: ${error instanceof Error ? error.message : String(error)}`,
+      "Global usage instructions could not be interpreted; inspect them manually.",
     );
   }
 }
@@ -601,10 +623,10 @@ async function inspectMcp(
   let content: string | undefined;
   try {
     content = await readOptional(path);
-  } catch (error) {
+  } catch {
     return componentStatus(
       "broken",
-      `Unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      "Unable to read global MCP configuration; inspect it manually.",
     );
   }
   if (content === undefined) return componentStatus("absent");
@@ -619,7 +641,7 @@ async function inspectMcp(
     if (/\[mcp_servers\.(?:spekta|"spekta"|'spekta')\b/.test(content))
       return componentStatus(
         "conflicting",
-        `${path} has an ambiguous spekta MCP section; inspect it manually.`,
+        "Global configuration has an ambiguous spekta MCP section; inspect it manually.",
       );
     return componentStatus("absent");
   }
@@ -670,7 +692,7 @@ async function inspectMcp(
   if (!(await executableIsAvailable(command, pathValue))) {
     return componentStatus(
       "broken",
-      `Configured MCP executable is missing or not executable: ${command}`,
+      "Configured MCP executable is missing or not executable.",
     );
   }
   return componentStatus(
@@ -685,17 +707,27 @@ export async function readCodexStatus(
   const codexDirectory = join(options.home, ".codex");
   const hooksPath = join(codexDirectory, "hooks.json");
   const instructionsPath = join(codexDirectory, "AGENTS.md");
-  let hooks = await inspectOwnedHook(hooksPath);
+  const { recognizedRouting, ...ownedHook } = await inspectOwnedHook(hooksPath);
+  let hooks: CodexComponentStatus = ownedHook;
+  const routing: CodexStatus["routing"] = recognizedRouting
+    ? {
+        event: "PreToolUse",
+        matcher: CODEX_HOOK_MATCHER,
+        target: "spekta-codex-hook",
+      }
+    : "unknown";
   const conflicts = await findRewriteConflicts(options);
   if (conflicts.length && hooks.state !== "conflicting") {
     hooks = componentStatus(
       "conflicting",
-      ...conflicts
-        .slice(0, 20)
-        .map(({ source, message }) => `${source}: ${message}`),
+      ...conflicts.slice(0, 20).map(({ message }) => message),
     );
   }
   return {
+    running: await runningIdentity(options.cwd ?? process.cwd()),
+    build: buildMetadata,
+    sourceCorrespondence: "unknown",
+    routing,
     components: {
       hooks,
       instructions: await inspectInstructions(instructionsPath),
@@ -1264,6 +1296,15 @@ export async function runCodexStatus(args: string[] = []): Promise<void> {
     path: process.env.PATH ?? "",
     cwd: process.cwd(),
   });
+  console.log(`executable: ${status.running.executable}`);
+  console.log(`artifact SHA-256: ${status.running.artifactSha256}`);
+  console.log(`build version: ${status.build.version}`);
+  console.log(`build source revision: ${status.build.sourceRevision}`);
+  console.log(`build source state: ${status.build.sourceState}`);
+  console.log(`source correspondence: ${status.sourceCorrespondence}`);
+  console.log(
+    `configured hook routing: ${status.routing === "unknown" ? "unknown" : `${status.routing.event} / ${status.routing.matcher} / ${status.routing.target}`}`,
+  );
   for (const [name, component] of Object.entries(status.components)) {
     console.log(`${name}: ${component.state}`);
     for (const detail of component.details) console.log(`  ${detail}`);
