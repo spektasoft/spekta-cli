@@ -6,7 +6,7 @@ import {
   rmSync,
   symlinkSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { rewriteEvent } from "./codex-hook.js";
@@ -135,8 +135,6 @@ describe("Codex inspection hook parser", () => {
     ["rg -e '-needle' -- path", "'spekta' 'rg' '-e' '-needle' '--' 'path'"],
     ["rg -- -needle", "'spekta' 'rg' '--' '-needle'"],
     ["rg -- -", "'spekta' 'rg' '--' '-'"],
-    ["rtk rg needle", "'spekta' 'rg' 'needle'"],
-    ["rtk rg -g '*.ts' needle src", "'spekta' 'rg' '-g' '*.ts' 'needle' 'src'"],
     [
       "rg -e 'foo bar' --regexp='a|b' src docs",
       "'spekta' 'rg' '-e' 'foo bar' '--regexp=a|b' 'src' 'docs'",
@@ -145,13 +143,68 @@ describe("Codex inspection hook parser", () => {
       "rg -s -S -i -g '*.ts,*.tsx' -g '!*.test.ts' 'foo' src docs",
       "'spekta' 'rg' '-s' '-S' '-i' '-g' '*.ts,*.tsx' '-g' '!*.test.ts' 'foo' 'src' 'docs'",
     ],
-    [
-      "rtk rg -e '-needle' -i -g '*.ts,*.tsx' -- src docs",
-      "'spekta' 'rg' '-e' '-needle' '-i' '-g' '*.ts,*.tsx' '--' 'src' 'docs'",
-    ],
   ])("routes representable search %s", (input, expected) =>
     expect(rewritten(input)).toBe(expected),
   );
+
+  it("leaves explicit RTK commands unchanged", () => {
+    for (const command of [
+      "rtk cat ~/.codex/skills/example/SKILL.md",
+      "rtk rg needle ~/.codex/skills",
+      "rtk rg --no-config needle",
+    ]) {
+      expect(rewriteEvent(event(command))).toBeUndefined();
+    }
+  });
+
+  it("leaves external home and temporary read/search operands on the host route", () => {
+    const homeSkill = join(
+      homedir(),
+      ".codex",
+      "skills",
+      "special skill",
+      "SKILL.md",
+    );
+    const temporary = join(tmpdir(), "special [skill] fixture.md");
+
+    expect(rewritten(`cat ${shellQuoteForTest(homeSkill)}`)).toBeUndefined();
+    expect(
+      rewritten(`sed -n '1,4p' ${shellQuoteForTest(homeSkill)}`),
+    ).toBeUndefined();
+    expect(
+      rewritten(`rg -e needle ${shellQuoteForTest(temporary)}`),
+    ).toBeUndefined();
+    expect(
+      rewritten(`rg needle src ${shellQuoteForTest(temporary)}`),
+    ).toBeUndefined();
+    expect(rewritten("cat ../outside/SKILL.md")).toBeUndefined();
+  });
+
+  it("keeps workspace-spelled symlink reads on the Spekta route", () => {
+    const workspace = mkdtempSync(join(tmpdir(), "spekta-hook-workspace-"));
+    const external = mkdtempSync(join(tmpdir(), "spekta-hook-external-"));
+    try {
+      symlinkSync(external, join(workspace, "skills"));
+      const raw = rewriteEvent({
+        ...event("cat 'skills/special skill/SKILL.md'"),
+        cwd: workspace,
+      });
+      expect(raw).toBe(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "allow",
+            updatedInput: {
+              command: "'spekta' 'read' 'skills/special skill/SKILL.md'",
+            },
+          },
+        }),
+      );
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
 
   it.each([
     "ls -a",
@@ -433,7 +486,7 @@ describe("built Codex inspection hook", () => {
     const before = readFileSync(join(process.cwd(), "README.md"), "utf8");
     try {
       const command = `ls; touch '${marker}'`;
-      const result = spawnSync(hookBin, [], {
+      const result = spawnSync(process.execPath, [hookBin], {
         input: inputFor(command),
         encoding: "utf8",
         timeout: 4_000,
@@ -449,6 +502,31 @@ describe("built Codex inspection hook", () => {
       );
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves external skill, temporary, and explicit RTK commands to the shell", () => {
+    const homeSkill = join(
+      homedir(),
+      ".codex",
+      "skills",
+      "fixture",
+      "SKILL.md",
+    );
+    const temporary = join(tmpdir(), "fixture with [special] name.md");
+    for (const command of [
+      `cat ${shellQuoteForTest(homeSkill)}`,
+      `rg -e needle ${shellQuoteForTest(temporary)}`,
+      `rtk rg needle ${shellQuoteForTest(homeSkill)}`,
+    ]) {
+      const result = spawnSync(process.execPath, [hookBin], {
+        input: inputFor(command),
+        encoding: "utf8",
+        timeout: 4_000,
+      });
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toBe("");
     }
   });
 });

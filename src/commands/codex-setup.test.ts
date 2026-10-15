@@ -319,6 +319,10 @@ describe("previewCodexSetup", () => {
     expect(plan.files[1].content).toContain(
       "<!-- spekta:codex-usage:start -->",
     );
+    expect(plan.files[1].content).toContain(
+      "home-installed skills and temporary fixtures",
+    );
+    expect(plan.files[1].content).toContain("explicit RTK commands");
     expect(await readdir(root)).toEqual(["bin with spaces"]);
   });
 
