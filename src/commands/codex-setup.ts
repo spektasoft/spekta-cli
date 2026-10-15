@@ -15,6 +15,11 @@ import {
   runningIdentity,
   type BuildMetadata,
 } from "../build-identity";
+import {
+  resolveAllowanceSettings,
+  type AllowanceFamily,
+} from "../core/config/allowance";
+import { getEnv } from "../core/config/env";
 
 const execFile = promisify(execFileCallback);
 
@@ -70,6 +75,10 @@ export interface CodexStatus {
   };
   trust: "unknown";
   activation: "unknown";
+  allowances: Record<
+    AllowanceFamily,
+    ReturnType<typeof resolveAllowanceSettings>
+  >;
   verificationSteps: string[];
 }
 
@@ -704,6 +713,24 @@ async function inspectMcp(
 export async function readCodexStatus(
   options: CodexSetupOptions,
 ): Promise<CodexStatus> {
+  let configurationResolved = true;
+  try {
+    await getEnv(options.cwd);
+  } catch {
+    configurationResolved = false;
+  }
+  const allowances = {
+    read: resolveAllowanceSettings("read"),
+    search: resolveAllowanceSettings("search"),
+    list: resolveAllowanceSettings("list"),
+    git: resolveAllowanceSettings("git"),
+  };
+  if (!configurationResolved) {
+    for (const settings of Object.values(allowances)) {
+      settings.defaultConfiguration = "unresolved";
+      settings.ceilingConfiguration = "unresolved";
+    }
+  }
   const codexDirectory = join(options.home, ".codex");
   const hooksPath = join(codexDirectory, "hooks.json");
   const instructionsPath = join(codexDirectory, "AGENTS.md");
@@ -735,6 +762,7 @@ export async function readCodexStatus(
     },
     trust: "unknown",
     activation: "unknown",
+    allowances,
     verificationSteps: [
       "Start a new supported Codex session with this workspace open.",
       "Run a supported standalone inspection command and confirm the Spekta hook runs exactly once.",
@@ -1311,6 +1339,26 @@ export async function runCodexStatus(args: string[] = []): Promise<void> {
   }
   console.log(`trust: ${status.trust}`);
   console.log(`activation: ${status.activation}`);
+  console.log("Effective request allowances (tokens):");
+  for (const [family, settings] of Object.entries(status.allowances)) {
+    const configuration = [
+      settings.defaultConfiguration === "invalid"
+        ? "default setting invalid; fallback used"
+        : settings.defaultConfiguration === "unresolved"
+          ? "configuration unresolved; effective value may use fallback"
+          : undefined,
+      settings.ceilingConfiguration === "invalid"
+        ? "ceiling setting invalid; fallback used"
+        : settings.ceilingConfiguration === "unresolved"
+          ? "configuration unresolved; effective value may use fallback"
+          : undefined,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    console.log(
+      `  ${family}: default ${settings.defaultTokens}; ceiling ${settings.ceilingTokens}; caller allowance ${settings.honorsRequestAllowance ? "honored" : "not supported"}${configuration ? `; ${configuration}` : ""}`,
+    );
+  }
   console.log("Runtime verification steps:");
   for (const step of status.verificationSteps) console.log(`- ${step}`);
 }

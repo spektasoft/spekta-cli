@@ -425,6 +425,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
           "To attribute a running command, invoke status through the same executable or absolute entrypoint used for that command. Status resolves its own invocation rather than another installation on PATH. The artifact SHA-256 identifies the on-disk entrypoint; a running process may have loaded earlier bytes.",
           "Source revision and clean/modified state are captured at build time. They do not verify correspondence to the source currently being inspected: source correspondence remains unknown. Modification timestamps alone prove neither source correspondence nor host activation.",
           "Configuration presence does not establish that Codex trusts or has activated the integration. Status is read-only; help does not inspect configuration.",
+          "Effective allowances report defaults and finite ceilings for read, search, discovery (list), and Git inspection. An omitted caller allowance uses the default; a valid positive whole number through the ceiling is honored. Invalid or over-ceiling caller allowances are rejected. Invalid settings use safe fallbacks; unresolved configuration is labeled without exposing values. Precedence is shell environment, workspace .env, then personal Spekta .env.",
         ],
       },
     ],

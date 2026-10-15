@@ -164,6 +164,56 @@ describe("readCodexStatus", () => {
     expect(await readdir(root)).toEqual([]);
   });
 
+  it("reports effective allowance defaults, overrides, ceilings, and invalid settings safely", async () => {
+    const root = await fixture();
+    vi.stubEnv("SPEKTA_READ_TOKEN_LIMIT", "300");
+    vi.stubEnv("SPEKTA_READ_TOKEN_CEILING", "900");
+    vi.stubEnv("SPEKTA_GREP_TOKEN_LIMIT", "not-a-budget-secret");
+    vi.stubEnv("SPEKTA_GREP_TOKEN_CEILING", "not-a-ceiling-secret");
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const status = await readCodexStatus({ home: root, path: "", cwd: root });
+
+      expect(status.allowances).toMatchObject({
+        read: {
+          defaultTokens: 300,
+          ceilingTokens: 900,
+          defaultConfiguration: "configured",
+          ceilingConfiguration: "configured",
+          honorsRequestAllowance: true,
+        },
+        search: {
+          defaultTokens: 2000,
+          ceilingTokens: 16000,
+          defaultConfiguration: "invalid",
+          ceilingConfiguration: "invalid",
+          honorsRequestAllowance: true,
+        },
+        list: { defaultTokens: 1000, ceilingTokens: 8000 },
+        git: { defaultTokens: 1000, ceilingTokens: 8000 },
+      });
+      expect(warning.mock.calls.flat().join(" ")).not.toContain("secret");
+
+      vi.stubEnv("HOME", root);
+      vi.stubEnv("PATH", "");
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
+      await runCodexStatus(["--global", "--codex"]);
+      const output = log.mock.calls.flat().join("\n");
+      expect(output).toContain(
+        "read: default 300; ceiling 900; caller allowance honored",
+      );
+      expect(output).toContain(
+        "search: default 2000; ceiling 16000; caller allowance honored; default setting invalid; fallback used, ceiling setting invalid; fallback used",
+      );
+      expect(output).not.toContain("not-a-budget-secret");
+      expect(output).not.toContain("not-a-ceiling-secret");
+      log.mockRestore();
+    } finally {
+      vi.unstubAllEnvs();
+      warning.mockRestore();
+    }
+  });
+
   it("keeps setup configuration unverified and reports a missing hook executable as broken", async () => {
     const root = await fixture();
     const bin = join(root, "bin");
