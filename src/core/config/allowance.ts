@@ -1,11 +1,12 @@
 import {
   getEnvValue,
   getGrepTokenLimit,
+  getGitTokenLimit,
   getListTokenLimit,
   getReadTokenLimit,
 } from "./env";
 
-export type AllowanceFamily = "read" | "search" | "list";
+export type AllowanceFamily = "read" | "search" | "list" | "git";
 
 export interface AllowanceSettings {
   family: AllowanceFamily;
@@ -38,6 +39,12 @@ const FAMILIES = {
     ceilingFallback: 16000,
     honorsRequestAllowance: true,
     getDefault: getGrepTokenLimit,
+  },
+  git: {
+    ceilingEnv: "SPEKTA_GIT_TOKEN_CEILING",
+    ceilingFallback: 8000,
+    honorsRequestAllowance: true,
+    getDefault: getGitTokenLimit,
   },
 } as const;
 

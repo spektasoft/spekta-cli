@@ -9,8 +9,6 @@ import { isEligibleGitPath } from "./proxy-git-status";
 import { executeRtkCommand, isRtkAvailable } from "./proxy-execution";
 import type { DiscoveryRenderOutcome } from "./proxy-render-outcome";
 
-const LIMIT = 1000;
-
 export function isGitHistoryPatchRequest(args: string[]): boolean {
   if (!["log", "show"].includes(args[0])) return false;
   if (args[0] === "log")
@@ -36,6 +34,7 @@ export function isGitHistoryPatchRequest(args: string[]): boolean {
 export async function executeGitHistoryPatchOutcome(
   args: string[],
   context?: WorkspaceContext,
+  allowance = 1000,
 ): Promise<DiscoveryRenderOutcome> {
   const fail = (message: string, exitCode = 1): DiscoveryRenderOutcome => ({
     status: "failure",
@@ -305,11 +304,14 @@ export async function executeGitHistoryPatchOutcome(
     const filePatch = patchStart < 0 ? "" : stdout.slice(patchStart);
     patch += `${filePatch}${filePatch && !filePatch.endsWith("\n") ? "\n" : ""}`;
   }
-  const condensed = truncateOutput(redactSecrets(patch), 900);
+  const condensed = truncateOutput(
+    redactSecrets(patch),
+    Math.max(1, allowance - 100),
+  );
   if (
     getTokenCount(
       `${formatProxyOutput("git", condensed.content, { truncated: condensed.truncated })}\n`,
-    ) > LIMIT
+    ) > allowance
   )
     return fail(
       "Git history patch too large. Choose a narrower path, revision range, or count.",

@@ -90,6 +90,18 @@ export function getGrepTokenLimit(): number {
   return parsed;
 }
 
+export function getGitTokenLimit(): number {
+  const raw = getEnvValue("SPEKTA_GIT_TOKEN_LIMIT", "1000");
+  const parsed = parseInt(raw, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    console.warn(
+      `Invalid SPEKTA_GIT_TOKEN_LIMIT value "${raw}", falling back to 1000`,
+    );
+    return 1000;
+  }
+  return parsed;
+}
+
 export function getCompactThreshold(): number {
   const raw = getEnvValue("SPEKTA_COMPACT_THRESHOLD", "500");
   const parsed = parseInt(raw, 10);

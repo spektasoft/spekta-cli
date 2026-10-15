@@ -143,18 +143,18 @@ describe("TOOL_REGISTRY", () => {
     expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
   });
 
-  it("accepts allowance only for ls and forwards it through the list batch", async () => {
+  it("accepts configured request allowances for list and git operations", async () => {
     const shell = TOOL_REGISTRY.spekta_shell;
     expect(
       shell.schema({}).parse({ command: "ls", args: ["."], allowance: 250 }),
     ).toEqual({ command: "ls", args: ["."], allowance: 250 });
-    const wrongCommand = await shell.handler({
+    const invalidGit = await shell.handler({
       command: "git",
       args: ["status"],
-      allowance: 250,
+      allowance: "bad",
     });
-    expect(wrongCommand.isError).toBe(true);
-    expect(wrongCommand.content[0].text).toContain("only for ls");
+    expect(invalidGit.isError).toBe(true);
+    expect(invalidGit.content[0].text).toContain("positive whole number");
     expect(executeRtkCommand).not.toHaveBeenCalled();
 
     const invalid = await shell.handler({ command: "ls", allowance: -1 });

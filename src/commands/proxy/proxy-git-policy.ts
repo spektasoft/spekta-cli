@@ -44,6 +44,9 @@ const LOG_FLAGS = new Set([
 function fail(message: string): never {
   throw new Error(`Execution refused: ${message}`);
 }
+function unsupportedOption(option: string, topic: string): never {
+  fail(`unsupported option '${option}'. Use spekta help git ${topic}.`);
+}
 function validInteger(value: string, positive: boolean): boolean {
   return (
     /^[0-9]+$/.test(value) &&
@@ -86,7 +89,7 @@ function validateLogRevision(operand: string): void {
 }
 function validateDiffRevisions(revisions: string[], staged: boolean): void {
   for (const revision of revisions) {
-    if (revision.startsWith("-")) fail(`unsupported option '${revision}'.`);
+    if (revision.startsWith("-")) unsupportedOption(revision, "diff");
   }
   if (staged && revisions.length > 1)
     fail("Git diff staged inspection supports at most one revision.");
@@ -185,7 +188,7 @@ function validateBranchListing(args: string[]): void {
     args[index].startsWith("-")
   ) {
     const option = args[index];
-    if (!BRANCH_FLAGS.has(option)) fail(`unsupported option '${option}'.`);
+    if (!BRANCH_FLAGS.has(option)) unsupportedOption(option, "branch");
     if (option === "--list" || option === "-l") explicitListing = true;
     index += 1;
   }
@@ -202,7 +205,7 @@ function validateBranchListing(args: string[]): void {
   if (patterns.length > 0 && !explicitListing)
     fail("Git branch patterns require explicit listing with '--list' or '-l'.");
   for (const pattern of patterns) {
-    if (pattern.startsWith("-")) fail(`unsupported option '${pattern}'.`);
+    if (pattern.startsWith("-")) unsupportedOption(pattern, "branch");
     if (
       pattern === "" ||
       [...pattern].some((character) => {
@@ -272,7 +275,7 @@ export function validateGitProxyRequest(
       !allowed.has(option) &&
       !(subcommand === "log" && LOG_FLAGS.has(option))
     ) {
-      fail(`unsupported option '${option}'.`);
+      unsupportedOption(option, subcommand);
     }
     index += 1;
   }
@@ -298,7 +301,7 @@ export function validateGitProxyRequest(
   if (blob && paths.length > 0)
     fail("Git blob selector does not accept additional path operands.");
   for (const revision of revisions) {
-    if (revision.startsWith("-")) fail(`unsupported option '${revision}'.`);
+    if (revision.startsWith("-")) unsupportedOption(revision, subcommand);
     if (subcommand === "diff") continue;
     if (subcommand === "log") validateLogRevision(revision);
     else if (blob) validateBlobSelector(revision, context);

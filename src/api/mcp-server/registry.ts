@@ -51,6 +51,11 @@ import {
   getSafeFindValidationMessage,
 } from "../../commands/proxy/proxy-find-batch";
 import { isRtkAvailable } from "../../commands/proxy/proxy-execution";
+import {
+  createGitMcpResponse,
+  getGitMcpAllowanceRejection,
+  getMinimumGitMcpAllowance,
+} from "../../commands/proxy/proxy-git-response-budget";
 
 function measureFindMcpResponse(
   text: string,
@@ -380,14 +385,13 @@ const registry: Record<string, ToolRegistryEntry> = {
             params?.args?.description ||
               "Command arguments. For find, supply zero or more literal roots before supported -type/-name predicates (zero uses .); -name values are literal arguments.",
           ),
-        // Let find's budget-aware handler reject malformed values. Other
-        // commands retain their existing command-specific allowance checks.
+        // Git, ls and find resolve request allowances in their family handlers.
         allowance: z
           .unknown()
           .optional()
           .describe(
             params?.allowance?.description ||
-              "Optional response allowance in tokens for ls and find. The handler validates a positive whole number within the configured list ceiling.",
+              "Optional response allowance in tokens for ls, find, and git. Git allowances must be positive whole numbers within the configured Git ceiling.",
           ),
       }),
     handler: async (rawArgs, context, requestId) => {
@@ -397,18 +401,57 @@ const registry: Record<string, ToolRegistryEntry> = {
         allowance?: unknown;
       };
       const cleanArgs = args ?? [];
+      const gitAllowanceResult =
+        command === "git"
+          ? resolveRequestAllowance("git", allowance)
+          : undefined;
+      const gitAllowance =
+        gitAllowanceResult?.status === "ok"
+          ? (gitAllowanceResult.requested ??
+            gitAllowanceResult.settings.defaultTokens)
+          : (gitAllowanceResult?.settings.defaultTokens ?? 1000);
+      const respondGit = (text: string, isError: boolean) =>
+        createGitMcpResponse(text, isError, gitAllowance, requestId);
+      if (
+        gitAllowanceResult?.status === "ok" &&
+        gitAllowance < getMinimumGitMcpAllowance(requestId)
+      ) {
+        const minimumAllowance = getMinimumGitMcpAllowance(requestId);
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text",
+              text: getGitMcpAllowanceRejection(
+                gitAllowance,
+                minimumAllowance,
+                gitAllowanceResult.settings.defaultTokens,
+                requestId,
+              ),
+            },
+          ],
+        };
+      }
+      if (gitAllowanceResult && gitAllowanceResult.status !== "ok") {
+        const message =
+          gitAllowanceResult.status === "invalid"
+            ? "usage_error: Allowance must be a positive whole number. Use spekta help git."
+            : `output_limit_exceeded: Allowance exceeds the configured Git ceiling of ${gitAllowanceResult.settings.ceilingTokens} tokens. Use spekta help git.`;
+        return respondGit(message, true);
+      }
 
       if (
         Object.hasOwn(rawArgs, "allowance") &&
         command !== "ls" &&
-        command !== "find"
+        command !== "find" &&
+        command !== "git"
       ) {
         return {
           isError: true,
           content: [
             {
               type: "text",
-              text: "usage_error: Allowance is supported only for ls and find.",
+              text: "usage_error: Allowance is supported only for ls, find, and git.",
             },
           ],
         };
@@ -417,6 +460,8 @@ const registry: Record<string, ToolRegistryEntry> = {
       try {
         validateProxyRequest(command, cleanArgs, context);
       } catch (error: unknown) {
+        if (command === "git")
+          return respondGit(formatProxyFailure(error), true);
         if (command === "find") {
           const resolved = resolveRequestAllowance("list", allowance);
           return {
@@ -538,19 +583,15 @@ const registry: Record<string, ToolRegistryEntry> = {
         };
       }
       if (command === "git" && isGitHistoryPatchRequest(cleanArgs)) {
-        const outcome = await executeGitHistoryPatchOutcome(cleanArgs, context);
-        return {
-          isError: outcome.status === "failure",
-          content: [
-            {
-              type: "text",
-              text:
-                outcome.status === "failure"
-                  ? outcome.message
-                  : outcome.content,
-            },
-          ],
-        };
+        const outcome = await executeGitHistoryPatchOutcome(
+          cleanArgs,
+          context,
+          gitAllowance,
+        );
+        return respondGit(
+          outcome.status === "failure" ? outcome.message : outcome.content,
+          outcome.status === "failure",
+        );
       }
       if (
         command === "git" &&
@@ -559,24 +600,27 @@ const registry: Record<string, ToolRegistryEntry> = {
           ["--name-only", "--name-status", "--stat"].includes(arg),
         )
       ) {
-        const outcome = await executeGitDiffPatchOutcome(cleanArgs, context);
-        return {
-          isError: outcome.status === "failure",
-          content: [
-            {
-              type: "text",
-              text:
-                outcome.status === "failure"
-                  ? outcome.message
-                  : outcome.content,
-            },
-          ],
-        };
+        const outcome = await executeGitDiffPatchOutcome(
+          cleanArgs,
+          context,
+          gitAllowance,
+        );
+        return respondGit(
+          outcome.status === "failure" ? outcome.message : outcome.content,
+          outcome.status === "failure",
+        );
       }
       let result;
       try {
         result = await executeRtkCommand(command, cleanArgs, context);
       } catch (error: unknown) {
+        if (command === "git")
+          return respondGit(
+            cleanArgs[0] === "status"
+              ? "RTK listing failed before output could be checked."
+              : formatProxyFailure(error),
+            true,
+          );
         return {
           isError: true,
           content: [
@@ -591,6 +635,11 @@ const registry: Record<string, ToolRegistryEntry> = {
         };
       }
       if (!result.available) {
+        if (command === "git")
+          return respondGit(
+            "The `rtk` executable was not found. Install RTK with the `rtk-ai` package, then retry.",
+            true,
+          );
         return {
           isError: true,
           content: [
@@ -607,35 +656,20 @@ const registry: Record<string, ToolRegistryEntry> = {
           result,
           cleanArgs,
           context,
+          gitAllowance,
         );
-        return {
-          isError: outcome.status === "failure",
-          content: [
-            {
-              type: "text",
-              text:
-                outcome.status === "failure"
-                  ? outcome.message
-                  : outcome.content,
-            },
-          ],
-        };
+        return respondGit(
+          outcome.status === "failure" ? outcome.message : outcome.content,
+          outcome.status === "failure",
+        );
       }
 
       if (command === "git" && cleanArgs[0] === "branch") {
-        const outcome = renderGitBranchOutcome(result);
-        return {
-          isError: outcome.status === "failure",
-          content: [
-            {
-              type: "text",
-              text:
-                outcome.status === "failure"
-                  ? outcome.message
-                  : outcome.content,
-            },
-          ],
-        };
+        const outcome = renderGitBranchOutcome(result, gitAllowance);
+        return respondGit(
+          outcome.status === "failure" ? outcome.message : outcome.content,
+          outcome.status === "failure",
+        );
       }
 
       if (
@@ -650,21 +684,20 @@ const registry: Record<string, ToolRegistryEntry> = {
           (arg, index) =>
             index > 0 && !arg.startsWith("-") && arg.includes(":"),
         )!;
-        const outcome = await renderGitBlobOutcome(result, selector, context);
-        return {
-          isError: outcome.status === "failure",
-          content: [
-            {
-              type: "text",
-              text:
-                outcome.status === "failure"
-                  ? formatProxyOutput("git", outcome.message, {
-                      exitCode: outcome.exitCode,
-                    })
-                  : outcome.content,
-            },
-          ],
-        };
+        const outcome = await renderGitBlobOutcome(
+          result,
+          selector,
+          context,
+          gitAllowance,
+        );
+        return respondGit(
+          outcome.status === "failure"
+            ? formatProxyOutput("git", outcome.message, {
+                exitCode: outcome.exitCode,
+              })
+            : outcome.content,
+          outcome.status === "failure",
+        );
       }
 
       if (
@@ -679,35 +712,25 @@ const registry: Record<string, ToolRegistryEntry> = {
           result,
           cleanArgs,
           context,
+          gitAllowance,
         );
-        return {
-          isError: outcome.status === "failure",
-          content: [
-            {
-              type: "text",
-              text:
-                outcome.status === "failure"
-                  ? outcome.message
-                  : outcome.content,
-            },
-          ],
-        };
+        return respondGit(
+          outcome.status === "failure" ? outcome.message : outcome.content,
+          outcome.status === "failure",
+        );
       }
 
       if (command === "git" && cleanArgs[0] === "diff") {
-        const outcome = await renderGitDiffOutcome(result, cleanArgs, context);
-        return {
-          isError: outcome.status === "failure",
-          content: [
-            {
-              type: "text",
-              text:
-                outcome.status === "failure"
-                  ? outcome.message
-                  : outcome.content,
-            },
-          ],
-        };
+        const outcome = await renderGitDiffOutcome(
+          result,
+          cleanArgs,
+          context,
+          gitAllowance,
+        );
+        return respondGit(
+          outcome.status === "failure" ? outcome.message : outcome.content,
+          outcome.status === "failure",
+        );
       }
 
       const rawOutput = [result.stdout, result.stderr]
@@ -716,6 +739,8 @@ const registry: Record<string, ToolRegistryEntry> = {
       const truncated = truncateOutput(rawOutput);
       const safeOutput = redactSecrets(truncated.content);
 
+      if (command === "git")
+        return respondGit(safeOutput, result.exitCode !== 0);
       return {
         isError: result.exitCode !== 0,
         content: [{ type: "text", text: safeOutput }],

@@ -3,13 +3,14 @@ import { formatProxyOutput, truncateOutput } from "./proxy-output";
 import { redactSecrets } from "./proxy-secret-redaction";
 import type { DiscoveryRenderOutcome } from "./proxy-render-outcome";
 
-const RESPONSE_LIMIT = 1000;
-
 /** Render branch names only; verbose upstream and commit text is never disclosed. */
-export function renderGitBranchOutcome(result: {
-  stdout: string;
-  exitCode: number;
-}): DiscoveryRenderOutcome {
+export function renderGitBranchOutcome(
+  result: {
+    stdout: string;
+    exitCode: number;
+  },
+  allowance = 1000,
+): DiscoveryRenderOutcome {
   if (result.exitCode !== 0) {
     return {
       status: "failure",
@@ -38,7 +39,7 @@ export function renderGitBranchOutcome(result: {
     /`/g,
     "\\u0060",
   );
-  let budget = RESPONSE_LIMIT;
+  let budget = allowance;
   while (budget > 0) {
     const truncated = truncateOutput(listing, budget);
     const cli = formatProxyOutput("git", truncated.content, {
@@ -49,8 +50,8 @@ export function renderGitBranchOutcome(result: {
       content: [{ type: "text", text: truncated.content }],
     });
     if (
-      getTokenCount(`${cli}\n`) <= RESPONSE_LIMIT &&
-      getTokenCount(mcp) <= RESPONSE_LIMIT
+      getTokenCount(`${cli}\n`) <= allowance &&
+      getTokenCount(mcp) <= allowance
     ) {
       return { status: "success", ...truncated };
     }

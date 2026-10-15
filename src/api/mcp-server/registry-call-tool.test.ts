@@ -7,6 +7,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolveAllowanceSettings } from "../../core/config/allowance";
 import { getTokenCount } from "../../utils/read-utils";
+import { getMinimumGitMcpAllowance } from "../../commands/proxy/proxy-git-response-budget";
 import { createToolRegistry } from "./registry";
 
 const execution = vi.hoisted(() => ({
@@ -57,6 +58,73 @@ afterEach(async () => {
 });
 
 describe("registered spekta_shell callTool allowance validation", () => {
+  it("budgets complete Git responses with the MCP request ID", async () => {
+    const workspace = await fs.mkdtemp(
+      path.join(os.tmpdir(), "spekta-mcp-git-envelope-"),
+    );
+    created.push(workspace);
+    const tool = createToolRegistry({ root: workspace }).spekta_shell;
+    const requestId = "git-request-0123456789abcdef";
+    const envelope = (result: unknown) =>
+      JSON.stringify({ jsonrpc: "2.0", id: requestId, result }) + "\n";
+
+    const complete = await tool.handler(
+      { command: "git", args: ["status", "--not-supported"], allowance: 1000 },
+      undefined,
+      requestId,
+    );
+    expect(complete.isError).toBe(true);
+    expect(complete.content[0].text).toContain("spekta help git status");
+    expect(getTokenCount(envelope(complete))).toBeLessThanOrEqual(1000);
+
+    const minimum = getMinimumGitMcpAllowance(requestId);
+    const rejected = await tool.handler(
+      {
+        command: "git",
+        args: ["status", "--not-supported"],
+        allowance: minimum - 1,
+      },
+      undefined,
+      requestId,
+    );
+    expect(rejected.isError).toBe(true);
+    expect(rejected.content[0].text).toContain("usage_error");
+    expect(getTokenCount(envelope(rejected))).toBeLessThanOrEqual(
+      resolveAllowanceSettings("git").defaultTokens,
+    );
+    expect(execution.isRtkAvailable).not.toHaveBeenCalled();
+    expect(execution.executeRtkCommand).not.toHaveBeenCalled();
+  });
+
+  it("rejects long request IDs before execution with a bounded diagnostic", async () => {
+    const workspace = await fs.mkdtemp(
+      path.join(os.tmpdir(), "spekta-mcp-git-long-id-"),
+    );
+    created.push(workspace);
+    const tool = createToolRegistry({ root: workspace }).spekta_shell;
+    const requestId = "x".repeat(10_000);
+    const result = await tool.handler(
+      { command: "git", args: ["status"], allowance: 1000 },
+      undefined,
+      requestId,
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("usage_error");
+    expect(result.content[0].text).not.toBe("output_limit_exceeded");
+    expect(getTokenCount(result.content[0].text)).toBeLessThanOrEqual(64);
+    expect(execution.isRtkAvailable).not.toHaveBeenCalled();
+    expect(execution.executeRtkCommand).not.toHaveBeenCalled();
+    const responseEnvelope = JSON.parse(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: requestId,
+        result,
+      }),
+    ) as { id: string };
+    expect(responseEnvelope.id).toBe(requestId);
+  });
+
   it("routes wrong-type find allowance through budgeted handler and accepts a valid allowance", async () => {
     vi.stubEnv("SPEKTA_LIST_TOKEN_LIMIT", "1000");
     vi.stubEnv("SPEKTA_LIST_TOKEN_CEILING", "2000");
@@ -185,7 +253,7 @@ describe("registered spekta_shell callTool allowance validation", () => {
       expect(rejectedGit.isError).toBe(true);
       expect(rejectedGit.content[0].type).toBe("text");
       expect(rejectedGit.content[0].text).toBe(
-        "usage_error: Allowance is supported only for ls and find.",
+        "usage_error: Allowance must be a positive whole number. Use spekta help git.",
       );
       expect(execution.executeRtkCommand).toHaveBeenCalledOnce();
     } finally {

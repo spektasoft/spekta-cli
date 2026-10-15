@@ -7,13 +7,12 @@ import { findRepositoryRoot } from "./proxy-git-policy";
 import { isEligibleGitPath } from "./proxy-git-status";
 import type { DiscoveryRenderOutcome } from "./proxy-render-outcome";
 
-const LIMIT = 1000;
-
 /** Render log/show summaries from NUL-delimited name-status records. */
 export async function renderGitHistoryOutcome(
   result: { stdout: string; stderr?: string; exitCode: number },
   args: string[],
   context?: WorkspaceContext,
+  allowance = 1000,
 ): Promise<DiscoveryRenderOutcome> {
   const fail = (message: string, exitCode = 1): DiscoveryRenderOutcome => ({
     status: "failure",
@@ -121,7 +120,7 @@ export async function renderGitHistoryOutcome(
         `${eligibleCount} eligible file${eligibleCount === 1 ? "" : "s"} changed`,
       );
     const content = redactSecrets(lines.join("\n"));
-    if (getTokenCount(`${formatProxyOutput("git", content)}\n`) > LIMIT)
+    if (getTokenCount(`${formatProxyOutput("git", content)}\n`) > allowance)
       return fail(
         "Git history summary too large. Choose a narrower path or revision range.",
       );
