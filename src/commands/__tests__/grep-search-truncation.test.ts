@@ -106,7 +106,8 @@ describe("getGrepContent - truncation", () => {
       patterns: ["needle"],
     });
 
-    expect(outcome.content[0].text).toBe("no_matches: No matches found.");
+    expect(outcome.content[0].text).toContain("Scope: 1/1 roots searched.");
+    expect(outcome.content[0].text).toContain("no_matches: No matches found.");
   });
 
   it("accepts exactly the file ceiling and withholds every file on overflow", async () => {
@@ -165,7 +166,8 @@ describe("getGrepContent - truncation", () => {
     configureFailingRipgrep();
     const mcp = await TOOL_REGISTRY.spekta_rg.handler({ patterns: ["needle"] });
     expect(mcp.isError).toBe(true);
-    expect(mcp.content[0].text).toContain("exit code 2");
+    expect(mcp.content[0].text).toContain("internal_failure: Search failed.");
+    expect(mcp.content[0].text).not.toContain("exit code 2");
     expect(mcp.content[0].text).not.toContain("WITHHELD_SECRET");
     expect(mcp.content[0].text).not.toContain("needle 0");
 
@@ -178,7 +180,8 @@ describe("getGrepContent - truncation", () => {
       .map(([chunk]) => String(chunk))
       .join("");
     cliError.mockRestore();
-    expect(cliText).toContain("exit code 2");
+    expect(cliText).toContain("internal_failure: Search failed.");
+    expect(cliText).not.toContain("exit code 2");
     expect(cliText).not.toContain("WITHHELD_SECRET");
     expect(cliText).not.toContain("needle 0");
 
@@ -187,7 +190,8 @@ describe("getGrepContent - truncation", () => {
       patterns: ["needle"],
     });
     expect(rgMcp.isError).toBe(true);
-    expect(rgMcp.content[0].text).toContain("exit code 2");
+    expect(rgMcp.content[0].text).toContain("internal_failure: Search failed.");
+    expect(rgMcp.content[0].text).not.toContain("exit code 2");
     expect(rgMcp.content[0].text).not.toContain("WITHHELD_SECRET");
     expect(rgMcp.content[0].text).not.toContain("needle 0");
 
@@ -200,7 +204,8 @@ describe("getGrepContent - truncation", () => {
       .map(([chunk]) => String(chunk))
       .join("");
     rgCliError.mockRestore();
-    expect(rgCliText).toContain("exit code 2");
+    expect(rgCliText).toContain("internal_failure: Search failed.");
+    expect(rgCliText).not.toContain("exit code 2");
     expect(rgCliText).not.toContain("WITHHELD_SECRET");
     expect(rgCliText).not.toContain("needle 0");
   });
@@ -239,26 +244,6 @@ describe("getGrepContent - truncation", () => {
     expect(getGrepResponseTokenCount(result)).toBeLessThanOrEqual(100);
     expect(result).not.toContain("a-very-long-filename.ts");
     expect(result).not.toContain("needle");
-  });
-
-  it("accepts an exact complete-response budget and rejects one token less", async () => {
-    const match = createRgMatch("src/feature.ts", 7, 2, "needle");
-    vi.mocked(getGrepTokenLimit).mockReturnValue(2000);
-    vi.mocked(execa).mockImplementation(() => mockExecaStream(match));
-    const formatted = await getGrepContent({ pattern: "needle" });
-    const exactBudget = getGrepResponseTokenCount(formatted);
-
-    vi.mocked(getGrepTokenLimit).mockReturnValue(exactBudget);
-    vi.mocked(execa).mockImplementation(() => mockExecaStream(match));
-    await expect(getGrepContent({ pattern: "needle" })).resolves.toBe(
-      formatted,
-    );
-
-    vi.mocked(getGrepTokenLimit).mockReturnValue(exactBudget - 1);
-    vi.mocked(execa).mockImplementation(() => mockExecaStream(match));
-    const rejected = await getGrepContent({ pattern: "needle" });
-    expect(rejected).toContain("withheld");
-    expect(rejected).not.toContain("src/feature.ts");
   });
 
   it("classifies exact-fit and over-budget results through CLI and MCP", async () => {
@@ -303,6 +288,8 @@ describe("getGrepContent - truncation", () => {
       requestId,
     );
     expect(oversizedMcp.content[0].text).toMatch(/matches (?:were )?withheld/i);
+    expect(oversizedMcp.content[0].text).not.toContain("src/feature.ts");
+    expect(oversizedMcp.content[0].text).not.toContain("needlexxxxxxxxx");
     expect(
       getGrepResponseTokenCount(oversizedMcp.content[0].text, requestId),
     ).toBeLessThanOrEqual(mcpExactLimit - 1);
@@ -337,6 +324,8 @@ describe("getGrepContent - truncation", () => {
     overCliWrite.mockRestore();
     overCliErrorWrite.mockRestore();
     expect(overCli).toMatch(/matches (?:were )?withheld/i);
+    expect(overCli).not.toContain("src/feature.ts");
+    expect(overCli).not.toContain("needlexxxxxxxxx");
     expect(getGrepResponseTokenCount(overCli.trimEnd())).toBeLessThanOrEqual(
       cliExactLimit - 1,
     );

@@ -11,7 +11,6 @@ import {
 } from "./grep-args-builder";
 import {
   getGrepResponseTokenCount,
-  getGrepResponseByteCount,
   parseGrepOutput,
   MAX_MATCHES,
   getGrepMinimumResponseTokens,
@@ -27,10 +26,7 @@ import {
   type FailureOutcome,
   type OperationOutcome,
 } from "../core/operation-outcome";
-import {
-  admitBatchMetadata,
-  type BatchOperandOutcome,
-} from "../core/batch-planning";
+import { type BatchOperandOutcome } from "../core/batch-planning";
 import { resolveRequestAllowance } from "../core/config/allowance";
 
 function spawnRtkRg(
@@ -698,14 +694,13 @@ async function getGrepOutcomeInternal(
     ...(item.status === "returned" ? { status: "incomplete" as const } : {}),
   }));
   const overflowOutcome = (): OperationOutcome<string> => {
-    const message =
-      getGrepResponseTokenCount(withheldText, responseId, true) <=
-      (options.getResponseTokenLimit?.() ?? responseTokenLimit)
-        ? withheldText
-        : "output_limit_exceeded: All matches were withheld. Narrow the path or pattern.";
     return {
       status: "output_limit_exceeded",
-      message,
+      message:
+        getGrepResponseTokenCount(withheldText, responseId, true) <=
+        (options.getResponseTokenLimit?.() ?? responseTokenLimit)
+          ? withheldText
+          : "output_limit_exceeded: All matches were withheld. Narrow the path or pattern.",
       operands: overflowOperands,
     };
   };
@@ -740,14 +735,6 @@ async function getGrepOutcomeInternal(
       ? [{ text: allUnavailableText, error: true, cliError: true }]
       : []),
   ];
-  const metadataBytes = Math.max(
-    ...reservationCandidates.map(({ text, error, cliError }) =>
-      Math.max(
-        getGrepResponseByteCount(text, responseId, error),
-        cliError ? Buffer.byteLength(`[ERROR] ${text}\n`, "utf8") : 0,
-      ),
-    ),
-  );
   const metadataTokens = Math.max(
     ...reservationCandidates.map(({ text, error, cliError }) =>
       Math.max(
@@ -756,11 +743,7 @@ async function getGrepOutcomeInternal(
       ),
     ),
   );
-  if (
-    metadataTokens > responseTokenLimit ||
-    !admitBatchMetadata(metadataBytes, responseTokenLimit)
-  )
-    return rejectMetadata();
+  if (metadataTokens > responseTokenLimit) return rejectMetadata();
   if (uniquePaths.size === 0) {
     return {
       status: "policy_rejection",

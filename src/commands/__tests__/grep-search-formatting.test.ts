@@ -57,7 +57,7 @@ describe("getGrepContent - formatting", () => {
     expect(result).not.toContain('Search Results for "const":');
   });
 
-  it("returns 'No matches found.' when ripgrep exit code is 1", async () => {
+  it("reports scoped no-match outcomes when ripgrep exits with code 1", async () => {
     vi.mocked(execa)
       .mockImplementationOnce(() => mockExecaStream("rtk version"))
       .mockImplementationOnce(() => mockExecaStream(""))
@@ -65,7 +65,8 @@ describe("getGrepContent - formatting", () => {
       .mockImplementationOnce(() => mockExecaStream("", 1));
 
     const result = await getGrepContent({ pattern: "nonexistent" });
-    expect(result).toBe("No matches found.");
+    expect(result).toContain("Scope: 1/1 roots searched.");
+    expect(result).toContain("no_matches: No matches found.");
   });
 
   it("skips invalid JSON lines and processes valid ones", async () => {
