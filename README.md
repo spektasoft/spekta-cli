@@ -93,6 +93,7 @@ spekta git diff --help
 
 The detailed references explain the limits and configuration behind common workflows:
 
+- [Agent command and recovery reference](guides/agent-reference.md): retrieval commands, bounded recovery, routing, status interpretation, and handoffs.
 - [Workspace inspection](guides/inspection.md): discovery, Git inspection, policy, and response limits.
 - [Prompts and workflows](guides/workflows.md): prompt templates, generated output, and commit workflows.
 - [Runtime and configuration](guides/configuration.md): assets, providers, environment variables, and ignore rules.

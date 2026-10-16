@@ -1,6 +1,6 @@
 # Workspace Inspection Reference
 
-Related guides: [README](../README.md) · [Prompts and workflows](workflows.md) · [Runtime and configuration](configuration.md) · [Codex setup](codex-setup.md)
+Related guides: [Agent command and recovery reference](agent-reference.md) · [README](../README.md) · [Prompts and workflows](workflows.md) · [Runtime and configuration](configuration.md) · [Codex setup](codex-setup.md)
 
 ## Search with ripgrep
 
