@@ -12,6 +12,7 @@ export interface GrepOptions {
   case_insensitive?: boolean;
   case_mode?: "insensitive" | "sensitive" | "smart";
   responseTokenLimit?: number;
+  getResponseTokenLimit?: () => number;
   onProgress?: (phase: "preparing" | "searching") => void;
   setSearchPhase?: () => void;
   profile?: boolean;

@@ -58,7 +58,7 @@ describe("search lifecycle progress", () => {
     expect(resolveSearchTelemetryBudget(1000, 30, true, 210, true)).toEqual({
       progressEnabled: true,
       profileEnabled: true,
-      reservedTokens: 242,
+      reservedTokens: 32,
     });
     expect(resolveSearchTelemetryBudget(2000, 30, true, 600, true)).toEqual({
       progressEnabled: false,

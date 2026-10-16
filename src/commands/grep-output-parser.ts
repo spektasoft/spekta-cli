@@ -46,6 +46,7 @@ export interface GrepOutputContext {
   requestedSearchPaths?: string[];
   responseId?: string | number;
   responseTokenLimit?: number;
+  getResponseTokenLimit?: () => number;
   /** Text rendered before this search result in the complete response. */
   responsePrefix?: string;
   responseIsError?: boolean;
@@ -180,7 +181,9 @@ export async function parseGrepOutput(
   );
   const resultsByFile: Record<string, string[]> = {};
   let totalMatches = 0;
-  const MAX_GREP_TOKENS = context?.responseTokenLimit ?? getGrepTokenLimit();
+  const getResponseTokenLimit =
+    context?.getResponseTokenLimit ??
+    (() => context?.responseTokenLimit ?? getGrepTokenLimit());
   const responsePrefix = context?.responsePrefix ?? "";
   const responsePrefixIsError = context?.responseIsError ?? false;
   const responseCount = (text: string, isError = responsePrefixIsError) =>
@@ -328,7 +331,7 @@ export async function parseGrepOutput(
           if (
             responseCount(
               `success: Search completed with matches.\n${candidate}`,
-            ) > MAX_GREP_TOKENS
+            ) > getResponseTokenLimit()
           ) {
             resultsByFile[displayPath].pop();
             if (resultsByFile[displayPath].length === 0)
@@ -375,7 +378,7 @@ export async function parseGrepOutput(
         status: "engine_failure",
         message: boundedMessage(
           `internal_failure: Search process failed (${failureDetail}).`,
-          MAX_GREP_TOKENS,
+          getResponseTokenLimit(),
           context?.responseId,
           responsePrefix,
           responsePrefixIsError,
@@ -389,7 +392,7 @@ export async function parseGrepOutput(
       ? {
           status: "output_limit_exceeded",
           message: getOutputLimitGuidance(
-            MAX_GREP_TOKENS,
+            getResponseTokenLimit(),
             context?.responseId,
             responsePrefix,
           ),
@@ -398,7 +401,7 @@ export async function parseGrepOutput(
           status: "no_matches",
           message: boundedMessage(
             "no_matches: No matches found.",
-            MAX_GREP_TOKENS,
+            getResponseTokenLimit(),
             context?.responseId,
             responsePrefix,
             responsePrefixIsError,
@@ -410,17 +413,17 @@ export async function parseGrepOutput(
     return {
       status: "output_limit_exceeded",
       message: getOutputLimitGuidance(
-        MAX_GREP_TOKENS,
+        getResponseTokenLimit(),
         context?.responseId,
         responsePrefix,
       ),
     };
   const formatted = `success: Search completed with matches.\n${formatResults(resultsByFile)}`;
-  if (responseCount(formatted) > MAX_GREP_TOKENS) {
+  if (responseCount(formatted) > getResponseTokenLimit()) {
     return {
       status: "output_limit_exceeded",
       message: getOutputLimitGuidance(
-        MAX_GREP_TOKENS,
+        getResponseTokenLimit(),
         context?.responseId,
         responsePrefix,
       ),

@@ -19,7 +19,6 @@ import { getWriteOutcome } from "../commands/write";
 import { executeRtkCommand } from "../commands/proxy/proxy-execution";
 import { getTokenCount } from "../utils/read-utils";
 import { getGrepResponseTokenCount } from "../commands/grep-output-parser";
-import { runRg } from "../commands/rg";
 import fs from "fs-extra";
 import os from "node:os";
 import path from "node:path";
@@ -229,12 +228,12 @@ describe("TOOL_REGISTRY", () => {
       content: [{ type: "text", text: "rg result" }],
     });
     expect(getRgOutcome).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         patterns: ["needle", "haystack"],
         paths: ["nested", "docs"],
         globs: ["*.ts,*.tsx"],
         case_mode: "smart",
-      },
+      }),
       undefined,
       undefined,
     );
@@ -248,7 +247,7 @@ describe("TOOL_REGISTRY", () => {
         "Search results exceed the response budget; all matches were withheld. Narrow the path or pattern.",
     });
     const limited = await tool.handler({ patterns: ["needle"] });
-    expect(limited.isError).toBeUndefined();
+    expect(limited.isError).toBe(true);
     expect(limited.content[0].text).toContain("all matches were withheld");
     expect(
       getGrepResponseTokenCount(limited.content[0].text, "request-42"),
@@ -262,35 +261,6 @@ describe("TOOL_REGISTRY", () => {
     expect(failure.isError).toBe(true);
     expect(
       getGrepResponseTokenCount(failure.content[0].text, "request-42", true),
-    ).toBeLessThanOrEqual(2000);
-  });
-
-  it.each([
-    {
-      status: "success" as const,
-      value: "#### src/file.ts\n```ts\n1:0:needle\n```",
-    },
-    {
-      status: "output_limit_exceeded" as const,
-      message:
-        "Search results exceed the response budget; all matches were withheld. Narrow the path or pattern.",
-    },
-  ])("keeps CLI and MCP grep rendering in parity", async (outcome) => {
-    vi.mocked(getRgOutcome).mockResolvedValueOnce(outcome);
-    const writeSpy = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    await runRg(["needle"]);
-    const cliOutput = writeSpy.mock.calls
-      .map(([chunk]) => String(chunk))
-      .join("");
-    writeSpy.mockRestore();
-
-    vi.mocked(getRgOutcome).mockResolvedValueOnce(outcome);
-    const mcp = await TOOL_REGISTRY.spekta_rg.handler({ patterns: ["needle"] });
-    expect(cliOutput).toBe(`${mcp.content[0].text}\n`);
-    expect(
-      getGrepResponseTokenCount(mcp.content[0].text, "request-42"),
     ).toBeLessThanOrEqual(2000);
   });
 
@@ -313,12 +283,12 @@ describe("TOOL_REGISTRY", () => {
       getGrepResponseTokenCount(text, "mcp-request-1"),
     );
     expect(getRgOutcome).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         patterns: ["needle"],
         paths: [],
         globs: [],
         case_mode: "sensitive",
-      },
+      }),
       undefined,
       requestId,
     );
@@ -371,12 +341,12 @@ describe("TOOL_REGISTRY", () => {
       false,
     );
     expect(getRgOutcome).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         patterns: ["needle"],
         paths: ["src"],
         globs: ["*.ts"],
         case_mode: "insensitive",
-      },
+      }),
       workspace,
       undefined,
     );

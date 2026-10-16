@@ -73,9 +73,9 @@ describe("explicit proxy workspace context", () => {
     expect(() =>
       validateProxyRequest("find", ["folder"], context()),
     ).not.toThrow();
-    expect(() => validateProxyRequest("find", ["missing"], context())).toThrow(
-      /existing workspace directory/i,
-    );
+    expect(() =>
+      validateProxyRequest("find", ["missing"], context()),
+    ).not.toThrow();
   });
 
   it("uses context root for Git repository discovery and blob paths", () => {

@@ -58,10 +58,9 @@ const preparing = args[0] === "proxy" && args[1] === "rg" && args.includes("--ve
 if (args.length === 1 && args[0] === "--version") { console.log("rtk 1"); process.exit(0); }
 if (preparing && ${JSON.stringify(mode)} !== "preparation") { console.log("ripgrep 1"); process.exit(0); }
 if (args.includes("--files") && ${JSON.stringify(mode)} === "search") process.exit(0);
-if (args.includes("--files") && ${JSON.stringify(mode)} === "normal") { process.stdout.write("fixture.txt\\0"); process.exit(0); }
+if (args.includes("--files") && ${JSON.stringify(mode)} === "normal") { process.stdout.write("real.txt\\0", () => process.exit(0)); }
 if (args[0] === "proxy" && args[1] === "rg" && args.includes("--json") && ${JSON.stringify(mode)} === "normal") {
-  console.log(JSON.stringify({ type: "match", data: { path: { text: "fixture.txt" }, line_number: 1, submatches: [{ start: 0 }], lines: { text: "needle found\\n" } } }));
-  process.exit(0);
+  process.stdout.write(JSON.stringify({ type: "match", data: { path: { text: ${JSON.stringify(path.join(root, "real.txt"))} }, line_number: 1, submatches: [{ start: 0 }], lines: { text: "needle INTERNAL\\n" } } }) + "\\n", () => process.exit(0));
 }
 if (preparing || (args[0] === "proxy" && args[1] === "rg")) {
   const child = spawn(process.execPath, ["-e", ${JSON.stringify(descendant)}], { stdio: "ignore" });
@@ -115,16 +114,12 @@ async function connectSearchClient(onAbort?: () => void) {
 
 describe("public MCP search interruption", () => {
   it("returns complete matches on normal backend completion", async () => {
-    await fs.writeFile(
-      path.join(fixture.root, "fixture.txt"),
-      "needle found\n",
-    );
     await installRtk("normal", fixture.root);
     const { client, server } = await connectSearchClient();
     try {
       const result = (await client.callTool({
         name: "spekta_rg",
-        arguments: { patterns: ["needle"], paths: ["fixture.txt"] },
+        arguments: { patterns: ["needle"], paths: ["real.txt"] },
       })) as unknown as {
         content: Array<{ type: string; text: string }>;
         isError?: boolean;
@@ -134,7 +129,7 @@ describe("public MCP search interruption", () => {
         .map((item) => item.text)
         .join("\n");
       expect(result.isError).toBeUndefined();
-      expect(text).toContain("needle found");
+      expect(text).toContain("needle INTERNAL");
       expect(text).toContain("success: Search completed with matches.");
     } finally {
       await client.close();

@@ -48,6 +48,22 @@ describe("spekta rg public boundaries", () => {
       "needle mixed-root\n",
     );
     process.chdir(fixture.root);
+    const completeWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockReturnValue(true);
+    await runRg(["-e", "needle", "real.txt"]);
+    const completeCliText = completeWrite.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    completeWrite.mockRestore();
+    const completeMcp = await TOOL_REGISTRY.spekta_rg.handler(
+      { patterns: ["needle"], paths: ["real.txt"] },
+      { root: fixture.root },
+    );
+    expect(completeMcp.isError).toBeUndefined();
+    expect(completeMcp.content[0]?.text).toBe(completeCliText.trimEnd());
+    expect(completeMcp.content[0]?.text).toContain("needle mixed-root");
+
     const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     await runRg([
       "-e",

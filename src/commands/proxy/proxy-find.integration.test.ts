@@ -156,10 +156,17 @@ describe("restricted find CLI and MCP parity", () => {
       allowance: 300,
     });
     expect(rejectedMcp.isError).toBe(true);
-    expect(rejectedMcp.content[0].text).toContain(
-      "Allowance is supported only for ls and find",
+    expect(rejectedMcp.content[0].text).toContain("Git status rejected");
+    expect(rejectedMcp.content[0].text).not.toContain(
+      "Allowance is supported only",
     );
-    expect(execa).not.toHaveBeenCalled();
+    expect(
+      vi
+        .mocked(execa)
+        .mock.calls.some(
+          ([file, args]) => file === "rtk" && args?.[0] === "proxy",
+        ),
+    ).toBe(true);
   });
 
   it.each(acceptedFindRequests)(

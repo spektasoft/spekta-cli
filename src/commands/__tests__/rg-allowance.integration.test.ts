@@ -18,11 +18,22 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+const missingStdioPrerequisites = [
+  ...(!process.env.SPEKTA_ALLOWANCE_TEST_ENTRY
+    ? ["SPEKTA_ALLOWANCE_TEST_ENTRY"]
+    : []),
+  ...(!process.env.SPEKTA_ALLOWANCE_TEST_RG
+    ? ["SPEKTA_ALLOWANCE_TEST_RG"]
+    : []),
+];
+
 async function createStdioSearchProcess() {
-  const entry = process.env.SPEKTA_T09_ENTRY;
-  const rg = process.env.SPEKTA_T09_RG;
+  const entry = process.env.SPEKTA_ALLOWANCE_TEST_ENTRY;
+  const rg = process.env.SPEKTA_ALLOWANCE_TEST_RG;
   if (!entry || !rg)
-    throw new Error("SPEKTA_T09_ENTRY and SPEKTA_T09_RG are required");
+    throw new Error(
+      "SPEKTA_ALLOWANCE_TEST_ENTRY and SPEKTA_ALLOWANCE_TEST_RG are required",
+    );
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "rg-stdio-allowance-"));
   const workspace = path.join(root, "workspace");
@@ -102,6 +113,7 @@ if [ "$1" = "proxy" ] && [ "$2" = "rg" ]; then
       ;;
   esac
   shift 2
+  if [ "$SPEKTA_ALLOWANCE_TEST_DELAY_RG" = "1" ]; then sleep 2.5; fi
   exec "$RG_BIN" "$@"
 fi
 exit 2
@@ -187,7 +199,7 @@ exit 2
     params: {
       protocolVersion: "2025-03-26",
       capabilities: {},
-      clientInfo: { name: "ticket09-process-test", version: "1.0.0" },
+      clientInfo: { name: "allowance-process-test", version: "1.0.0" },
     },
   });
   expect(initialize.message.result).toBeDefined();
@@ -386,7 +398,7 @@ exit 2
         .catch(() => "");
       await fs.remove(root);
       const temporaryWorkspaceRemoved = !(await fs.pathExists(root));
-      const capturePath = process.env.SPEKTA_T09_CAPTURE;
+      const capturePath = process.env.SPEKTA_ALLOWANCE_TEST_CAPTURE;
       if (capturePath) {
         await fs.ensureDir(path.dirname(capturePath));
         await fs.writeFile(
@@ -411,7 +423,39 @@ exit 2
   };
 }
 
-describe("registered spekta_rg allowance boundary", () => {
+const stdioDescribe =
+  missingStdioPrerequisites.length > 0 ? describe.skip : describe;
+const stdioSuiteTitle = `registered spekta_rg allowance boundary${missingStdioPrerequisites.length ? ` (missing: ${missingStdioPrerequisites.join(", ")})` : ""}`;
+stdioDescribe(stdioSuiteTitle, () => {
+  it("charges emitted progress against the complete accepted CLI allowance", async () => {
+    vi.stubEnv("SPEKTA_ALLOWANCE_TEST_DELAY_RG", "1");
+    const server = await createStdioSearchProcess();
+    try {
+      const args = ["needle", "src/near.ts"];
+      const sizing = await server.runCli(["--allowance=16000", ...args]);
+      expect(sizing.code).toBe(0);
+      expect(sizing.stderr).toContain("Search searching.\n");
+
+      const exact = await server.runCli([
+        `--allowance=${sizing.tokens}`,
+        ...args,
+      ]);
+      expect(exact.code, JSON.stringify(exact)).toBe(0);
+      expect(exact.tokens).toBe(sizing.tokens);
+      expect(exact.output).toBe(sizing.output);
+
+      const under = await server.runCli([
+        `--allowance=${sizing.tokens - 1}`,
+        ...args,
+      ]);
+      expect(under.code).toBe(1);
+      expect(under.output).not.toContain("needle");
+      expect(under.tokens).toBeLessThanOrEqual(sizing.tokens - 1);
+    } finally {
+      await server.close();
+    }
+  }, 30_000);
+
   it("returns measured long-ID rejections and accepted operational outcomes over real stdio", async () => {
     const server = await createStdioSearchProcess();
     try {
@@ -756,7 +800,7 @@ describe("registered spekta_rg allowance boundary", () => {
         "needle",
         "src/near.ts",
       ]);
-      expect(cliNearExact.code).toBe(0);
+      expect(cliNearExact.code, JSON.stringify(cliNearExact)).toBe(0);
       expect(cliNearExact.output).toBe(cliNearSizing.output);
       expect(cliNearExact.tokens).toBe(cliNearSizing.tokens);
       const cliNearUnder = await server.runCli([
@@ -885,7 +929,10 @@ describe("registered spekta_rg allowance boundary", () => {
       if ("id" in message && "result" in message) sentResponses.push(message);
       return serverSend(message, options);
     };
-    const client = new Client({ name: "spekta-test-client", version: "1.0.0" });
+    const client = new Client({
+      name: "spekta-test-client",
+      version: "1.0.0",
+    });
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     try {
@@ -1024,7 +1071,10 @@ exit 2
       if ("id" in message && "result" in message) sentResponses.push(message);
       return serverSend(message, options);
     };
-    const client = new Client({ name: "spekta-test-client", version: "1.0.0" });
+    const client = new Client({
+      name: "spekta-test-client",
+      version: "1.0.0",
+    });
     await server.connect(serverTransport);
     await client.connect(clientTransport);
     try {

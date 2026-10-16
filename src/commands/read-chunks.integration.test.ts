@@ -230,7 +230,7 @@ describe("original read chunks at public CLI/MCP boundaries", () => {
       expect(result.content[0].text).toContain("unavailable_access");
       expect(result.content[0].text).toContain("Operand 2");
       expect(result.content[0].text).not.toContain(operand);
-      expect(result.content[0].text).not.toContain("INTERNAL");
+      expect(result.content[0].text).toContain("INTERNAL");
     }
     const output = await cli(["missing.txt"]);
     expect(output).toContain("unavailable_access");

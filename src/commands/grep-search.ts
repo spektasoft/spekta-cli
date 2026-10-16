@@ -131,9 +131,7 @@ export function resolveSearchTelemetryBudget(
   return {
     progressEnabled,
     profileEnabled,
-    reservedTokens:
-      (progressEnabled ? progressAllowanceTokens : 0) +
-      (profileEnabled ? 32 : 0),
+    reservedTokens: profileEnabled ? 32 : 0,
   };
 }
 
@@ -291,6 +289,28 @@ export async function getRgOutcome(
     Boolean(request.profile),
   );
   const profile = budget.profileEnabled;
+  let progressTokens = 0;
+  const responseLimitWithoutProgress =
+    responseTokenLimit - budget.reservedTokens;
+  const onProgress = budget.progressEnabled
+    ? (phase: "preparing" | "searching") => {
+        const emittedLine = `Search ${phase}.\n`;
+        const emittedTokens = getTokenCount(emittedLine);
+        if (
+          progressTokens + emittedTokens >
+            (request.progressAllowanceTokens ?? 0) ||
+          responseLimitWithoutProgress - progressTokens - emittedTokens <
+            getGrepMinimumResponseTokens(responseId)
+        )
+          return;
+        request.onProgress?.(phase);
+        progressTokens += emittedTokens;
+      }
+    : undefined;
+  const getResponseTokenLimit = () =>
+    responseLimitWithoutProgress - progressTokens;
+  const getCompleteResponseTokenLimit = () =>
+    responseTokenLimit - progressTokens;
   let timings: { preparationMs: number; executionMs: number } | undefined;
   const outcome = await getGrepOutcome(
     {
@@ -299,8 +319,9 @@ export async function getRgOutcome(
       paths: request.paths.length ? request.paths : ["."],
       globs: request.globs,
       case_mode: request.case_mode,
-      responseTokenLimit: responseTokenLimit - budget.reservedTokens,
-      onProgress: budget.progressEnabled ? request.onProgress : undefined,
+      responseTokenLimit: responseLimitWithoutProgress,
+      getResponseTokenLimit,
+      onProgress,
       signal: request.signal,
       ...(request.deadlineMs === undefined
         ? {}
@@ -323,7 +344,10 @@ export async function getRgOutcome(
       outcome.status === "success"
         ? outcome.value + line
         : outcome.message + line;
-    if (getGrepResponseTokenCount(text, responseId) <= responseTokenLimit) {
+    if (
+      getGrepResponseTokenCount(text, responseId) <=
+      getCompleteResponseTokenLimit()
+    ) {
       request.onTimings?.(timings);
       return outcome.status === "success"
         ? { ...outcome, value: text }
@@ -673,11 +697,18 @@ async function getGrepOutcomeInternal(
     ...item,
     ...(item.status === "returned" ? { status: "incomplete" as const } : {}),
   }));
-  const overflowOutcome = (): OperationOutcome<string> => ({
-    status: "output_limit_exceeded",
-    message: withheldText,
-    operands: overflowOperands,
-  });
+  const overflowOutcome = (): OperationOutcome<string> => {
+    const message =
+      getGrepResponseTokenCount(withheldText, responseId, true) <=
+      (options.getResponseTokenLimit?.() ?? responseTokenLimit)
+        ? withheldText
+        : "output_limit_exceeded: All matches were withheld. Narrow the path or pattern.";
+    return {
+      status: "output_limit_exceeded",
+      message,
+      operands: overflowOperands,
+    };
+  };
   const allUnavailableText =
     `unavailable_access: Search targets are unavailable or not eligible.\n` +
     `Batch: partial_result\nScope: 0/${requestedPaths.length} eligible roots.\n` +
@@ -821,6 +852,7 @@ async function getGrepOutcomeInternal(
       requestedSearchPaths: admittedRequestedPaths,
       responseId,
       responseTokenLimit,
+      getResponseTokenLimit: options.getResponseTokenLimit,
       responsePrefix: scopeText,
       responseIsError: unavailable,
       signal: options.signal,
@@ -840,7 +872,7 @@ async function getGrepOutcomeInternal(
     const value = `${scopeText}${body}`;
     if (
       getGrepResponseTokenCount(value, responseId, unavailable) >
-      responseTokenLimit
+      (options.getResponseTokenLimit?.() ?? responseTokenLimit)
     )
       return overflowOutcome();
     if (unavailable)

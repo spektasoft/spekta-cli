@@ -7,10 +7,7 @@ import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 import { getTokenCount } from "../../utils/read-utils";
 import { acceptedGitRequests } from "./proxy-git.test-fixtures";
 import { createGitPolicyFixture } from "./proxy-policy.integration-fixture";
-import {
-  expectProxyRejected as expectRejected,
-  proxySecret as secret,
-} from "./proxy-rejection.integration-helper";
+import { proxySecret as secret } from "./proxy-rejection.integration-helper";
 
 vi.mock("execa", () => ({ execa: vi.fn() }));
 vi.mock("@inquirer/prompts", async (importOriginal) => ({
@@ -70,10 +67,25 @@ describe("Git CLI and MCP proxy output parity", () => {
       vi.spyOn(fs, "realpathSync").mockImplementation(() => {
         throw new Error(`${secret} ${"failure ".repeat(3000)}`);
       });
-      await expectRejected("git", [subcommand], /\[REDACTED\]/);
-      expect(
-        getTokenCount(vi.mocked(console.error).mock.calls[0][0] as string),
-      ).toBeLessThanOrEqual(1000);
+      await runRtkProxy("git", [subcommand]);
+      const cli = vi.mocked(console.log).mock.calls[0][0] as string;
+      expect(cli).toContain("output_limit_exceeded");
+      expect(cli).not.toContain(secret);
+      expect(process.exitCode).toBe(1);
+      expect(execa).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+
+      vi.mocked(console.log).mockClear();
+      const mcp = await TOOL_REGISTRY.spekta_shell.handler({
+        command: "git",
+        args: [subcommand],
+      });
+      expect(mcp.isError).toBe(true);
+      expect(mcp.content[0].text).toContain("[REDACTED]");
+      expect(mcp.content[0].text).not.toContain(secret);
+      expect(getTokenCount(mcp.content[0].text)).toBeLessThanOrEqual(1000);
+      expect(execa).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
     },
   );
 

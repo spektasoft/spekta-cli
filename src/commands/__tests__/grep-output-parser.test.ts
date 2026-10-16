@@ -31,6 +31,30 @@ import path from "node:path";
 beforeEach(() => vi.mocked(getGrepTokenLimit).mockReturnValue(2000));
 
 describe("parseGrepOutput", () => {
+  it("applies a lowered response ceiling before admitting more buffered matches", async () => {
+    const minimumResponseTokens = getGrepMinimumResponseTokens();
+    let ceilingReads = 0;
+    const output = [
+      createRgMatch("src/eligible.ts", 1, 0, "needle first"),
+      createRgMatch("src/eligible.ts", 2, 0, `needle ${"second ".repeat(80)}`),
+    ].join("\n");
+    const outcome = await parseGrepOutput(mockExecaStream(output), {
+      workspace: { root: "/repo", canonicalRoot: "/repo" },
+      canonicalSearchPath: "/repo",
+      requestedSearchPath: ".",
+      getResponseTokenLimit: () =>
+        ++ceilingReads === 1 ? 2000 : minimumResponseTokens,
+    });
+
+    expect(outcome.status).toBe("output_limit_exceeded");
+    if (outcome.status !== "output_limit_exceeded") return;
+    expect(outcome.message).not.toContain("needle");
+    expect(
+      getGrepResponseTokenCount(outcome.message, undefined, true),
+    ).toBeLessThanOrEqual(minimumResponseTokens);
+    vi.mocked(validateReadPathAccess).mockClear();
+  });
+
   it("withholds matches whose files fail the shared read eligibility policy", async () => {
     const output = [
       createRgMatch("restricted/secret.env", 1, 0, "DENIED_CONTENT"),
