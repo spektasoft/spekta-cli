@@ -229,9 +229,7 @@ const registry: Record<string, ToolRegistryEntry> = {
             text:
               outcome.status === "success"
                 ? outcome.value.message
-                : outcome.status === "partial_result"
-                  ? outcome.value.message
-                  : outcome.message,
+                : outcome.message,
           },
         ],
       };
@@ -267,9 +265,7 @@ const registry: Record<string, ToolRegistryEntry> = {
             text:
               outcome.status === "success"
                 ? outcome.value.message
-                : outcome.status === "partial_result"
-                  ? outcome.value.message
-                  : outcome.message,
+                : outcome.message,
           },
         ],
       };

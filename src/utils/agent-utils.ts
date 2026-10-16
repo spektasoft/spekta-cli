@@ -182,7 +182,9 @@ export async function executeTool(call: ToolCall): Promise<string> {
       globs: call.globs ?? [],
       case_mode: call.case_mode ?? "sensitive",
     });
-    return outcome.status === "success" ? outcome.value : outcome.message;
+    return outcome.status === "success" || outcome.status === "partial_result"
+      ? outcome.value
+      : outcome.message;
   }
 
   throw new Error("Unknown tool");

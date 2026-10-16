@@ -52,7 +52,11 @@ describe("workspace searches with real ripgrep", () => {
       isError?: boolean;
     };
 
-    const cliText = String(cli.status === "success" ? cli.value : cli.message);
+    const cliText = String(
+      cli.status === "success" || cli.status === "partial_result"
+        ? cli.value
+        : cli.message,
+    );
     const mcpTextCandidate = mcp.content[0]?.text;
     const mcpText =
       typeof mcpTextCandidate === "string" ? mcpTextCandidate : "";

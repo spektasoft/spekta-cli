@@ -827,7 +827,7 @@ async function getGrepOutcomeInternal(
     );
     options.setSearchPhase?.();
 
-    const search: OperationOutcome<string> = await parseGrepOutput(child, {
+    const search = await parseGrepOutput(child, {
       workspace: resolvedWorkspace,
       canonicalSearchPath: canonicalSearchPaths[0],
       requestedSearchPath: admittedRequestedPaths[0] ?? ".",

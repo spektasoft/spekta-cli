@@ -157,5 +157,29 @@ describe("agent-utils", () => {
         case_mode: "sensitive",
       });
     });
+
+    it("returns partial rg content to the agent", async () => {
+      const { getRgOutcome } = await import("../commands/grep-search");
+      vi.mocked(getRgOutcome).mockResolvedValue({
+        status: "partial_result",
+        value: "partial rg results",
+        operands: [
+          { position: 1, status: "returned" },
+          { position: 2, status: "unavailable" },
+        ],
+      });
+
+      const call: ToolCall = {
+        type: "rg",
+        path: "",
+        patterns: ["todo"],
+        paths: ["src", "missing"],
+        globs: ["*.ts"],
+        case_mode: "sensitive",
+        raw: "",
+      };
+
+      await expect(executeTool(call)).resolves.toBe("partial rg results");
+    });
   });
 });

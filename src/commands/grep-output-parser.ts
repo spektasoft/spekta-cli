@@ -7,6 +7,11 @@ import { isPathIgnored } from "../utils/path-ignore";
 import { validateReadPathAccess } from "../utils/security";
 import type { OperationOutcome } from "../core/operation-outcome";
 
+type GrepOutputOutcome = Exclude<
+  OperationOutcome<string>,
+  { status: "partial_result" }
+>;
+
 export const MAX_MATCHES = 500;
 const MAX_FILES = 100;
 
@@ -172,7 +177,7 @@ function displayGrepPath(filePath: string, context: GrepOutputContext): string {
 export async function parseGrepOutput(
   child: GrepChildProcess,
   context?: GrepOutputContext,
-): Promise<OperationOutcome<string>> {
+): Promise<GrepOutputOutcome> {
   // Attach a rejection handler before consuming stdout so a fast failing child
   // cannot surface an unhandled rejection while buffered lines are parsed.
   const childCompletion = Promise.resolve(child).then(
