@@ -208,10 +208,11 @@ describe("CLI and MCP proxy parity", () => {
       args: ["branch"],
     });
     expect(process.exitCode).toBe(1);
-    expect(console.log).not.toHaveBeenCalled();
+    expect(console.log).toHaveBeenCalledTimes(1);
+    expect(console.error).not.toHaveBeenCalled();
     expect(mcp.isError).toBe(true);
     for (const output of [
-      vi.mocked(console.error).mock.calls[0][0] as string,
+      vi.mocked(console.log).mock.calls[0][0] as string,
       mcp.content[0].text,
     ]) {
       expect(output).toContain("permission denied");

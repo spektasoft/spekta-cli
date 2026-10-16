@@ -13,10 +13,20 @@ export async function expectProxyRejected(
   reason: RegExp,
 ): Promise<void> {
   const original = [...args];
+  const logCalls = vi.mocked(console.log).mock.calls.length;
+  const errorCalls = vi.mocked(console.error).mock.calls.length;
   await runRtkProxy(command, args);
-  const cli: unknown = vi.mocked(console.log).mock.calls.at(-1)?.[0] as unknown;
+  const logDelta = vi.mocked(console.log).mock.calls.slice(logCalls);
+  const errorDelta = vi.mocked(console.error).mock.calls.slice(errorCalls);
+  const cliCalls = command === "git" ? logDelta : errorDelta;
+  const otherCalls = command === "git" ? errorDelta : logDelta;
+  expect(cliCalls).toHaveLength(1);
+  expect(otherCalls).toHaveLength(0);
+  const cli: unknown = cliCalls[0]?.[0] as unknown;
   if (typeof cli !== "string") {
-    throw new Error("Expected a string CLI rejection diagnostic.");
+    throw new Error(
+      `Expected a string CLI rejection diagnostic for ${command}.`,
+    );
   }
   const mcp: McpToolResponse = await TOOL_REGISTRY.spekta_shell.handler({
     command,
@@ -25,7 +35,6 @@ export async function expectProxyRejected(
   expect(cli).toMatch(reason);
   expect(cli).not.toContain(proxySecret);
   expect(process.exitCode).toBe(1);
-  expect(console.error).not.toHaveBeenCalled();
   expect(mcp.isError).toBe(true);
   expect(mcp.content[0].text).toMatch(reason);
   expect(cli).toContain(mcp.content[0].text);

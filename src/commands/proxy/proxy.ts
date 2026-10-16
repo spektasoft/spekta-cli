@@ -44,10 +44,32 @@ function emitGitResponse(
   exitCode = 0,
   truncated = false,
 ): void {
-  const output = formatProxyOutput("git", text, { exitCode, truncated });
+  const render = (content: string, isTruncated: boolean): string =>
+    formatProxyOutput("git", content, {
+      exitCode,
+      truncated: isTruncated,
+    });
+  let output = render(text, truncated);
   const overflow = formatProxyOutput("git", "output_limit_exceeded", {
     exitCode: 1,
   });
+  if (getTokenCount(`${output}\n`) > allowance) {
+    for (
+      let contentAllowance = Math.min(1000, allowance);
+      contentAllowance > 0;
+      contentAllowance -= 25
+    ) {
+      const shortened = truncateOutput(text, contentAllowance);
+      const candidate = render(
+        text === shortened.content ? text : shortened.content,
+        truncated || shortened.truncated,
+      );
+      if (getTokenCount(`${candidate}\n`) <= allowance) {
+        output = candidate;
+        break;
+      }
+    }
+  }
   const bounded = boundGitCliResponse(output, allowance, overflow);
   process.exitCode = bounded === output ? exitCode : 1;
   console.log(bounded);
