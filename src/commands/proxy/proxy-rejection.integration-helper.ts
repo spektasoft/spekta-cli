@@ -7,6 +7,16 @@ import type { McpToolResponse } from "../../api/mcp-server/registry";
 
 export const proxySecret = "ghp_abcdefghijklmnopqrstuvwxyz";
 
+function expectedCliStream(command: string): "stdout" | "stderr" {
+  switch (command) {
+    case "git":
+    case "find":
+      return "stdout";
+    default:
+      return "stderr";
+  }
+}
+
 export async function expectProxyRejected(
   command: string,
   args: string[],
@@ -18,8 +28,9 @@ export async function expectProxyRejected(
   await runRtkProxy(command, args);
   const logDelta = vi.mocked(console.log).mock.calls.slice(logCalls);
   const errorDelta = vi.mocked(console.error).mock.calls.slice(errorCalls);
-  const cliCalls = command === "git" ? logDelta : errorDelta;
-  const otherCalls = command === "git" ? errorDelta : logDelta;
+  const stream = expectedCliStream(command);
+  const cliCalls = stream === "stdout" ? logDelta : errorDelta;
+  const otherCalls = stream === "stdout" ? errorDelta : logDelta;
   expect(cliCalls).toHaveLength(1);
   expect(otherCalls).toHaveLength(0);
   const cli: unknown = cliCalls[0]?.[0] as unknown;
