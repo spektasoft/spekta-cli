@@ -8,6 +8,10 @@ import { getTokenCount } from "../../utils/read-utils";
 import { acceptedGitRequests } from "./proxy-git.test-fixtures";
 import { createGitPolicyFixture } from "./proxy-policy.integration-fixture";
 import { proxySecret as secret } from "./proxy-rejection.integration-helper";
+import {
+  createGitMcpResponse,
+  measureGitMcpResponse,
+} from "./proxy-git-response-budget";
 
 vi.mock("execa", () => ({ execa: vi.fn() }));
 vi.mock("@inquirer/prompts", async (importOriginal) => ({
@@ -22,6 +26,22 @@ beforeEach(() => proxyFixture.setup());
 afterEach(() => proxyFixture.teardown());
 
 describe("Git CLI and MCP proxy output parity", () => {
+  it("retains the MCP overflow fallback when the request ID consumes the allowance", () => {
+    const requestId = "long-request-id-".repeat(400);
+    const response = createGitMcpResponse(
+      "useful failure",
+      true,
+      1000,
+      requestId,
+    );
+
+    expect(response.isError).toBe(true);
+    expect(response.content[0].text).toBe("output_limit_exceeded");
+    expect(
+      measureGitMcpResponse(response.content[0].text, true, requestId),
+    ).toBeGreaterThan(1000);
+  });
+
   it.each(acceptedGitRequests.map((args) => ({ args })))(
     "executes Git $args with equivalent adapter policy",
     async ({ args }) => {
@@ -69,21 +89,33 @@ describe("Git CLI and MCP proxy output parity", () => {
       });
       await runRtkProxy("git", [subcommand]);
       const cli = vi.mocked(console.log).mock.calls[0][0] as string;
-      expect(cli).toContain("output_limit_exceeded");
+      expect(cli).toContain("[OUTPUT TRUNCATED: >1000 TOKENS]");
+      expect(cli).toContain("[FAILED: Exit 1]");
+      expect(cli).toContain("failure");
       expect(cli).not.toContain(secret);
+      expect(getTokenCount(`${cli}\n`)).toBeLessThanOrEqual(1000);
       expect(process.exitCode).toBe(1);
       expect(execa).not.toHaveBeenCalled();
       expect(confirm).not.toHaveBeenCalled();
 
       vi.mocked(console.log).mockClear();
-      const mcp = await TOOL_REGISTRY.spekta_shell.handler({
-        command: "git",
-        args: [subcommand],
-      });
+      const requestId = "filesystem-error-26";
+      const mcp = await TOOL_REGISTRY.spekta_shell.handler(
+        {
+          command: "git",
+          args: [subcommand],
+        },
+        undefined,
+        requestId,
+      );
       expect(mcp.isError).toBe(true);
+      expect(mcp.content[0].text).toContain("failure");
+      expect(mcp.content[0].text).toContain("lines collapsed");
       expect(mcp.content[0].text).toContain("[REDACTED]");
       expect(mcp.content[0].text).not.toContain(secret);
-      expect(getTokenCount(mcp.content[0].text)).toBeLessThanOrEqual(1000);
+      expect(
+        measureGitMcpResponse(mcp.content[0].text, mcp.isError, requestId),
+      ).toBeLessThanOrEqual(1000);
       expect(execa).not.toHaveBeenCalled();
       expect(confirm).not.toHaveBeenCalled();
     },

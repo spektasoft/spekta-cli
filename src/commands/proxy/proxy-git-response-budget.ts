@@ -1,4 +1,5 @@
 import { getTokenCount } from "../../utils/read-utils";
+import { truncateOutput } from "./proxy-output";
 
 export interface GitMcpResponse {
   isError: boolean;
@@ -34,6 +35,23 @@ export function createGitMcpResponse(
 ): GitMcpResponse {
   if (measureGitMcpResponse(text, isError, requestId) <= allowance)
     return { isError, content: [{ type: "text", text }] };
+
+  for (
+    let contentAllowance = Math.min(1000, allowance);
+    contentAllowance > 0;
+    contentAllowance -= 25
+  ) {
+    const shortened = truncateOutput(text, contentAllowance);
+    if (
+      shortened.truncated &&
+      measureGitMcpResponse(shortened.content, isError, requestId) <= allowance
+    ) {
+      return {
+        isError,
+        content: [{ type: "text", text: shortened.content }],
+      };
+    }
+  }
 
   return {
     isError: true,
