@@ -27,11 +27,13 @@ beforeEach(() => {
   fs.ensureDirSync(otherCwd);
   vi.spyOn(process, "cwd").mockReturnValue(otherCwd);
   vi.mocked(execa).mockReset();
-  vi.mocked(execa).mockResolvedValue({
-    stdout: "ok",
-    stderr: "",
-    exitCode: 0,
-  } as never);
+  vi.mocked(execa).mockImplementation(((file: string) => {
+    if (file === "git")
+      return Promise.reject(
+        Object.assign(new Error("not ignored"), { exitCode: 1 }),
+      );
+    return Promise.resolve({ stdout: "ok", stderr: "", exitCode: 0 });
+  }) as never);
 });
 
 afterEach(() => {
@@ -71,9 +73,9 @@ describe("explicit proxy workspace context", () => {
     expect(() =>
       validateProxyRequest("find", ["folder"], context()),
     ).not.toThrow();
-    expect(() => validateProxyRequest("find", ["missing"], context())).toThrow(
-      /existing workspace directory/i,
-    );
+    expect(() =>
+      validateProxyRequest("find", ["missing"], context()),
+    ).not.toThrow();
   });
 
   it("uses context root for Git repository discovery and blob paths", () => {
@@ -88,25 +90,34 @@ describe("explicit proxy workspace context", () => {
     ).toThrow(/outside the project directory/i);
   });
 
-  it("rejects traversal and symlink escapes relative to context root", () => {
+  it("classifies traversal and symlink escapes per operand relative to context root", async () => {
     const outside = path.join(fixture, "outside");
     fs.ensureDirSync(outside);
     fs.symlinkSync(outside, path.join(workspace, "escape"), "dir");
     expect(() =>
       validateProxyRequest("ls", ["../other-cwd"], context()),
-    ).toThrow(/outside the project directory/i);
+    ).not.toThrow();
+    const errors = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runRtkProxy("ls", ["../other-cwd"], context());
+    expect(errors.mock.calls[0][0]).toContain(
+      "Operand 1: unavailable; unavailable_access",
+    );
+    expect(execa).not.toHaveBeenCalled();
     expect(() =>
       validateProxyRequest("git", ["status", "--", "escape/secret"], context()),
     ).toThrow(/outside the project directory/i);
   });
 
-  it("fails closed when context-root canonicalization fails", () => {
+  it("fails closed when context-root canonicalization fails", async () => {
     const realpath = vi.spyOn(fs, "realpathSync").mockImplementation(() => {
       throw new Error("context canonicalization failed");
     });
-    expect(() => validateProxyRequest("ls", ["folder"], context())).toThrow(
-      /context canonicalization failed/,
+    const logs = vi.spyOn(console, "log").mockImplementation(() => {});
+    await runRtkProxy("ls", ["folder"], context());
+    expect(logs.mock.calls[0][0]).toContain(
+      "Operand 1: unavailable; unavailable_access",
     );
+    expect(execa).not.toHaveBeenCalled();
     realpath.mockRestore();
   });
 
@@ -122,30 +133,38 @@ describe("explicit proxy workspace context", () => {
   it("keeps context cwd on unavailable, nonzero, and launch-failure paths", async () => {
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const logs = vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.mocked(execa).mockRejectedValueOnce(
-      Object.assign(new Error("missing"), { code: "ENOENT" }),
-    );
+    vi.mocked(execa).mockImplementation(((file: string) => {
+      if (file === "git")
+        return Promise.reject(
+          Object.assign(new Error("not ignored"), { exitCode: 1 }),
+        );
+      return Promise.reject(
+        Object.assign(new Error("missing"), { code: "ENOENT" }),
+      );
+    }) as never);
     await runRtkProxy("ls", [], context());
     expect(execa).toHaveBeenLastCalledWith(
       "rtk",
       ["proxy", "ls", "-1Ab", "--", "."],
       expect.objectContaining({ cwd: workspace }),
     );
-    vi.mocked(execa).mockResolvedValueOnce({
-      stdout: "",
-      stderr: "failed",
-      exitCode: 7,
-    } as never);
+    vi.mocked(execa).mockImplementation(((file: string) => {
+      if (file === "git")
+        return Promise.reject(
+          Object.assign(new Error("not ignored"), { exitCode: 1 }),
+        );
+      return Promise.resolve({ stdout: "", stderr: "failed", exitCode: 7 });
+    }) as never);
     await runRtkProxy("ls", [], context());
     expect(execa).toHaveBeenLastCalledWith(
       "rtk",
       ["proxy", "ls", "-1Ab", "--", "."],
       expect.objectContaining({ cwd: workspace }),
     );
-    expect(process.exitCode).toBe(7);
+    expect(process.exitCode).toBe(1);
     expect(logs).toHaveBeenCalledTimes(1);
     expect(logs).toHaveBeenCalledWith(
-      expect.stringContaining("[FAILED: Exit 7]"),
+      expect.stringContaining("Operand 1: internal_failure; listing failed"),
     );
 
     process.exitCode = 0;
@@ -159,7 +178,7 @@ describe("explicit proxy workspace context", () => {
       expect.objectContaining({ cwd: workspace }),
     );
     expect(errors).toHaveBeenCalled();
-    expect(logs).toHaveBeenCalledTimes(1);
+    expect(logs).toHaveBeenCalledTimes(2);
   });
 
   it("does not launch a command rejected by context validation", async () => {

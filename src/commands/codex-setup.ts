@@ -10,6 +10,16 @@ import { constants } from "node:fs";
 import { delimiter, join, resolve } from "node:path";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
+import {
+  buildMetadata,
+  runningIdentity,
+  type BuildMetadata,
+} from "../build-identity";
+import {
+  resolveAllowanceSettings,
+  type AllowanceFamily,
+} from "../core/config/allowance";
+import { getEnv } from "../core/config/env";
 
 const execFile = promisify(execFileCallback);
 
@@ -52,6 +62,12 @@ export interface CodexComponentStatus {
 }
 
 export interface CodexStatus {
+  running: { executable: string; artifactSha256: string };
+  build: BuildMetadata;
+  sourceCorrespondence: "unknown";
+  routing:
+    | { event: "PreToolUse"; matcher: string; target: "spekta-codex-hook" }
+    | "unknown";
   components: {
     hooks: CodexComponentStatus;
     instructions: CodexComponentStatus;
@@ -59,6 +75,10 @@ export interface CodexStatus {
   };
   trust: "unknown";
   activation: "unknown";
+  allowances: Record<
+    AllowanceFamily,
+    ReturnType<typeof resolveAllowanceSettings>
+  >;
   verificationSteps: string[];
 }
 
@@ -260,7 +280,7 @@ const ownedInstructions = `${CODEX_USAGE_START}
 Prefer the Spekta CLI for supported workspace inspection: use \`spekta ls\`, \`spekta read\`, \`spekta rg\`, and supported \`spekta git\` inspections. Use the configured Spekta MCP server only when the CLI is unavailable and MCP has been enabled.
 
 Use Spekta for eligible file discovery, reading, searching, and supported Git inspection. Retrieve only the files and ranges needed to answer the current question; narrow broad searches by symbol, path, pattern, or glob, then read selected files. Unsupported or compound commands continue through the normal shell path. If Spekta rejects an operation under policy, do not retry it through MCP or the original executable.
-The Codex hook routes supported standalone native \`rg\` requests through \`spekta rg\`, preserving repeated patterns, paths, case flags, ordered globs, and \`--\`. Unsupported shell forms and ripgrep options remain on the normal route. Spekta runs search through RTK and applies its own output formatting, eligible-file restrictions, and response budget; a rejected or oversized request must not be retried through the original route. Use MCP tool \`spekta_rg\` with separate \`patterns\`, \`paths\`, \`globs\`, and \`case_mode\` values when MCP is enabled.
+The Codex hook routes supported standalone native \`rg\` requests through \`spekta rg\`, preserving repeated patterns, paths, case flags, ordered globs, and \`--\`. Unsupported shell forms and ripgrep options remain on the normal route. Literal read and search operands outside the event working directory, including home-installed skills and temporary fixtures, also remain on the normal shell route; use explicit RTK commands such as \`rtk cat\` or \`rtk rg\` for those reads when RTK is available. Normal host approval and filesystem permissions still apply. The hook classifies paths lexically, so workspace-spelled paths that escape through symlinks remain on the Spekta route. Spekta runs search through RTK and applies its own output formatting, eligible-file restrictions, and response budget; never retry an operation that Spekta rejects through the original route. Use MCP tool \`spekta_rg\` with separate \`patterns\`, \`paths\`, \`globs\`, and \`case_mode\` values when MCP is enabled.
 MCP registration changes runtime setup only. Start a new Codex session to load an opt-in server; it does not dynamically add tools to an existing session.
 ${CODEX_USAGE_END}`;
 
@@ -473,14 +493,16 @@ function componentStatus(
   return { state, details };
 }
 
-async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
+async function inspectOwnedHook(
+  path: string,
+): Promise<CodexComponentStatus & { recognizedRouting?: true }> {
   let content: string | undefined;
   try {
     content = await readOptional(path);
-  } catch (error) {
+  } catch {
     return componentStatus(
       "broken",
-      `Unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      "Unable to read global hook configuration; inspect it manually.",
     );
   }
   if (content === undefined) return componentStatus("absent");
@@ -488,12 +510,15 @@ async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
   try {
     parsed = JSON.parse(content);
   } catch {
-    return componentStatus("conflicting", `${path} contains malformed JSON.`);
+    return componentStatus(
+      "conflicting",
+      "Global hook configuration contains malformed JSON.",
+    );
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
     return componentStatus(
       "conflicting",
-      `${path} has an ambiguous structure.`,
+      "Global hook configuration has an ambiguous structure.",
     );
   const hooks = (parsed as Record<string, unknown>).hooks;
   if (
@@ -508,7 +533,7 @@ async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
   if (!Array.isArray(entries))
     return componentStatus(
       "conflicting",
-      `${path} has an ambiguous PreToolUse definition.`,
+      "Global hook configuration has an ambiguous PreToolUse definition.",
     );
   const owned = entries.filter((entry) =>
     JSON.stringify(entry).includes("spekta-codex-hook"),
@@ -517,7 +542,7 @@ async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
   if (owned.length !== 1 || !isRecognizedOwnedHook(owned[0]))
     return componentStatus(
       "conflicting",
-      `${path} has malformed or duplicate Spekta hook ownership.`,
+      "Global hook configuration has malformed or duplicate Spekta hook ownership.",
     );
   const command = JSON.parse(
     String((owned[0] as { hooks: { command: string }[] }).hooks[0].command),
@@ -525,12 +550,18 @@ async function inspectOwnedHook(path: string): Promise<CodexComponentStatus> {
   try {
     await access(command, constants.X_OK);
   } catch {
-    return componentStatus(
-      "broken",
-      `Configured hook executable is missing or not executable: ${command}`,
-    );
+    return {
+      ...componentStatus(
+        "broken",
+        "Configured Spekta hook executable is missing or not executable.",
+      ),
+      recognizedRouting: true,
+    };
   }
-  return componentStatus("configured", `Owned hook is configured in ${path}.`);
+  return {
+    ...componentStatus("configured", "Owned global Spekta hook is configured."),
+    recognizedRouting: true,
+  };
 }
 
 async function inspectInstructions(
@@ -539,10 +570,10 @@ async function inspectInstructions(
   let content: string | undefined;
   try {
     content = await readOptional(path);
-  } catch (error) {
+  } catch {
     return componentStatus(
       "broken",
-      `Unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      "Unable to read global usage instructions; inspect them manually.",
     );
   }
   if (content === undefined) return componentStatus("absent");
@@ -552,23 +583,23 @@ async function inspectInstructions(
   if (starts !== 1 || ends !== 1)
     return componentStatus(
       "conflicting",
-      `${path} has malformed or duplicate Spekta ownership markers.`,
+      "Global usage instructions have malformed or duplicate Spekta ownership markers.",
     );
   try {
     const owned = buildInstructions(content);
     return owned === content
       ? componentStatus(
           "configured",
-          `Owned usage instructions are present in ${path}.`,
+          "Owned global usage instructions are present.",
         )
       : componentStatus(
           "conflicting",
-          `${path} contains unfamiliar changes to the Spekta instructions.`,
+          "Global usage instructions contain unfamiliar changes to the Spekta instructions.",
         );
-  } catch (error) {
+  } catch {
     return componentStatus(
       "conflicting",
-      `${path}: ${error instanceof Error ? error.message : String(error)}`,
+      "Global usage instructions could not be interpreted; inspect them manually.",
     );
   }
 }
@@ -601,10 +632,10 @@ async function inspectMcp(
   let content: string | undefined;
   try {
     content = await readOptional(path);
-  } catch (error) {
+  } catch {
     return componentStatus(
       "broken",
-      `Unable to read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+      "Unable to read global MCP configuration; inspect it manually.",
     );
   }
   if (content === undefined) return componentStatus("absent");
@@ -619,7 +650,7 @@ async function inspectMcp(
     if (/\[mcp_servers\.(?:spekta|"spekta"|'spekta')\b/.test(content))
       return componentStatus(
         "conflicting",
-        `${path} has an ambiguous spekta MCP section; inspect it manually.`,
+        "Global configuration has an ambiguous spekta MCP section; inspect it manually.",
       );
     return componentStatus("absent");
   }
@@ -670,7 +701,7 @@ async function inspectMcp(
   if (!(await executableIsAvailable(command, pathValue))) {
     return componentStatus(
       "broken",
-      `Configured MCP executable is missing or not executable: ${command}`,
+      "Configured MCP executable is missing or not executable.",
     );
   }
   return componentStatus(
@@ -682,20 +713,48 @@ async function inspectMcp(
 export async function readCodexStatus(
   options: CodexSetupOptions,
 ): Promise<CodexStatus> {
+  let configurationResolved = true;
+  try {
+    await getEnv(options.cwd);
+  } catch {
+    configurationResolved = false;
+  }
+  const allowances = {
+    read: resolveAllowanceSettings("read"),
+    search: resolveAllowanceSettings("search"),
+    list: resolveAllowanceSettings("list"),
+    git: resolveAllowanceSettings("git"),
+  };
+  if (!configurationResolved) {
+    for (const settings of Object.values(allowances)) {
+      settings.defaultConfiguration = "unresolved";
+      settings.ceilingConfiguration = "unresolved";
+    }
+  }
   const codexDirectory = join(options.home, ".codex");
   const hooksPath = join(codexDirectory, "hooks.json");
   const instructionsPath = join(codexDirectory, "AGENTS.md");
-  let hooks = await inspectOwnedHook(hooksPath);
+  const { recognizedRouting, ...ownedHook } = await inspectOwnedHook(hooksPath);
+  let hooks: CodexComponentStatus = ownedHook;
+  const routing: CodexStatus["routing"] = recognizedRouting
+    ? {
+        event: "PreToolUse",
+        matcher: CODEX_HOOK_MATCHER,
+        target: "spekta-codex-hook",
+      }
+    : "unknown";
   const conflicts = await findRewriteConflicts(options);
   if (conflicts.length && hooks.state !== "conflicting") {
     hooks = componentStatus(
       "conflicting",
-      ...conflicts
-        .slice(0, 20)
-        .map(({ source, message }) => `${source}: ${message}`),
+      ...conflicts.slice(0, 20).map(({ message }) => message),
     );
   }
   return {
+    running: await runningIdentity(options.cwd ?? process.cwd()),
+    build: buildMetadata,
+    sourceCorrespondence: "unknown",
+    routing,
     components: {
       hooks,
       instructions: await inspectInstructions(instructionsPath),
@@ -703,6 +762,7 @@ export async function readCodexStatus(
     },
     trust: "unknown",
     activation: "unknown",
+    allowances,
     verificationSteps: [
       "Start a new supported Codex session with this workspace open.",
       "Run a supported standalone inspection command and confirm the Spekta hook runs exactly once.",
@@ -1264,12 +1324,41 @@ export async function runCodexStatus(args: string[] = []): Promise<void> {
     path: process.env.PATH ?? "",
     cwd: process.cwd(),
   });
+  console.log(`executable: ${status.running.executable}`);
+  console.log(`artifact SHA-256: ${status.running.artifactSha256}`);
+  console.log(`build version: ${status.build.version}`);
+  console.log(`build source revision: ${status.build.sourceRevision}`);
+  console.log(`build source state: ${status.build.sourceState}`);
+  console.log(`source correspondence: ${status.sourceCorrespondence}`);
+  console.log(
+    `configured hook routing: ${status.routing === "unknown" ? "unknown" : `${status.routing.event} / ${status.routing.matcher} / ${status.routing.target}`}`,
+  );
   for (const [name, component] of Object.entries(status.components)) {
     console.log(`${name}: ${component.state}`);
     for (const detail of component.details) console.log(`  ${detail}`);
   }
   console.log(`trust: ${status.trust}`);
   console.log(`activation: ${status.activation}`);
+  console.log("Effective request allowances (tokens):");
+  for (const [family, settings] of Object.entries(status.allowances)) {
+    const configuration = [
+      settings.defaultConfiguration === "invalid"
+        ? "default setting invalid; fallback used"
+        : settings.defaultConfiguration === "unresolved"
+          ? "configuration unresolved; effective value may use fallback"
+          : undefined,
+      settings.ceilingConfiguration === "invalid"
+        ? "ceiling setting invalid; fallback used"
+        : settings.ceilingConfiguration === "unresolved"
+          ? "configuration unresolved; effective value may use fallback"
+          : undefined,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    console.log(
+      `  ${family}: default ${settings.defaultTokens}; ceiling ${settings.ceilingTokens}; caller allowance ${settings.honorsRequestAllowance ? "honored" : "not supported"}${configuration ? `; ${configuration}` : ""}`,
+    );
+  }
   console.log("Runtime verification steps:");
   for (const step of status.verificationSteps) console.log(`- ${step}`);
 }

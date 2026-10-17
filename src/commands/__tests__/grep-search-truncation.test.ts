@@ -59,7 +59,7 @@ describe("getGrepContent - truncation", () => {
     vi.mocked(execa).mockImplementation(() => mockExecaStream(matches));
 
     const result = await getGrepContent({ pattern: "test" });
-    expect(result).toContain("all matches were withheld");
+    expect(result).toContain("output_limit_exceeded:");
     expect(result).not.toContain("match 0");
   });
 
@@ -71,6 +71,7 @@ describe("getGrepContent - truncation", () => {
     vi.mocked(execa).mockImplementation(() => mockExecaStream(atBoundary));
     const complete = await TOOL_REGISTRY.spekta_rg.handler({
       patterns: ["needle"],
+      allowance: 16000,
     });
     expect(complete.content[0].text).toContain("needle 499");
     expect(complete.content[0].text).not.toContain("withheld");
@@ -84,6 +85,7 @@ describe("getGrepContent - truncation", () => {
     vi.mocked(execa).mockImplementation(() => mockExecaStream(overBoundary));
     const withheld = await TOOL_REGISTRY.spekta_rg.handler({
       patterns: ["needle"],
+      allowance: 16000,
     });
     expect(withheld.content[0].text).toContain("withheld");
     expect(withheld.content[0].text).not.toContain("needle 0");
@@ -104,7 +106,8 @@ describe("getGrepContent - truncation", () => {
       patterns: ["needle"],
     });
 
-    expect(outcome.content[0].text).toBe("No matches found.");
+    expect(outcome.content[0].text).toContain("Scope: 1/1 roots searched.");
+    expect(outcome.content[0].text).toContain("no_matches: No matches found.");
   });
 
   it("accepts exactly the file ceiling and withholds every file on overflow", async () => {
@@ -115,6 +118,7 @@ describe("getGrepContent - truncation", () => {
     vi.mocked(execa).mockImplementation(() => mockExecaStream(atBoundary));
     const exact = await TOOL_REGISTRY.spekta_rg.handler({
       patterns: ["needle"],
+      allowance: 16000,
     });
     expect(exact.content[0].text).toContain("file-99.ts");
     expect(exact.content[0].text).not.toContain("withheld");
@@ -128,6 +132,7 @@ describe("getGrepContent - truncation", () => {
     vi.mocked(execa).mockImplementation(() => mockExecaStream(overBoundary));
     const withheld = await TOOL_REGISTRY.spekta_rg.handler({
       patterns: ["needle"],
+      allowance: 16000,
     });
     expect(withheld.content[0].text).toContain("withheld");
     expect(withheld.content[0].text).not.toContain("file-0.ts");
@@ -161,7 +166,8 @@ describe("getGrepContent - truncation", () => {
     configureFailingRipgrep();
     const mcp = await TOOL_REGISTRY.spekta_rg.handler({ patterns: ["needle"] });
     expect(mcp.isError).toBe(true);
-    expect(mcp.content[0].text).toContain("exit code 2");
+    expect(mcp.content[0].text).toContain("internal_failure: Search failed.");
+    expect(mcp.content[0].text).not.toContain("exit code 2");
     expect(mcp.content[0].text).not.toContain("WITHHELD_SECRET");
     expect(mcp.content[0].text).not.toContain("needle 0");
 
@@ -174,7 +180,8 @@ describe("getGrepContent - truncation", () => {
       .map(([chunk]) => String(chunk))
       .join("");
     cliError.mockRestore();
-    expect(cliText).toContain("exit code 2");
+    expect(cliText).toContain("internal_failure: Search failed.");
+    expect(cliText).not.toContain("exit code 2");
     expect(cliText).not.toContain("WITHHELD_SECRET");
     expect(cliText).not.toContain("needle 0");
 
@@ -183,7 +190,8 @@ describe("getGrepContent - truncation", () => {
       patterns: ["needle"],
     });
     expect(rgMcp.isError).toBe(true);
-    expect(rgMcp.content[0].text).toContain("exit code 2");
+    expect(rgMcp.content[0].text).toContain("internal_failure: Search failed.");
+    expect(rgMcp.content[0].text).not.toContain("exit code 2");
     expect(rgMcp.content[0].text).not.toContain("WITHHELD_SECRET");
     expect(rgMcp.content[0].text).not.toContain("needle 0");
 
@@ -196,7 +204,8 @@ describe("getGrepContent - truncation", () => {
       .map(([chunk]) => String(chunk))
       .join("");
     rgCliError.mockRestore();
-    expect(rgCliText).toContain("exit code 2");
+    expect(rgCliText).toContain("internal_failure: Search failed.");
+    expect(rgCliText).not.toContain("exit code 2");
     expect(rgCliText).not.toContain("WITHHELD_SECRET");
     expect(rgCliText).not.toContain("needle 0");
   });
@@ -237,26 +246,6 @@ describe("getGrepContent - truncation", () => {
     expect(result).not.toContain("needle");
   });
 
-  it("accepts an exact complete-response budget and rejects one token less", async () => {
-    const match = createRgMatch("src/feature.ts", 7, 2, "needle");
-    vi.mocked(getGrepTokenLimit).mockReturnValue(2000);
-    vi.mocked(execa).mockImplementation(() => mockExecaStream(match));
-    const formatted = await getGrepContent({ pattern: "needle" });
-    const exactBudget = getGrepResponseTokenCount(formatted);
-
-    vi.mocked(getGrepTokenLimit).mockReturnValue(exactBudget);
-    vi.mocked(execa).mockImplementation(() => mockExecaStream(match));
-    await expect(getGrepContent({ pattern: "needle" })).resolves.toBe(
-      formatted,
-    );
-
-    vi.mocked(getGrepTokenLimit).mockReturnValue(exactBudget - 1);
-    vi.mocked(execa).mockImplementation(() => mockExecaStream(match));
-    const rejected = await getGrepContent({ pattern: "needle" });
-    expect(rejected).toContain("withheld");
-    expect(rejected).not.toContain("src/feature.ts");
-  });
-
   it("classifies exact-fit and over-budget results through CLI and MCP", async () => {
     const match = [
       createRgMatch("src/feature.ts", 7, 2, `needle${"x".repeat(80)}`),
@@ -285,7 +274,7 @@ describe("getGrepContent - truncation", () => {
     vi.mocked(getGrepTokenLimit).mockReturnValue(mcpExactLimit);
     configureRipgrep();
     const exactMcp = await TOOL_REGISTRY.spekta_rg.handler(
-      { patterns: ["needle"] },
+      { patterns: ["needle"], allowance: mcpExactLimit },
       undefined,
       requestId,
     );
@@ -294,11 +283,13 @@ describe("getGrepContent - truncation", () => {
     vi.mocked(getGrepTokenLimit).mockReturnValue(mcpExactLimit - 1);
     configureRipgrep();
     const oversizedMcp = await TOOL_REGISTRY.spekta_rg.handler(
-      { patterns: ["needle"] },
+      { patterns: ["needle"], allowance: mcpExactLimit - 1 },
       undefined,
       requestId,
     );
     expect(oversizedMcp.content[0].text).toMatch(/matches (?:were )?withheld/i);
+    expect(oversizedMcp.content[0].text).not.toContain("src/feature.ts");
+    expect(oversizedMcp.content[0].text).not.toContain("needlexxxxxxxxx");
     expect(
       getGrepResponseTokenCount(oversizedMcp.content[0].text, requestId),
     ).toBeLessThanOrEqual(mcpExactLimit - 1);
@@ -309,7 +300,7 @@ describe("getGrepContent - truncation", () => {
     const cliWrite = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
-    await runRg(["needle"]);
+    await runRg(["--allowance", String(cliExactLimit), "needle"]);
     expect(cliWrite.mock.calls.map(([chunk]) => String(chunk)).join("")).toBe(
       `${formatted}\n`,
     );
@@ -320,12 +311,21 @@ describe("getGrepContent - truncation", () => {
     const overCliWrite = vi
       .spyOn(process.stdout, "write")
       .mockImplementation(() => true);
-    await runRg(["needle"]);
-    const overCli = overCliWrite.mock.calls
+    const overCliErrorWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    await runRg(["--allowance", String(cliExactLimit - 1), "needle"]);
+    const overCli = [
+      ...overCliWrite.mock.calls,
+      ...overCliErrorWrite.mock.calls,
+    ]
       .map(([chunk]) => String(chunk))
       .join("");
     overCliWrite.mockRestore();
+    overCliErrorWrite.mockRestore();
     expect(overCli).toMatch(/matches (?:were )?withheld/i);
+    expect(overCli).not.toContain("src/feature.ts");
+    expect(overCli).not.toContain("needlexxxxxxxxx");
     expect(getGrepResponseTokenCount(overCli.trimEnd())).toBeLessThanOrEqual(
       cliExactLimit - 1,
     );

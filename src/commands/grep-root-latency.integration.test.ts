@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import fs from "fs-extra";
 import path from "node:path";
 import * as execaModule from "execa";
@@ -41,6 +49,11 @@ let originalCwd: string;
 let fixtureNeedsCleanup = false;
 const marker = "root_latency_probe_7c5e9a";
 const outputs: string[] = [];
+const evidence: Record<string, unknown> = {};
+const evidencePath = process.env.SPEKTA_ROOT_LATENCY_EVIDENCE;
+afterAll(async () => {
+  if (evidencePath) await fs.writeJson(evidencePath, evidence, { spaces: 2 });
+});
 let baseExeca: ObservedExeca | undefined;
 let baseValidateReadPathAccess:
   typeof security.validateReadPathAccess | undefined;
@@ -55,6 +68,8 @@ type KillableProcess = { kill: (signal?: NodeJS.Signals) => boolean };
 const activeProcesses = new Set<KillableProcess>();
 let profilingCutoff = false;
 const telemetry = {
+  backendPreparationCalls: 0,
+  backendPreparationMs: 0,
   pathValidationCalls: 0,
   pathValidationMs: 0,
   normalEnumerationCalls: 0,
@@ -111,14 +126,27 @@ function instrumentSearch(): void {
   const instrumentedExeca: ObservedExeca = (command, args, options) => {
     if (profilingCutoff) throw new Error("Profile time limit reached.");
     const commandArgs = Array.isArray(args) ? args : [];
+    const rgArgs =
+      command === "rtk" && commandArgs[0] === "proxy" && commandArgs[1] === "rg"
+        ? commandArgs.slice(2)
+        : command === "rg"
+          ? commandArgs
+          : undefined;
     let phase:
+      | "backend"
       | "normal-enumeration"
       | "ignored-enumeration"
       | "git"
       | "content"
       | undefined;
-    if (command === "rg" && commandArgs.includes("--files")) {
-      phase = commandArgs.includes("--no-ignore-vcs")
+    if (
+      (command === "rtk" && commandArgs[0] === "--version") ||
+      rgArgs?.includes("--version")
+    ) {
+      phase = "backend";
+      telemetry.backendPreparationCalls++;
+    } else if (rgArgs?.includes("--files")) {
+      phase = rgArgs.includes("--no-ignore-vcs")
         ? "ignored-enumeration"
         : "normal-enumeration";
       if (phase === "ignored-enumeration") telemetry.ignoredEnumerationCalls++;
@@ -137,7 +165,7 @@ function instrumentSearch(): void {
           : 0;
     } else if (command === "git" && commandArgs[0] === "check-ignore") {
       telemetry.pathGitIgnoreChecks++;
-    } else if (command === "rg" && commandArgs.includes("--json")) {
+    } else if (rgArgs?.includes("--json")) {
       phase = "content";
       telemetry.contentSearchLaunches++;
     }
@@ -167,6 +195,8 @@ function instrumentSearch(): void {
               telemetry.ignoredEnumerationMs += elapsed;
               telemetry.ignoredEnumerationFileCount += count;
             }
+          } else if (phase === "backend") {
+            telemetry.backendPreparationMs += elapsed;
           } else if (phase === "git") {
             telemetry.gitClassificationMs += elapsed;
             telemetry.gitIgnoredCount += stdout
@@ -178,7 +208,8 @@ function instrumentSearch(): void {
         },
         () => {
           const elapsed = performance.now() - started;
-          if (phase === "normal-enumeration")
+          if (phase === "backend") telemetry.backendPreparationMs += elapsed;
+          else if (phase === "normal-enumeration")
             telemetry.normalEnumerationMs += elapsed;
           else if (phase === "ignored-enumeration")
             telemetry.ignoredEnumerationMs += elapsed;
@@ -245,6 +276,7 @@ function instrumentSearch(): void {
 }
 
 beforeEach(async () => {
+  profilingCutoff = false;
   fixture = await createWorkspaceFixture();
   fixtureNeedsCleanup = true;
   originalCwd = process.cwd();
@@ -285,7 +317,7 @@ async function search(
 ): Promise<{ elapsedMs: number; output: string; phases: typeof telemetry }> {
   const before = performance.now();
   const telemetryBefore = snapshotTelemetry();
-  await runRg(args);
+  await runRg(["--profile", ...args]);
   return {
     elapsedMs: performance.now() - before,
     output: outputs.splice(0).join(""),
@@ -322,7 +354,12 @@ describe("root search latency reproduction at the CLI boundary", () => {
   it("compares a nested match across paths and incrementally adds ignored work", async () => {
     const results: Record<
       string,
-      { elapsedMs: number; fileCount: number; phases: typeof telemetry }
+      {
+        elapsedMs: number;
+        fileCount: number;
+        phases: typeof telemetry;
+        timings?: string;
+      }
     > = {};
     const cases: Array<[string, string[]]> = [
       ["explicit-file", [marker, "nested/target.txt"]],
@@ -338,6 +375,9 @@ describe("root search latency reproduction at the CLI boundary", () => {
         elapsedMs: result.elapsedMs,
         fileCount: 1,
         phases: result.phases,
+        timings: result.output.match(
+          /Timings: preparation \d+ ms; search \d+ ms\./,
+        )?.[0],
       };
     }
 
@@ -405,6 +445,7 @@ describe("root search latency reproduction at the CLI boundary", () => {
       true,
     );
     console.info(`[root-latency-probe] ${JSON.stringify(results)}`);
+    evidence.fixture = results;
   }, 30_000);
 
   it.skipIf(process.env.SPEKTA_PROFILE_WORKTREE_ROOT !== "1")(
@@ -438,13 +479,16 @@ describe("root search latency reproduction at the CLI boundary", () => {
         await searchPromise;
         process.exitCode = undefined;
       }
+      vi.spyOn(process.stdout, "write").mockRestore();
+      const measurement = {
+        status: outcome.status,
+        elapsedMs:
+          outcome.status === "completed" ? outcome.result.elapsedMs : 15_000,
+        phases,
+      };
+      evidence.worktree = measurement;
       console.info(
-        `[root-latency-working-tree] ${JSON.stringify({
-          status: outcome.status,
-          elapsedMs:
-            outcome.status === "completed" ? outcome.result.elapsedMs : 15_000,
-          phases,
-        })}`,
+        `[root-latency-working-tree] ${JSON.stringify(measurement)}`,
       );
     },
     60_000,
@@ -475,6 +519,12 @@ describe("root search latency reproduction at the CLI boundary", () => {
       expect(result.output).not.toContain("whitelist-candidates");
       expect(result.phases.whitelistAllowed).toBe(candidateCount);
       expect(result.phases.pathGitIgnoreChecks).toBeLessThanOrEqual(2);
+      vi.spyOn(process.stdout, "write").mockRestore();
+      evidence.whitelistFixture = {
+        candidateCount,
+        elapsedMs: result.elapsedMs,
+        phases: result.phases,
+      };
       console.info(
         `[root-latency-whitelist-fixture] ${JSON.stringify({
           candidateCount,

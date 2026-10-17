@@ -121,8 +121,8 @@ describe("CLI and existing MCP workspace boundaries", () => {
       const completeReply = serializeMcpToolReply(requestId, result);
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain("#### large-read.txt");
-      expect(result.content[0].text).toContain("[INCOMPLETE:");
+      expect(result.content[0].text).toContain("output_limit_exceeded");
+      expect(result.content[0].text).not.toContain("long formatted content");
       expect(getTokenCount(completeReply)).toBeLessThanOrEqual(
         Math.max(100, getMinimumMcpReadResponseBudget(requestId)),
       );
@@ -135,7 +135,7 @@ describe("CLI and existing MCP workspace boundaries", () => {
 
   it("marks an authorized read execution failure as an MCP error", async () => {
     const tools = createToolRegistry({ root: fixture.root });
-    vi.spyOn(readUtils, "getFileLines").mockRejectedValueOnce(
+    vi.spyOn(readUtils, "getVersionedFileLines").mockRejectedValueOnce(
       new Error("I/O failure PRIVATE_DIAGNOSTIC"),
     );
 

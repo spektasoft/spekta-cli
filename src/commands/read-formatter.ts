@@ -18,8 +18,11 @@ export interface ReadOutputOptions {
   tokens: number;
   fullTokens: number;
   isCompacted?: boolean;
+  overview?: boolean;
   exceedsLimit?: boolean;
   warning?: string;
+  empty?: boolean;
+  version?: string;
 }
 
 const formatNumber = (value: number): string => value.toLocaleString("en-US");
@@ -35,15 +38,27 @@ export function formatReadOutput(options: ReadOutputOptions): string {
     tokens,
     fullTokens,
     isCompacted = false,
+    overview = false,
     exceedsLimit = false,
     warning = "",
+    empty = false,
+    version,
   } = options;
 
   const extension = path.split(".").pop() || "txt";
 
-  const rangeLabel = isRangeRequest
-    ? `${rangeStart}-${rangeEnd === "$" ? total : rangeEnd} of ${total}`
-    : `1-${total} (Full File)`;
+  const rangeLabel =
+    overview && isCompacted
+      ? `structural overview; original file ${total} lines`
+      : overview
+        ? empty
+          ? `original content; no lines; total ${total}`
+          : `original content; lines ${rangeStart ?? 1}-${rangeEnd === "$" ? total : (rangeEnd ?? total)} of ${total}`
+        : empty
+          ? `no lines; total ${total}`
+          : isRangeRequest
+            ? `${rangeStart}-${rangeEnd === "$" ? total : rangeEnd} of ${total}`
+            : `1-${total} (Full File)`;
 
   const tokenDetails = isCompacted
     ? ` [COMPACTED OVERVIEW: ${formatNumber(tokens)}/${formatNumber(fullTokens)} tokens]`
@@ -53,8 +68,21 @@ export function formatReadOutput(options: ReadOutputOptions): string {
 
   const exceedLabel = exceedsLimit ? " [EXCEEDS TOKEN LIMIT]" : "";
   const warningLabel = warning ? ` [${warning}]` : "";
+  const overviewLabel = overview
+    ? isCompacted
+      ? " [STRUCTURAL OVERVIEW]"
+      : " [ORIGINAL CONTENT FALLBACK]"
+    : "";
+  const versionLabel = version ? ` [Version: ${version}]` : "";
 
-  return `#### ${path} (lines ${rangeLabel})${tokenDetails}${exceedLabel}${warningLabel}
+  const linePrefix = overview || empty ? "" : "lines ";
+  const overviewNotice =
+    overview && isCompacted
+      ? "This overview omits original content; collapsed markers identify omitted source evidence. Request original line ranges to inspect it."
+      : overview && !isCompacted
+        ? "No structural overview was available for this file; returning original content with normal chunking."
+        : "";
+  return `#### ${path} (${linePrefix}${rangeLabel})${overviewLabel}${tokenDetails}${versionLabel}${exceedLabel}${warningLabel}${overviewNotice ? `\n${overviewNotice}` : ""}
 \`\`\`${extension}
 ${content}
 \`\`\`

@@ -11,6 +11,15 @@ export interface GrepOptions {
   globs?: string | string[];
   case_insensitive?: boolean;
   case_mode?: "insensitive" | "sensitive" | "smart";
+  responseTokenLimit?: number;
+  getResponseTokenLimit?: () => number;
+  onProgress?: (phase: "preparing" | "searching") => void;
+  setSearchPhase?: () => void;
+  profile?: boolean;
+  onTimings?: (timings: { preparationMs: number; executionMs: number }) => void;
+  signal?: AbortSignal;
+  deadlineMs?: number;
+  getTermination?: () => "cancelled" | "deadline_exceeded" | undefined;
 }
 
 async function buildIgnoreArgs(

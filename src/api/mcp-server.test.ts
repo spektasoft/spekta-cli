@@ -19,12 +19,14 @@ import { getWriteOutcome } from "../commands/write";
 import { executeRtkCommand } from "../commands/proxy/proxy-execution";
 import { getTokenCount } from "../utils/read-utils";
 import { getGrepResponseTokenCount } from "../commands/grep-output-parser";
-import { runRg } from "../commands/rg";
 import fs from "fs-extra";
 import os from "node:os";
 import path from "node:path";
 
-vi.mock("../commands/read", () => ({ getReadOutcome: vi.fn() }));
+vi.mock("../commands/read", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../commands/read")>()),
+  getReadOutcome: vi.fn(),
+}));
 vi.mock("../commands/replace", () => ({ executeSafeReplaceOutcome: vi.fn() }));
 vi.mock("../commands/write", () => ({ getWriteOutcome: vi.fn() }));
 vi.mock("../commands/grep-search", () => ({
@@ -105,12 +107,11 @@ describe("TOOL_REGISTRY", () => {
       const result = await TOOL_REGISTRY.spekta_shell.handler({
         command: "ls",
       });
-      expect(result).toEqual({
-        isError: true,
-        content: [
-          { type: "text", text: "RTK command failed with exit status 7." },
-        ],
-      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        "Operand 1: internal_failure; listing failed",
+      );
+      expect(result.content[0].text).not.toContain("USEFUL_STDERR");
     },
   );
 
@@ -118,7 +119,9 @@ describe("TOOL_REGISTRY", () => {
     vi.mocked(executeRtkCommand).mockResolvedValueOnce({ available: false });
     const result = await TOOL_REGISTRY.spekta_shell.handler({ command: "ls" });
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toMatch(/rtk[\s\S]*not found/i);
+    expect(result.content[0].text).toBe(
+      "RTK listing failed before output could be checked.",
+    );
   });
 
   it("returns safe bounded diagnostics for thrown execution errors", async () => {
@@ -131,12 +134,60 @@ describe("TOOL_REGISTRY", () => {
     const result = await TOOL_REGISTRY.spekta_shell.handler({ command: "ls" });
     expect(result.isError).toBe(true);
     const output = result.content[0].text;
-    expect(output).toContain("RTK listing failed");
+    expect(output).toContain("Operand 1: internal_failure; listing failed");
     expect(output).not.toContain("USEFUL_START");
     expect(output).not.toContain("USEFUL_STDERR");
     expect(output).not.toContain("failure line");
     expect(output).not.toContain(secret);
     expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
+  });
+
+  it("accepts configured request allowances for list and git operations", async () => {
+    const shell = TOOL_REGISTRY.spekta_shell;
+    expect(
+      shell.schema({}).parse({ command: "ls", args: ["."], allowance: 250 }),
+    ).toEqual({ command: "ls", args: ["."], allowance: 250 });
+    const invalidGit = await shell.handler({
+      command: "git",
+      args: ["status"],
+      allowance: "bad",
+    });
+    expect(invalidGit.isError).toBe(true);
+    expect(invalidGit.content[0].text).toContain("positive whole number");
+    expect(executeRtkCommand).not.toHaveBeenCalled();
+
+    const invalid = await shell.handler({ command: "ls", allowance: -1 });
+    expect(invalid.isError).toBe(true);
+    expect(invalid.content[0].text).toContain("positive whole number");
+    expect(executeRtkCommand).not.toHaveBeenCalled();
+
+    const root = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "spekta-mcp-list-allowance-")),
+    );
+    try {
+      fs.ensureDirSync(path.join(root, "directory"));
+      fs.writeFileSync(path.join(root, "directory", "visible.txt"), "x");
+      vi.mocked(executeRtkCommand).mockResolvedValueOnce({
+        available: true,
+        stdout: "visible.txt\n",
+        stderr: "",
+        exitCode: 0,
+      });
+      const listed = await createToolRegistry({ root }).spekta_shell.handler({
+        command: "ls",
+        args: ["directory"],
+        allowance: 800,
+      });
+      expect(listed.isError).toBe(false);
+      expect(listed.content[0].text).toContain(
+        'Operand 1: returned; "directory"',
+      );
+      expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["directory"], {
+        root,
+      });
+    } finally {
+      fs.removeSync(root);
+    }
   });
 
   it("defines spekta_rg with separate pattern and path arrays", async () => {
@@ -177,12 +228,12 @@ describe("TOOL_REGISTRY", () => {
       content: [{ type: "text", text: "rg result" }],
     });
     expect(getRgOutcome).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         patterns: ["needle", "haystack"],
         paths: ["nested", "docs"],
         globs: ["*.ts,*.tsx"],
         case_mode: "smart",
-      },
+      }),
       undefined,
       undefined,
     );
@@ -196,7 +247,7 @@ describe("TOOL_REGISTRY", () => {
         "Search results exceed the response budget; all matches were withheld. Narrow the path or pattern.",
     });
     const limited = await tool.handler({ patterns: ["needle"] });
-    expect(limited.isError).toBeUndefined();
+    expect(limited.isError).toBe(true);
     expect(limited.content[0].text).toContain("all matches were withheld");
     expect(
       getGrepResponseTokenCount(limited.content[0].text, "request-42"),
@@ -210,35 +261,6 @@ describe("TOOL_REGISTRY", () => {
     expect(failure.isError).toBe(true);
     expect(
       getGrepResponseTokenCount(failure.content[0].text, "request-42", true),
-    ).toBeLessThanOrEqual(2000);
-  });
-
-  it.each([
-    {
-      status: "success" as const,
-      value: "#### src/file.ts\n```ts\n1:0:needle\n```",
-    },
-    {
-      status: "output_limit_exceeded" as const,
-      message:
-        "Search results exceed the response budget; all matches were withheld. Narrow the path or pattern.",
-    },
-  ])("keeps CLI and MCP grep rendering in parity", async (outcome) => {
-    vi.mocked(getRgOutcome).mockResolvedValueOnce(outcome);
-    const writeSpy = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation(() => true);
-    await runRg(["needle"]);
-    const cliOutput = writeSpy.mock.calls
-      .map(([chunk]) => String(chunk))
-      .join("");
-    writeSpy.mockRestore();
-
-    vi.mocked(getRgOutcome).mockResolvedValueOnce(outcome);
-    const mcp = await TOOL_REGISTRY.spekta_rg.handler({ patterns: ["needle"] });
-    expect(cliOutput).toBe(`${mcp.content[0].text}\n`);
-    expect(
-      getGrepResponseTokenCount(mcp.content[0].text, "request-42"),
     ).toBeLessThanOrEqual(2000);
   });
 
@@ -261,12 +283,12 @@ describe("TOOL_REGISTRY", () => {
       getGrepResponseTokenCount(text, "mcp-request-1"),
     );
     expect(getRgOutcome).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         patterns: ["needle"],
         paths: [],
         globs: [],
         case_mode: "sensitive",
-      },
+      }),
       undefined,
       requestId,
     );
@@ -313,14 +335,18 @@ describe("TOOL_REGISTRY", () => {
       false,
       workspace,
       undefined,
+      "",
+      undefined,
+      undefined,
+      false,
     );
     expect(getRgOutcome).toHaveBeenCalledWith(
-      {
+      expect.objectContaining({
         patterns: ["needle"],
         paths: ["src"],
         globs: ["*.ts"],
         case_mode: "insensitive",
-      },
+      }),
       workspace,
       undefined,
     );
@@ -357,6 +383,34 @@ describe("TOOL_REGISTRY", () => {
       false,
       undefined,
       "request-42",
+      "",
+      undefined,
+      undefined,
+      false,
+    );
+  });
+
+  it("passes expected versions to the planner and marks mismatches as MCP errors", async () => {
+    const version = `v1-${"a".repeat(43)}`;
+    vi.mocked(getReadOutcome).mockResolvedValueOnce({
+      status: "version_mismatch",
+      message: "version_mismatch: restart",
+    });
+    const result = await TOOL_REGISTRY.spekta_read.handler(
+      { paths: ["src/file.ts"], expectedVersion: version },
+      undefined,
+      "version-request",
+    );
+    expect(result.isError).toBe(true);
+    expect(getReadOutcome).toHaveBeenCalledWith(
+      [{ path: "src/file.ts" }],
+      false,
+      undefined,
+      "version-request",
+      "",
+      undefined,
+      version,
+      false,
     );
   });
 
@@ -415,10 +469,15 @@ describe("TOOL_REGISTRY", () => {
         args: [],
       });
 
-      expect(executeRtkCommand).toHaveBeenCalledWith("ls", [], { root });
+      expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["."], { root });
       expect(result).toEqual({
         isError: false,
-        content: [{ type: "text", text: '"visible.txt"' }],
+        content: [
+          {
+            type: "text",
+            text: 'Batch: success\nOperand 1: returned; "."\n"visible.txt"\n',
+          },
+        ],
       });
     } finally {
       fs.removeSync(root);

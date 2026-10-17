@@ -310,7 +310,8 @@ describe.skipIf(missing.length > 0)(
       expect(rejected.mcp.content[0].text).toMatch(
         /outside the project directory/i,
       );
-      expect(console.error).toHaveBeenCalled();
+      expect(rejected.cli).toContain(rejected.mcp.content[0].text);
+      expect(console.log).toHaveBeenCalled();
     });
 
     it("supports a real worktree repository marker", async () => {

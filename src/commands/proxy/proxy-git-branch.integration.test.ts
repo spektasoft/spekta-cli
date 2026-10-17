@@ -90,8 +90,8 @@ describe.skipIf(missing.length > 0)(
         const result = await both(args);
         expect(result.mcp.isError).toBe(true);
         expect(result.mcp.content[0].text).toMatch(reason);
-        expect(result.cli).toBe("");
-        expect(vi.mocked(console.error).mock.calls[0][0]).toBe(
+        expect(result.cli).toContain(result.mcp.content[0].text);
+        expect(vi.mocked(console.log).mock.calls[0][0]).toContain(
           result.mcp.content[0].text,
         );
         expect(process.exitCode).toBe(1);

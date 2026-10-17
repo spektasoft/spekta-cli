@@ -11,13 +11,14 @@ import { assertPathNotIgnored } from "../../utils/path-ignore";
 import { getTokenCount } from "../../utils/read-utils";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
 import { redactSecrets } from "./proxy-secret-redaction";
-import type { DiscoveryRenderOutcome } from "./proxy-ls-render";
+import type { DiscoveryRenderOutcome } from "./proxy-render-outcome";
 
 /** Status is collected as NUL-delimited records, never as decorated RTK output. */
 export async function renderGitStatusOutcome(
   result: { stdout: string; stderr: string; exitCode: number },
   args: string[],
   context?: WorkspaceContext,
+  allowance = 1000,
 ): Promise<DiscoveryRenderOutcome> {
   const failure = (message: string, exitCode = 1): DiscoveryRenderOutcome => ({
     status: "failure",
@@ -125,8 +126,13 @@ export async function renderGitStatusOutcome(
     }
     // Directory aggregation and native long-format counts are deliberately replaced
     // by individual eligible entries. Branch metadata is budgeted with the entries.
-    const output = redactSecrets(lines.join("\n"));
-    let budget = 1000;
+    const output = redactSecrets(
+      [
+        "Eligible native Git status; eligible untracked entries may appear, while native ignored untracked entries do not.",
+        ...lines,
+      ].join("\n"),
+    );
+    let budget = allowance;
     while (budget > 0) {
       const truncated = truncateOutput(output, budget);
       const over =
@@ -142,7 +148,7 @@ export async function renderGitStatusOutcome(
               content: [{ type: "text", text: truncated.content }],
             }),
           ),
-        ) - 1000;
+        ) - allowance;
       if (over <= 0) return { status: "success", ...truncated };
       budget -= over;
     }

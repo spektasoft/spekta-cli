@@ -1,14 +1,29 @@
+import type { BatchOperandOutcome } from "./batch-planning";
+
 /** Shared outcome vocabulary for workspace operations exposed over CLI and MCP. */
 export type OperationOutcome<T> =
   | { status: "success"; value: T }
-  | { status: "policy_rejection"; message: string }
+  | { status: "partial_result"; value: T; operands: BatchOperandOutcome[] }
+  | { status: "usage_error"; message: string }
+  | { status: "version_mismatch"; message: string }
+  | {
+      status: "policy_rejection";
+      message: string;
+      operands?: BatchOperandOutcome[];
+    }
   | { status: "no_matches"; message: string }
-  | { status: "output_limit_exceeded"; message: string }
-  | { status: "engine_failure"; message: string };
+  | {
+      status: "output_limit_exceeded";
+      message: string;
+      operands?: BatchOperandOutcome[];
+    }
+  | { status: "engine_failure"; message: string }
+  | { status: "cancelled"; message: string }
+  | { status: "deadline_exceeded"; message: string };
 
 export type FailureOutcome = Exclude<
   OperationOutcome<string>,
-  { status: "success"; value: string }
+  { status: "success" | "partial_result"; value: string }
 >;
 
 export function boundFailureOutcome(
@@ -25,5 +40,7 @@ export function boundFailureOutcome(
 }
 
 export function getOutcomeText(outcome: OperationOutcome<string>): string {
-  return outcome.status === "success" ? outcome.value : outcome.message;
+  return outcome.status === "success" || outcome.status === "partial_result"
+    ? outcome.value
+    : outcome.message;
 }

@@ -1,53 +1,75 @@
 import type { HelpTopic } from "./help-topic";
+import { resolveAllowanceSettings } from "../core/config/allowance";
+
+function listAllowanceHelp(): string {
+  const settings = resolveAllowanceSettings("list");
+  return `--allowance <tokens> requests a positive whole-number allowance for the complete response. The default is SPEKTA_LIST_TOKEN_LIMIT (${settings.defaultTokens}); it cannot exceed SPEKTA_LIST_TOKEN_CEILING (${settings.ceilingTokens}).`;
+}
 
 /** Supported proxy forms documented from their request classifiers and policies. */
 export const PROXY_HELP: Record<string, HelpTopic> = {
   ls: {
     title: "ls — List eligible workspace entries",
     purpose:
-      "List eligible entries directly inside a workspace directory. Each name is checked against workspace, ignore, and restricted-file policy before it is shown.",
-    usage: ["spekta ls [directory]"],
+      "List eligible entries directly inside one or more workspace directories. Each name is checked against workspace, ignore, and restricted-file policy before it is shown.",
+    usage: ["spekta ls [--allowance <tokens>] [directory...]"],
     sections: [
       {
         heading: "Operands and limits",
         lines: [
-          "directory is one existing directory relative to the workspace; it defaults to .",
-          "ls has no operational options and does not recurse into child directories.",
-          "Only eligible entries are disclosed. A directory entry may be listed even when its contents are not eligible.",
-          "The 1,000-token response budget includes the complete CLI response. Spekta truncates a long listing and marks it as truncated.",
+          "Supply one or more literal directory paths. Each is resolved independently relative to the workspace; with no directory, ls lists .",
+          "Results are labeled by operand and retain complete eligible entries. An unavailable directory is reported by operand position without disclosing its name.",
+          "An empty result means no eligible entries in this listing; excluded entries may exist.",
+          "A listing that cannot fit is marked incomplete and includes narrowing guidance. Entries are never split, and there is no pagination.",
+          listAllowanceHelp(),
           "RTK must be installed to run ls. Help does not need RTK.",
         ],
       },
     ],
-    examples: ["spekta ls", "spekta ls src", "spekta ls 'folder with spaces'"],
+    examples: [
+      "spekta ls",
+      "spekta ls src .github",
+      "spekta ls 'folder with spaces'",
+      "spekta ls --allowance 2000 src test",
+    ],
     complete: true,
   },
   find: {
     title: "find — Discover eligible workspace paths",
     purpose:
-      "Search below a workspace directory with a small set of find predicates, then disclose only eligible paths.",
+      "Search below multiple workspace roots with supported find predicates, then disclose only eligible paths.",
     usage: [
-      "spekta find [directory] [-type f|d] [-name pattern] [-print]",
-      "spekta find [-type f|d] [-name pattern] [-print]",
+      "spekta find [--allowance <tokens>] [root...] [-type f|d] [-name pattern] [-print]",
+      "spekta find [--allowance <tokens>] [-type f|d] [-name pattern] [-print]",
     ],
     sections: [
       {
         heading: "Operands and predicates",
         lines: [
-          "directory is one existing relative workspace directory and defaults to .; a leading predicate also uses this default root.",
+          "Supply zero or more roots before the first predicate. No roots means .; each root is evaluated independently, in supplied order, and duplicate roots are preserved.",
+          "Relative parent references and POSIX absolute roots are accepted as operands. A root is available only when its resolved canonical target remains inside the workspace and passes access and ignore policy; outside or otherwise unavailable roots receive the same concealed ordinal outcome.",
+          "Roots beginning with a dash must use ./, such as ./-directory. Windows roots, glob/root notation, trailing slashes, repeated separators, and roots after predicates are unsupported.",
           "-type accepts one value: f for files or d for directories.",
-          "-name accepts one nonempty pattern. Quote shell globs so the pattern reaches Spekta unchanged; it is interpreted by find as a name pattern, not as a path operand.",
+          "-name accepts one nonempty literal argument. Quote shell globs so the pattern reaches Spekta unchanged; values such as --help, --allowance, and -exec remain pattern values, not options or actions.",
           "Use -type and -name together in either order. Each predicate may appear once.",
           "-print is optional and, when present, must be the final token. It prints matching paths.",
-          "Find traverses beneath the selected root, but does not follow directory symlinks. Spekta filters matches using workspace and eligible-file policy, including ignored and restricted paths.",
-          "The 1,000-token response budget includes the complete CLI response. Spekta truncates a long listing and marks it as truncated.",
+          "Find uses physical -P traversal: directory symlinks beneath a root are not followed. A contained directory symlink supplied as a root is handled physically, and descendants reached through directory symlinks are filtered.",
+          "Only whole eligible paths are returned. Empty roots say 'No eligible paths in this discovery.' Partial batches identify unavailable or incomplete operands; narrow an incomplete root or request a larger allowance when the configured ceiling permits it.",
+          "The minimum allowance is measured from the complete transport-specific validation response. A smaller allowance is rejected before RTK is probed; that validation response uses the configured default budget, not the rejected allowance.",
+          "If the configured default cannot contain the mandatory validation diagnostic, Spekta emits a short recovery message even though that rejected-request response exceeds the default. Raise SPEKTA_LIST_TOKEN_LIMIT and, when the minimum exceeds the ceiling, SPEKTA_LIST_TOKEN_CEILING; shorten an unusually long MCP request ID if needed.",
+          "This exception applies only to rejected validation requests. Accepted discovery responses always fit their requested allowance.",
+          listAllowanceHelp(),
+          "The complete formatted CLI response or MCP JSON-RPC envelope, including outcomes and transport metadata, is measured against one allowance for the whole request.",
           "RTK and the find backend must be available to run find. Help does not invoke either one.",
-          "Native find options, expressions, actions, absolute roots, and a -- separator are unsupported.",
+          "The CLI allowance must be the first argument after find. MCP uses the existing allowance field. Original shell find commands do not accept Spekta's allowance option.",
+          "The supported backend requires Linux or WSL with GNU Findutils through RTK proxy find. Native Windows find.exe is unsupported.",
         ],
       },
     ],
     examples: [
       "spekta find",
+      "spekta find --allowance 2000 src test -type f -name '*.ts'",
+      "spekta find src test src -name '*.md'",
       "spekta find -name '*.md'",
       "spekta find . -type f -name '*.ts'",
       "spekta find src -type f -name '*.ts' -print",
@@ -73,6 +95,7 @@ export const PROXY_HELP: Record<string, HelpTopic> = {
           "diff inspects working-tree, staged, or revision-to-revision changes.",
           "branch lists local or remote branch names.",
           "Each subcommand has its own option and response rules; see its help topic for accepted syntax.",
+          "Every Git inspection accepts one --allowance <tokens> option. SPEKTA_GIT_TOKEN_LIMIT defaults to 1,000 tokens; SPEKTA_GIT_TOKEN_CEILING defaults to 8,000 tokens.",
           "All Git topics require a Git repository and RTK to run. Help does not invoke Git or RTK.",
           "Unsupported native Git options, pathspec magic, workspace overrides, and mutating commands such as commit, checkout, switch, create, or delete are outside this interface.",
         ],
@@ -89,7 +112,7 @@ export const PROXY_HELP: Record<string, HelpTopic> = {
     title: "git status — Inspect working tree status",
     purpose:
       "List status records for eligible workspace paths in the current repository.",
-    usage: ["spekta git status [options] [-- paths...]"],
+    usage: ["spekta git status [options] [--allowance <tokens>] [-- paths...]"],
     sections: [
       {
         heading: "Options and operands",
@@ -97,7 +120,8 @@ export const PROXY_HELP: Record<string, HelpTopic> = {
           "Accepted options: -s or --short; -b or --branch; --porcelain, --porcelain=v1, or --porcelain=v2; and --untracked-files=no|normal|all.",
           "Put options before --. Path operands follow -- and are literal workspace paths; quote names containing spaces. Without paths, the repository is inspected.",
           "A path that begins with - must follow --. Git pathspec patterns and magic are unsupported.",
-          "Spekta removes ineligible paths from the result. The 1,000-token response budget includes the complete CLI response; long status output is truncated and marked.",
+          "Spekta removes ineligible paths from the result. The configured Git response budget includes the complete CLI response; long status output is truncated and marked.",
+          "Status describes eligible native Git status: eligible untracked entries may appear; native ignored untracked entries do not. Excluded paths are omitted without identifying them.",
           "RTK and a Git repository are required to run this command. Help does not invoke either one.",
         ],
       },
@@ -123,7 +147,7 @@ export const PROXY_HELP: Record<string, HelpTopic> = {
           "Revision operands may be branch or tag names, object IDs, or simple parent forms such as HEAD~2^0. A log revision may also use one .. or ... range, including an omitted endpoint such as ..HEAD.",
           "Put options and revisions before --. Optional path operands follow --, are literal workspace paths, and may include spaces when quoted. Without paths, the operation uses the repository paths.",
           "Commit messages, graph or all-refs output, decorations, reflog selectors, Git pathspec magic, and unsupported native options are not disclosed through this interface.",
-          "Eligible paths are filtered before output. Summary output that exceeds the 1,000-token response budget fails with guidance to narrow the request. Patch output is truncated to fit the complete 1,000-token response budget and marked.",
+          "Eligible paths are filtered before output. Summary output that exceeds the configured Git response budget fails with guidance to narrow the request. Patch output is truncated to fit the complete configured Git response budget and marked.",
           "RTK and a Git repository are required to run this command. Help does not invoke either one.",
         ],
       },
@@ -149,7 +173,7 @@ export const PROXY_HELP: Record<string, HelpTopic> = {
           "For commit output, choose -p or --patch, --stat, --name-only, or --name-status. Summary options cannot be combined with a patch option; --no-patch alone does not select a supported summary. With no revision, the commit form uses HEAD.",
           "For a blob, use revision:path with a relative repository path. A blob selector cannot be combined with additional path operands.",
           "For commit output, put options and the revision before --; optional literal workspace paths follow it. Paths must be eligible. Git pathspec magic, reflog selectors, and unsupported native options are rejected.",
-          "Eligible files are filtered before output. Summary output that exceeds the 1,000-token response budget fails with guidance to narrow the request. Patch and blob output are truncated to fit the complete 1,000-token response budget and marked.",
+          "Eligible files are filtered before output. Summary output that exceeds the configured Git response budget fails with guidance to narrow the request. Patch and blob output are truncated to fit the complete configured Git response budget and marked.",
           "RTK and a Git repository are required to run this command. Help does not invoke either one.",
         ],
       },
@@ -174,7 +198,8 @@ export const PROXY_HELP: Record<string, HelpTopic> = {
           "--cached or --staged selects staged changes and may appear once. It accepts at most one revision; without it, diff accepts up to two revisions.",
           "A single revision compares the worktree with that revision. Two revisions compare them. A .. or ... range is allowed only as the sole revision operand and cannot be combined with --cached or --staged.",
           "Put options and revisions before --. Optional path operands follow -- and are literal workspace paths; quote names containing spaces. Without paths, the repository paths are inspected.",
-          "Eligible files are filtered before output. Summary output that exceeds the 1,000-token response budget fails with guidance to narrow the request. Patch output is truncated to fit the complete 1,000-token response budget and marked.",
+          "Eligible files are filtered before output. Summary output that exceeds the configured Git response budget fails with guidance to narrow the request. Patch output is truncated to fit the complete configured Git response budget and marked.",
+          "Diff is a native tracked comparison and does not include new untracked content. Empty diff output does not establish that the whole workspace is unchanged.",
           "Binary patch data, combined patches, Git pathspec magic, and unsupported native options are rejected. RTK and a Git repository are required to run this command.",
         ],
       },
@@ -198,7 +223,7 @@ export const PROXY_HELP: Record<string, HelpTopic> = {
           "This command is listing-only. Accepted options are --list or -l, --all or -a, --remotes or -r, and --verbose or -v. Verbose mode still discloses branch names only; upstream and commit text are omitted.",
           "A pattern requires explicit --list or -l. Quote shell globs so Git receives them as branch-name patterns. Patterns filter names and are not workspace paths.",
           "With --list, an optional -- separates options from patterns. It does not introduce file paths.",
-          "The 1,000-token response budget includes the complete CLI response. Spekta truncates a long listing and marks it as truncated.",
+          "The configured Git response budget includes the complete CLI response. Spekta truncates a long listing and marks it as truncated.",
           "Creating, deleting, renaming, switching, and other branch mutations are unsupported. RTK and a Git repository are required to run this command.",
         ],
       },

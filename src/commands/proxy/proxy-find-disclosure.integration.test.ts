@@ -24,10 +24,14 @@ async function discover(stdout: string, args: string[] = []) {
     return Promise.resolve({ stdout, stderr: "", exitCode: 0 });
   }) as never);
   await runRtkProxy("find", args);
-  const mcp = await TOOL_REGISTRY.spekta_shell.handler({
-    command: "find",
-    args,
-  });
+  const mcp = await TOOL_REGISTRY.spekta_shell.handler(
+    {
+      command: "find",
+      args,
+    },
+    undefined,
+    "discovery-integration/request-17",
+  );
   return { cli: vi.mocked(console.log).mock.calls.flat().join("\n"), mcp };
 }
 
@@ -35,13 +39,18 @@ it("discloses only eligible descendants through CLI and MCP", async () => {
   const result = await discover(
     ".\n./visible.ts\n./.env\n./restricted-alias\n./escape\n./dangling",
   );
-  expect(result.cli).toContain("./visible.ts");
+  expect(result.cli).toContain('"visible.ts"');
   expect(JSON.stringify(result)).not.toMatch(
     /\.env|restricted-alias|escape|dangling/,
   );
   expect(result.mcp).toEqual({
     isError: false,
-    content: [{ type: "text", text: ".\n./visible.ts" }],
+    content: [
+      {
+        type: "text",
+        text: 'Batch: success\nOperand 1: returned; "."\n"."\n"visible.ts"\n',
+      },
+    ],
   });
 });
 
@@ -52,17 +61,26 @@ it("withholds child failure output and preserves status", async () => {
     exitCode: 7,
   } as never);
   await runRtkProxy("find", []);
-  const mcp = await TOOL_REGISTRY.spekta_shell.handler({ command: "find" });
-  expect(process.exitCode).toBe(7);
+  const mcp = await TOOL_REGISTRY.spekta_shell.handler(
+    { command: "find" },
+    undefined,
+    "backend-failure-17",
+  );
+  expect(process.exitCode).toBe(1);
   expect(mcp).toEqual({
     isError: true,
-    content: [{ type: "text", text: "RTK command failed with exit status 7." }],
+    content: [
+      {
+        type: "text",
+        text: 'Batch: partial_result\nOperand 1: internal_failure; discovery failed; "."\n',
+      },
+    ],
   });
   expect(JSON.stringify(vi.mocked(console.error).mock.calls)).not.toMatch(
     /\.env|restricted-alias/,
   );
   expect(console.log).toHaveBeenCalledWith(
-    expect.stringContaining("[FAILED: Exit 7]"),
+    expect.stringContaining("internal_failure; discovery failed"),
   );
   expect(JSON.stringify(vi.mocked(console.log).mock.calls)).not.toMatch(
     /\.env|restricted-alias|cannot read restricted-alias/,
@@ -80,8 +98,16 @@ it("bounds the complete response using only eligible results", async () => {
   );
   const { getTokenCount } = await import("../../utils/read-utils");
   expect(getTokenCount(`${cli}\n`)).toBeLessThanOrEqual(1000);
-  expect(getTokenCount(JSON.stringify(mcp))).toBeLessThanOrEqual(1000);
-  expect(cli).toContain("TRUNCATED");
+  expect(
+    getTokenCount(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: "discovery-integration/request-17",
+        result: mcp,
+      })}\n`,
+    ),
+  ).toBeLessThanOrEqual(1000);
+  expect(cli).toContain("incomplete; output_limit_exceeded");
 });
 
 it("filters ignored ancestors and ineligible aliases under nested roots", async () => {
@@ -103,7 +129,12 @@ it("filters ignored ancestors and ineligible aliases under nested roots", async 
   );
   expect(mcp).toEqual({
     isError: false,
-    content: [{ type: "text", text: "directory/ok.ts\ndirectory/keep.log" }],
+    content: [
+      {
+        type: "text",
+        text: 'Batch: success\nOperand 1: returned; "directory"\n"directory/ok.ts"\n"directory/keep.log"\n',
+      },
+    ],
   });
   expect(cli).not.toMatch(/secret|ignored|hidden|alias/);
 });
@@ -120,7 +151,12 @@ it("does not disclose targets reached through directory symlink descendants", as
   );
   expect(mcp).toEqual({
     isError: false,
-    content: [{ type: "text", text: "./internal-alias\n./visible.ts" }],
+    content: [
+      {
+        type: "text",
+        text: 'Batch: success\nOperand 1: returned; "."\n"internal-alias"\n"visible.ts"\n',
+      },
+    ],
   });
 });
 

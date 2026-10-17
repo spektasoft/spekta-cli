@@ -5,15 +5,14 @@ import { findRepositoryRoot } from "./proxy-git-policy";
 import { isEligibleGitPath } from "./proxy-git-status";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
 import { redactSecrets } from "./proxy-secret-redaction";
-import type { DiscoveryRenderOutcome } from "./proxy-ls-render";
-
-const RESPONSE_LIMIT = 1000;
+import type { DiscoveryRenderOutcome } from "./proxy-render-outcome";
 
 /** Render an explicit historical blob only after checking its repository identity. */
 export async function renderGitBlobOutcome(
   result: { stdout: string; exitCode: number },
   selector: string,
   context?: WorkspaceContext,
+  allowance = 1000,
 ): Promise<DiscoveryRenderOutcome> {
   if (result.exitCode !== 0) {
     return {
@@ -39,13 +38,13 @@ export async function renderGitBlobOutcome(
       };
     }
 
-    let budget = 900;
+    let budget = allowance;
     while (budget > 0) {
       const truncated = truncateOutput(redactSecrets(result.stdout), budget);
       const rendered = formatProxyOutput("git", truncated.content, {
         truncated: truncated.truncated,
       });
-      if (getTokenCount(`${rendered}\n`) <= RESPONSE_LIMIT) {
+      if (getTokenCount(`${rendered}\n`) <= allowance) {
         return {
           status: "success",
           content: truncated.content,

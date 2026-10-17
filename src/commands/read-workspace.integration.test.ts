@@ -29,11 +29,11 @@ function read(target: string, mode: (typeof modes)[number], root: string) {
 describe("workspace reads", () => {
   it.each(modes)("reads canonical targets in %s mode", async (mode) => {
     process.chdir(fixture.ambient);
-    const streams = vi.spyOn(readUtils, "getFileLines");
+    const streams = vi.spyOn(readUtils, "getVersionedFileLines");
     const output = await read("internal-file.txt", mode, fixture.root);
     expect(output).toContain("needle INTERNAL");
     expect(output).not.toContain("WRONG_CWD");
-    expect(streams).toHaveBeenCalledTimes(mode.includes("range") ? 2 : 1);
+    expect(streams).toHaveBeenCalledTimes(1);
     for (const [file] of streams.mock.calls)
       expect(file).toBe(path.join(fixture.root, "real.txt"));
   });
@@ -47,7 +47,7 @@ describe("workspace reads", () => {
       "cycle-a",
       "missing.txt",
     ])(`denies %s in ${mode} mode before streaming`, async (target) => {
-      const streams = vi.spyOn(readUtils, "getFileLines");
+      const streams = vi.spyOn(readUtils, "getVersionedFileLines");
       const output = await read(target, mode, fixture.root);
       expect(output).toContain("Read rejected:");
       expect(output).not.toContain(target);
@@ -77,17 +77,22 @@ describe("workspace reads", () => {
       "Read rejected:",
     );
   });
-  it("withholds a partial multi-file read when any requested file is denied", async () => {
+  it("retains eligible siblings without disclosing a denied operand", async () => {
     const outcome = await getReadOutcome(
       [{ path: "internal-file.txt" }, { path: "../sibling.txt" }],
       false,
       { root: fixture.root },
     );
-    expect(outcome.status).toBe("policy_rejection");
+    expect(outcome.status).toBe("partial_result");
+    if (outcome.status !== "partial_result")
+      throw new Error("Expected a partial batch");
+    expect(outcome.operands).toEqual([
+      { position: 1, status: "returned" },
+      { position: 2, status: "unavailable" },
+    ]);
+    expect(outcome.value).toContain("needle INTERNAL");
     const serialized = JSON.stringify(outcome);
-    expect(serialized).not.toContain("internal-file.txt");
     expect(serialized).not.toContain("sibling.txt");
-    expect(serialized).not.toContain("INTERNAL");
     expect(serialized).not.toContain("SIBLING");
   });
   it("accepts absolute internal targets and nongit workspaces", async () => {
@@ -99,15 +104,15 @@ describe("workspace reads", () => {
     expect(await read("file.txt", "full", root)).toContain("NO_GIT");
   });
   it("preserves empty request and conceals missing workspace diagnostics", async () => {
-    expect(await getReadContent([])).toBe(
-      "Read requires at least one file path.",
-    );
+    expect(await getReadContent([])).toContain("usage_error");
     const missingWorkspace = await read(
       "real.txt",
       "full",
       path.join(fixture.base, "missing-root"),
     );
-    expect(missingWorkspace).toBe("Read rejected: workspace is unavailable.");
+    expect(missingWorkspace).toBe(
+      "Read rejected: unavailable_access; workspace is unavailable.",
+    );
     expect(missingWorkspace).not.toContain("missing-root");
   });
 });

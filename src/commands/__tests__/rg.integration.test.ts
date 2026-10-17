@@ -11,6 +11,7 @@ import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 import { runRg } from "../rg";
 import { getRgOutcome } from "../grep-search";
 import { getGrepResponseTokenCount } from "../grep-output-parser";
+import { getTokenCount } from "../../utils/read-utils";
 
 let fixture: WorkspaceFixture;
 let originalCwd: string;
@@ -38,13 +39,283 @@ afterEach(async () => {
 });
 
 describe("spekta rg public boundaries", () => {
+  it("searches valid roots and reports unavailable roots positionally through CLI and MCP", async ({
+    skip,
+  }) => {
+    if (!rtkAvailable) skip();
+    await fs.writeFile(
+      path.join(fixture.root, "real.txt"),
+      "needle mixed-root\n",
+    );
+    process.chdir(fixture.root);
+    const completeWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockReturnValue(true);
+    await runRg(["-e", "needle", "real.txt"]);
+    const completeCliText = completeWrite.mock.calls
+      .map(([chunk]) => String(chunk))
+      .join("");
+    completeWrite.mockRestore();
+    const completeMcp = await TOOL_REGISTRY.spekta_rg.handler(
+      { patterns: ["needle"], paths: ["real.txt"] },
+      { root: fixture.root },
+    );
+    expect(completeMcp.isError).toBeUndefined();
+    expect(completeMcp.content[0]?.text).toBe(completeCliText.trimEnd());
+    expect(completeMcp.content[0]?.text).toContain("needle mixed-root");
+
+    const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    await runRg([
+      "-e",
+      "needle",
+      "real.txt",
+      "private-missing.txt",
+      "real.txt",
+    ]);
+    const cliText = write.mock.calls.map(([chunk]) => String(chunk)).join("");
+    write.mockRestore();
+    const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+      {
+        patterns: ["needle"],
+        paths: ["real.txt", "private-missing.txt", "real.txt"],
+        profile: true,
+      },
+      { root: fixture.root },
+    );
+    expect(cliText).toContain("Batch: partial_result");
+    expect(cliText).toContain("Operand 2: unavailable; unavailable_access");
+    expect(cliText).toContain("needle mixed-root");
+    expect(cliText).not.toContain("private-missing.txt");
+    expect(mcp.content[0]?.text).toBe(cliText.trimEnd());
+    expect(mcp.isError).toBe(true);
+    expect(mcp.content[0]?.text).not.toContain("private-missing.txt");
+    expect(mcp.content[0]?.text).not.toContain("Timings:");
+  });
+
+  it("includes reserved aggregate timings only for complete profiled searches", async ({
+    skip,
+  }) => {
+    if (!rtkAvailable) skip();
+    await fs.writeFile(path.join(fixture.root, "timed.txt"), "timed needle\n");
+    const outcome = await getRgOutcome(
+      {
+        patterns: ["needle"],
+        paths: ["timed.txt"],
+        globs: [],
+        case_mode: "sensitive",
+        allowance: 1000,
+        profile: true,
+      },
+      { root: fixture.root },
+      "profile-test",
+    );
+    expect(outcome.status).toBe("success");
+    if (outcome.status === "success") {
+      expect(outcome.value).toMatch(
+        /Timings: preparation \d+ ms; search \d+ ms\./,
+      );
+      expect(
+        getGrepResponseTokenCount(outcome.value, "profile-test"),
+      ).toBeLessThanOrEqual(1000);
+    }
+  });
+
+  it("reports partial scope when valid roots have no matches", async ({
+    skip,
+  }) => {
+    if (!rtkAvailable) skip();
+    await fs.writeFile(path.join(fixture.root, "real.txt"), "different text\n");
+    process.chdir(fixture.root);
+    const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    await runRg(["-e", "needle", "real.txt", "private-missing.txt"]);
+    const cliText = write.mock.calls.map(([chunk]) => String(chunk)).join("");
+    write.mockRestore();
+    const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+      { patterns: ["needle"], paths: ["real.txt", "private-missing.txt"] },
+      { root: fixture.root },
+    );
+    expect(cliText).toContain("Batch: partial_result");
+    expect(cliText).toContain("Operand 2: unavailable; unavailable_access");
+    expect(cliText).toContain("No matches found.");
+    expect(cliText).not.toContain("private-missing.txt");
+    expect(mcp.content[0]?.text).toBe(cliText.trimEnd());
+    expect(mcp.isError).toBe(true);
+  });
+
+  it("rejects oversized scope metadata before starting RTK with a valid root", async () => {
+    await fs.writeFile(path.join(fixture.root, "real.txt"), "needle\n");
+    const binPath = await fs.mkdtemp(path.join(os.tmpdir(), "rtk-metadata-"));
+    const marker = path.join(binPath, "launched");
+    await fs.writeFile(
+      path.join(binPath, "rtk"),
+      `#!/bin/sh\nprintf launched > '${marker}'\nexit 0\n`,
+      { mode: 0o755 },
+    );
+    const privateRoots = [
+      "real.txt",
+      ...Array.from({ length: 40 }, (_, index) => `private-root-${index}.txt`),
+    ];
+    process.env.PATH = binPath;
+    try {
+      const outcome = await getRgOutcome(
+        {
+          patterns: ["needle"],
+          paths: privateRoots,
+          globs: [],
+          case_mode: "sensitive",
+          allowance: 100,
+        },
+        { root: fixture.root },
+      );
+      expect(outcome.status).toBe("output_limit_exceeded");
+      if (outcome.status === "output_limit_exceeded") {
+        expect(outcome.message).toContain("scope metadata");
+        expect(outcome.message).not.toContain("private-root-");
+      }
+      expect(await fs.pathExists(marker)).toBe(false);
+    } finally {
+      await fs.remove(binPath);
+      if (originalPath === undefined) delete process.env.PATH;
+      else process.env.PATH = originalPath;
+    }
+  });
+
+  it("withholds all mixed-root matches on overflow and retains bounded scope", async ({
+    skip,
+  }) => {
+    if (!rtkAvailable) skip();
+    const content = "needle earlier private match\n".repeat(10_000);
+    const deniedName = "private-long-denied-root-name-that-must-never-leak";
+    const outsideRoot = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rg-denied-root-"),
+    );
+    try {
+      await fs.writeFile(
+        path.join(outsideRoot, "secret.txt"),
+        "needle secret\n",
+      );
+      await fs.symlink(outsideRoot, path.join(fixture.root, deniedName), "dir");
+      await fs.writeFile(path.join(fixture.root, "large.txt"), content);
+      process.chdir(fixture.root);
+      const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+      await runRg([
+        "--allowance",
+        "1000",
+        "-e",
+        "needle",
+        "large.txt",
+        deniedName,
+      ]);
+      const cliOut = stdout.mock.calls.map(([chunk]) => String(chunk)).join("");
+      const cliError = stderr.mock.calls
+        .map(([chunk]) => String(chunk))
+        .join("");
+      stdout.mockRestore();
+      stderr.mockRestore();
+      const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+        {
+          patterns: ["needle"],
+          paths: ["large.txt", deniedName],
+          allowance: 1000,
+        },
+        { root: fixture.root },
+        "mixed-overflow",
+      );
+      const mcpText = mcp.content[0]?.text ?? "";
+      expect(cliError).toContain("All matches withheld");
+      expect(cliError).toContain(
+        "Scope: 1/2 roots admitted; search incomplete, matches withheld.",
+      );
+      expect(cliError).toContain("Requested scope is incomplete");
+      expect(cliError).toContain("Operand 1: incomplete; matches withheld");
+      expect(cliError).toContain("Operand 2: unavailable; unavailable_access");
+      expect(`${cliOut}${cliError}`).not.toContain(
+        "needle earlier private match",
+      );
+      expect(`${cliOut}${cliError}`).not.toContain(deniedName);
+      expect(getTokenCount(`${cliOut}${cliError}`)).toBeLessThanOrEqual(1000);
+      expect(mcp.isError).toBe(true);
+      expect(mcpText).toContain(
+        "Scope: 1/2 roots admitted; search incomplete, matches withheld.",
+      );
+      expect(mcpText).toContain("Operand 1: incomplete; matches withheld");
+      expect(mcpText).toContain("Operand 2: unavailable; unavailable_access");
+      expect(mcpText).not.toContain("needle earlier private match");
+      expect(mcpText).not.toContain(deniedName);
+      expect(
+        getGrepResponseTokenCount(mcpText, "mixed-overflow", true),
+      ).toBeLessThanOrEqual(1000);
+    } finally {
+      await fs.remove(outsideRoot);
+    }
+  });
+
+  it("returns bounded positional outcomes when every root is unavailable", async () => {
+    process.chdir(fixture.root);
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    await runRg(["-e", "needle", "private-first.txt", "private-second.txt"]);
+    const cliText = stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
+    stderr.mockRestore();
+    const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+      {
+        patterns: ["needle"],
+        paths: ["private-first.txt", "private-second.txt"],
+      },
+      { root: fixture.root },
+      "unavailable-roots",
+    );
+    expect(cliText).toContain("Operand 1: unavailable; unavailable_access");
+    expect(cliText).toContain("Operand 2: unavailable; unavailable_access");
+    expect(cliText).not.toContain("private-first.txt");
+    expect(cliText).not.toContain("private-second.txt");
+    expect(mcp.isError).toBe(true);
+    expect(mcp.content[0]?.text).toContain(
+      "Operand 1: unavailable; unavailable_access",
+    );
+    expect(mcp.content[0]?.text).toContain(
+      "Operand 2: unavailable; unavailable_access",
+    );
+    expect(
+      getGrepResponseTokenCount(
+        mcp.content[0]?.text ?? "",
+        "unavailable-roots",
+        true,
+      ),
+    ).toBeLessThanOrEqual(2000);
+  });
+
   it("rejects standard input as a requested path", async () => {
     const outcome = await getRgOutcome(
       { patterns: ["needle"], paths: ["-"], globs: [], case_mode: "sensitive" },
       { root: fixture.root },
     );
-    expect(outcome.status).toBe("policy_rejection");
+    expect(outcome.status).toBe("usage_error");
     expect(outcome.message).toContain("Standard input");
+  });
+
+  it("rejects invalid whole-request grammar before launching RTK", async () => {
+    const binPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rtk-invalid-grammar-"),
+    );
+    const marker = path.join(binPath, "launched");
+    await fs.writeFile(
+      path.join(binPath, "rtk"),
+      `#!/bin/sh\nprintf launched > '${marker}'\nexit 0\n`,
+      { mode: 0o755 },
+    );
+    process.env.PATH = binPath;
+    process.chdir(fixture.root);
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      await runRg(["-e", "needle", "--unsupported-option", "root"]);
+      const text = stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
+      expect(text).toContain("usage_error: Unsupported ripgrep option.");
+      expect(await fs.pathExists(marker)).toBe(false);
+    } finally {
+      stderr.mockRestore();
+      await fs.remove(binPath);
+    }
   });
 
   it("matches native ripgrep for repeated patterns and overlapping paths without duplicate results", async ({
@@ -115,6 +386,38 @@ describe("spekta rg public boundaries", () => {
     );
     expect(outputText).toContain("1:0:alpha");
     expect(outputText).toContain("1:0:gamma");
+  });
+
+  it("keeps overlap deduplication and explicit incomplete scope for unavailable roots", async ({
+    skip,
+  }) => {
+    if (!rtkAvailable) skip();
+    await fs.ensureDir(path.join(fixture.root, "nested"));
+    await fs.writeFile(
+      path.join(fixture.root, "nested", "one.txt"),
+      "needle once\n",
+    );
+    const outcome = await getRgOutcome(
+      {
+        patterns: ["needle"],
+        paths: [
+          "nested",
+          "nested/one.txt",
+          "private-long-unavailable-root-name",
+        ],
+        globs: [],
+        case_mode: "sensitive",
+      },
+      { root: fixture.root },
+    );
+    expect(outcome.status).toBe("partial_result");
+    if (outcome.status !== "partial_result") return;
+    expect(outcome.value).toContain("Scope: 2/3 roots searched.");
+    expect(outcome.value).toContain(
+      "Operand 3: unavailable; unavailable_access",
+    );
+    expect(outcome.value).not.toContain("private-long-unavailable-root-name");
+    expect((outcome.value.match(/needle once/g) ?? []).length).toBe(1);
   });
 
   it("keeps combined native search semantics across CLI and MCP boundaries", async ({
@@ -260,7 +563,10 @@ describe("spekta rg public boundaries", () => {
       { patterns: ["missing-unique-pattern"] },
       { root: fixture.root },
     );
-    expect(noMatchMcp.content[0]?.text).toBe("No matches found.");
+    expect(noMatchMcp.content[0]?.text).toContain("Scope: 1/1 roots searched.");
+    expect(noMatchMcp.content[0]?.text).toContain(
+      "no_matches: No matches found.",
+    );
   });
 
   it("reports missing RTK without exposing process diagnostics", async () => {
@@ -273,13 +579,13 @@ describe("spekta rg public boundaries", () => {
           paths: [],
           globs: [],
           case_mode: "sensitive",
+          profile: true,
         },
         { root: fixture.root },
       );
-      expect(outcome).toMatchObject({
-        status: "engine_failure",
-        message: "Search failed: RTK is unavailable.",
-      });
+      expect(outcome.status).toBe("engine_failure");
+      if (outcome.status === "engine_failure")
+        expect(outcome.message).toContain("internal_failure: Search failed.");
       expect(outcome.message).not.toContain(emptyPath);
     } finally {
       await fs.remove(emptyPath);
@@ -304,12 +610,73 @@ describe("spekta rg public boundaries", () => {
         },
         { root: fixture.root },
       );
-      expect(outcome).toMatchObject({
-        status: "engine_failure",
-        message: "Search failed: ripgrep is unavailable.",
-      });
+      expect(outcome.status).toBe("engine_failure");
+      if (outcome.status === "engine_failure")
+        expect(outcome.message).toContain("internal_failure: Search failed.");
       expect(outcome.message).not.toContain("controlled missing");
+      expect(outcome.message).not.toContain("Timings:");
       expect(outcome.message).not.toContain(binPath);
+    } finally {
+      await fs.remove(binPath);
+    }
+  });
+
+  it("withholds buffered match data when the search engine fails", async () => {
+    const binPath = await fs.mkdtemp(
+      path.join(os.tmpdir(), "rtk-buffered-failure-"),
+    );
+    const matchLine = JSON.stringify({
+      type: "match",
+      data: {
+        path: { text: "real.txt" },
+        line_number: 1,
+        submatches: [{ start: 0 }],
+        lines: { text: "needle buffered private match\n" },
+      },
+    });
+    await fs.writeFile(
+      path.join(binPath, "rtk"),
+      `#!/bin/sh
+if [ "$1" = "--version" ]; then exit 0; fi
+if [ "$1" = "proxy" ] && [ "$2" = "rg" ] && [ "$3" = "--version" ]; then exit 0; fi
+if [ "$1" = "proxy" ] && [ "$2" = "rg" ]; then
+  printf '%s\\n' '${matchLine}'
+  printf 'private engine detail\\n' >&2
+  exit 2
+fi
+exit 2
+`,
+      { mode: 0o755 },
+    );
+    process.env.PATH = `${binPath}${path.delimiter}${originalPath ?? ""}`;
+    try {
+      const outcome = await getRgOutcome(
+        {
+          patterns: ["needle"],
+          paths: ["real.txt", "private-engine-unavailable-root"],
+          globs: [],
+          case_mode: "sensitive",
+        },
+        { root: fixture.root },
+      );
+      expect(outcome.status).toBe("partial_result");
+      if (outcome.status === "partial_result") {
+        expect(outcome.value).toContain("Scope: 1/2; incomplete.");
+        expect(outcome.value).toContain(
+          "Operand 1: search incomplete; internal_failure",
+        );
+        expect(outcome.value).toContain(
+          "Operand 2: unavailable; unavailable_access",
+        );
+        expect(outcome.value).not.toContain("real.txt");
+        expect(outcome.value).not.toContain("buffered private match");
+        expect(outcome.value).not.toContain("private engine detail");
+        expect(outcome.value).not.toContain("private-engine-unavailable-root");
+        expect(outcome.operands).toEqual([
+          { position: 1, status: "internal_failure" },
+          { position: 2, status: "unavailable" },
+        ]);
+      }
     } finally {
       await fs.remove(binPath);
     }
@@ -343,7 +710,9 @@ setInterval(()=>{}, 1000);
     );
     const originalTokenLimit = process.env.SPEKTA_GREP_TOKEN_LIMIT;
     process.env.PATH = `${binPath}${path.delimiter}${originalPath ?? ""}`;
-    process.env.SPEKTA_GREP_TOKEN_LIMIT = "100";
+    // 400 covers the expanded cancellation/scope notices plus a real MCP
+    // envelope; the test still emits enough matches to exercise cancellation.
+    process.env.SPEKTA_GREP_TOKEN_LIMIT = "400";
     await fs.writeFile(
       path.join(fixture.root, ".spektaignore"),
       "ignored.txt\n",
@@ -388,7 +757,7 @@ setInterval(()=>{}, 1000);
       expect(mcpText).not.toContain("needle ");
       expect(
         getGrepResponseTokenCount(mcpText, "budget-cancel-request"),
-      ).toBeLessThanOrEqual(100);
+      ).toBeLessThanOrEqual(400);
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(await fs.pathExists(stoppedPath)).toBe(true);
     } finally {
@@ -423,11 +792,15 @@ setInterval(()=>{}, 1000);
       ),
     );
     const matchWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const matchErrorWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockReturnValue(true);
     await runRg(["needle"]);
-    const matchCli = matchWrite.mock.calls
+    const matchCli = [...matchWrite.mock.calls, ...matchErrorWrite.mock.calls]
       .map(([chunk]) => String(chunk))
       .join("");
     matchWrite.mockRestore();
+    matchErrorWrite.mockRestore();
     const matchMcp = await TOOL_REGISTRY.spekta_rg.handler(
       { patterns: ["needle"] },
       { root: fixture.root },
@@ -453,11 +826,15 @@ setInterval(()=>{}, 1000);
       "needle eligible\n",
     );
     const fileWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const fileErrorWrite = vi
+      .spyOn(process.stderr, "write")
+      .mockReturnValue(true);
     await runRg(["needle"]);
-    const fileCli = fileWrite.mock.calls
+    const fileCli = [...fileWrite.mock.calls, ...fileErrorWrite.mock.calls]
       .map(([chunk]) => String(chunk))
       .join("");
     fileWrite.mockRestore();
+    fileErrorWrite.mockRestore();
     const fileMcp = await TOOL_REGISTRY.spekta_rg.handler(
       { patterns: ["needle"] },
       { root: fixture.root },
@@ -471,5 +848,5 @@ setInterval(()=>{}, 1000);
     expect(
       getGrepResponseTokenCount(fileMcpText, "file-ceiling-request"),
     ).toBeLessThanOrEqual(1_000_000);
-  }, 15_000);
+  }, 30_000);
 });

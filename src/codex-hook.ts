@@ -1,4 +1,5 @@
 import { realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   isSupportedDiscoveryRequest,
@@ -110,8 +111,7 @@ function translateRead(words: string[]): string[] | undefined {
   }
   if (command === "rg") {
     const translated = translateSearch(words);
-    if (!translated) return;
-    return translated;
+    return translated?.command;
   }
   if (command !== "sed" || words.length !== 4 || words[1] !== "-n") return;
   const range = words[2].match(/^([1-9]\d*)(?:,(\d+|\$))?p$/);
@@ -127,7 +127,12 @@ function translateRead(words: string[]): string[] | undefined {
   return ["spekta", "read", `${path}[${start},${end}]`];
 }
 
-function translateSearch(words: string[]): string[] | undefined {
+interface SearchTranslation {
+  command: string[];
+  paths: string[];
+}
+
+function translateSearch(words: string[]): SearchTranslation | undefined {
   const args = words.slice(1);
   const translated = ["spekta", "rg"];
   let patternCount = 0;
@@ -195,7 +200,31 @@ function translateSearch(words: string[]): string[] | undefined {
       : positional.slice(1).includes("-")
   )
     return;
-  return translated;
+  return {
+    command: translated,
+    paths: patternCount > 0 ? positional : positional.slice(1),
+  };
+}
+
+function isOutsideWorkspace(cwd: string, operand: string): boolean {
+  const workspace = resolve(cwd);
+  const target = resolve(workspace, operand);
+  const pathFromWorkspace = relative(workspace, target);
+  return (
+    pathFromWorkspace === ".." ||
+    pathFromWorkspace.startsWith(`..${sep}`) ||
+    isAbsolute(pathFromWorkspace)
+  );
+}
+
+function hasExternalReadPath(words: string[], cwd: string): boolean {
+  if (words[0] === "cat" && words.length === 2)
+    return isOutsideWorkspace(cwd, words[1]);
+  if (words[0] === "sed" && words.length === 4)
+    return isOutsideWorkspace(cwd, words[3]);
+  if (words[0] !== "rg") return false;
+  const search = translateSearch(words);
+  return Boolean(search?.paths.some((path) => isOutsideWorkspace(cwd, path)));
 }
 
 export function rewriteEvent(value: unknown): string | undefined {
@@ -215,14 +244,19 @@ export function rewriteEvent(value: unknown): string | undefined {
   if (typeof command !== "string") throw new Error("invalid event");
   const words = parseLiteralCommand(command, event.cwd);
   if (!words) return;
+  // Explicit RTK invocations retain their host-command behavior. In particular,
+  // `rtk rg` is never translated into a Spekta request here.
+  if (words[0] === "rtk") return;
+  // Classify literal path operands before Spekta sees them. This is lexical on
+  // purpose: a workspace path that escapes through a symlink must still reach
+  // Spekta and receive its normal policy decision.
+  if (hasExternalReadPath(words, event.cwd)) return;
   const read = translateRead(words);
   if (["cat", "sed"].includes(words[0]) && !read) return;
   const isSearch = words[0] === "rg" || words[0] === "rtk";
-  const search = isSearch
-    ? translateSearch(words[0] === "rtk" ? ["rg", ...words.slice(2)] : words)
-    : undefined;
+  const search = isSearch ? translateSearch(words) : undefined;
   if (isSearch && !search) return;
-  const rewrittenCommand = (read ?? search ?? ["spekta", ...words])
+  const rewrittenCommand = (read ?? search?.command ?? ["spekta", ...words])
     .map(shellQuote)
     .join(" ");
   return JSON.stringify({

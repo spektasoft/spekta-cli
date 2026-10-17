@@ -1,11 +1,8 @@
-import fs from "fs-extra";
-import path from "path";
-import { validateCommandArguments } from "./proxy-path-security";
 import type { WorkspaceContext } from "../../utils/workspace";
 import { redactSecrets } from "./proxy-secret-redaction";
 import { truncateOutput } from "./proxy-output";
 import { validateGitProxyRequest } from "./proxy-git-policy";
-import { validateFindProxyRequest } from "./proxy-find-policy";
+import { parseFindBatch } from "./proxy-find-batch-parser";
 
 export function validateProxyRequest(
   command: string,
@@ -24,7 +21,10 @@ export function validateProxyRequest(
     return;
   }
   if (command === "find") {
-    validateFindProxyRequest(args, context);
+    // Discovery roots are classified independently by the batch executor.
+    // Parsing here validates the whole grammar without revealing whether a
+    // root exists or is eligible.
+    parseFindBatch(args);
     return;
   }
   if (command !== "ls") {
@@ -32,30 +32,14 @@ export function validateProxyRequest(
   }
   const option = args.find((arg) => arg.startsWith("-"));
   if (option !== undefined) {
-    throw new Error(`Execution refused: unsupported option '${option}'.`);
-  }
-  if (args.length > 1) {
     throw new Error(
-      "Execution refused: ls supports at most one workspace-directory operand.",
+      "usage_error: Unsupported option for ls. Use spekta help ls.",
     );
   }
-  const directory = args[0] ?? ".";
-  if (directory === "" || /[\0\r\n]/.test(directory)) {
+  if (
+    args.some((directory) => directory === "" || /[\0\r\n]/.test(directory))
+  ) {
     throw new Error("Execution refused: invalid directory operand.");
-  }
-  validateCommandArguments([directory], context);
-  let isDirectory = false;
-  try {
-    isDirectory = fs
-      .statSync(path.resolve(context?.root ?? process.cwd(), directory))
-      .isDirectory();
-  } catch {
-    // Missing, broken, or inaccessible operands fail closed.
-  }
-  if (!isDirectory) {
-    throw new Error(
-      `Execution refused: '${directory}' must be an existing workspace directory.`,
-    );
   }
 }
 
@@ -65,29 +49,17 @@ export function isSupportedDiscoveryRequest(
   args: string[],
 ): boolean {
   if (command === "ls")
-    return args.length <= 1 && !args.some((arg) => arg.startsWith("-"));
+    return !args.some(
+      (arg) => arg.startsWith("-") || arg === "" || /[\0\r\n]/.test(arg),
+    );
   if (command !== "find") return false;
 
-  let index = args.length > 0 && !args[0].startsWith("-") ? 1 : 0;
-  let seenType = false;
-  let seenName = false;
-  while (index < args.length) {
-    const token = args[index];
-    if (
-      token === "-type" &&
-      !seenType &&
-      ["f", "d"].includes(args[index + 1] ?? "")
-    ) {
-      seenType = true;
-      index += 2;
-    } else if (token === "-name" && !seenName && Boolean(args[index + 1])) {
-      seenName = true;
-      index += 2;
-    } else if (token === "-print" && index === args.length - 1) {
-      return true;
-    } else return false;
+  try {
+    parseFindBatch(args);
+    return true;
+  } catch {
+    return false;
   }
-  return true;
 }
 
 /** Classifies standalone Git inspections using the proxy's execution policy. */

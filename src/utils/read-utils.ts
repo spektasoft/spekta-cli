@@ -1,4 +1,6 @@
 import { createReadStream } from "fs";
+import { createHash } from "node:crypto";
+import { Readable } from "node:stream";
 import { encode } from "gpt-tokenizer";
 import readline from "readline";
 
@@ -52,6 +54,61 @@ export const parseFilePathWithRange = (input: string): FileRequest => {
 
   return { path: filePath, range };
 };
+
+export interface VersionedFileLines {
+  lines: string[];
+  fullLines: string[];
+  total: number;
+  version: string;
+}
+
+export function isReadVersion(value: unknown): value is string {
+  return typeof value === "string" && /^v1-[A-Za-z0-9_-]{43}$/.test(value);
+}
+
+/** filePath must be the canonical path returned by read access validation. */
+export async function getVersionedFileLines(
+  filePath: string,
+  range: LineRange,
+): Promise<VersionedFileLines> {
+  const hash = createHash("sha256")
+    .update("spekta-read-v1\0")
+    .update(filePath)
+    .update("\0");
+  const chunks: Buffer[] = [];
+  const fileStream = createReadStream(filePath);
+
+  try {
+    for await (const rawChunk of fileStream) {
+      const chunk =
+        typeof rawChunk === "string"
+          ? Buffer.from(rawChunk)
+          : (rawChunk as Buffer);
+      hash.update(chunk);
+      chunks.push(chunk);
+    }
+  } finally {
+    fileStream.destroy();
+  }
+
+  const input = Readable.from([Buffer.concat(chunks)]);
+  const rl = readline.createInterface({ input, crlfDelay: Infinity });
+  const fullLines: string[] = [];
+  try {
+    for await (const line of rl) fullLines.push(line);
+  } finally {
+    rl.close();
+    input.destroy();
+  }
+
+  const end = range.end === "$" ? fullLines.length : range.end;
+  return {
+    lines: fullLines.slice(range.start - 1, end),
+    fullLines,
+    total: fullLines.length,
+    version: `v1-${hash.digest("base64url")}`,
+  };
+}
 
 export const getFileLines = async (
   filePath: string,

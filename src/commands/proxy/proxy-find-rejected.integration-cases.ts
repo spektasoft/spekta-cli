@@ -39,11 +39,6 @@ export const rejectedFindRequests: Array<{ args: string[]; reason: RegExp }> = [
   },
   { args: [".", "-print", "-type", "f"], reason: /terminal -print/i },
   { args: [".", "-print", "-print"], reason: /terminal -print/i },
-  { args: [".", "directory"], reason: /unsupported find token/i },
-  {
-    args: ["directory/../directory"],
-    reason: /unsupported find root syntax/i,
-  },
   { args: ["directory/"], reason: /unsupported find root syntax/i },
   {
     args: [".", "-name", "bad\npattern"],

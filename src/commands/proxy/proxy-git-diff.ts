@@ -6,14 +6,13 @@ import { redactSecrets } from "./proxy-secret-redaction";
 import { findRepositoryRoot } from "./proxy-git-policy";
 import { isEligibleGitPath } from "./proxy-git-status";
 import { executeRtkCommand } from "./proxy-execution";
-import type { DiscoveryRenderOutcome } from "./proxy-ls-render";
-
-const LIMIT = 1000;
+import type { DiscoveryRenderOutcome } from "./proxy-render-outcome";
 
 /** Execute and render attributable text patches only after every path passes policy. */
 export async function executeGitDiffPatchOutcome(
   args: string[],
   context?: WorkspaceContext,
+  allowance = 1000,
 ): Promise<DiscoveryRenderOutcome> {
   const failure = (message: string, exitCode = 1): DiscoveryRenderOutcome => ({
     status: "failure",
@@ -120,12 +119,14 @@ export async function executeGitDiffPatchOutcome(
       );
     patch += result.stdout;
   }
-  const output = redactSecrets(patch);
-  const condensed = truncateOutput(output, 900);
+  const output = redactSecrets(
+    `Native tracked Git comparison; new untracked content is not included. An empty diff does not establish that the whole workspace is unchanged.\n${patch}`,
+  );
+  const condensed = truncateOutput(output, Math.max(1, allowance - 100));
   const rendered = formatProxyOutput("git", condensed.content, {
     truncated: condensed.truncated,
   });
-  if (getTokenCount(`${rendered}\n`) > LIMIT)
+  if (getTokenCount(`${rendered}\n`) > allowance)
     return failure("Git diff patch too large. Choose a narrower path.");
   return {
     status: "success",
@@ -139,6 +140,7 @@ export async function renderGitDiffOutcome(
   result: { stdout: string; exitCode: number },
   args: string[],
   context?: WorkspaceContext,
+  allowance = 1000,
 ): Promise<DiscoveryRenderOutcome> {
   const failure = (message: string, exitCode = 1): DiscoveryRenderOutcome => ({
     status: "failure",
@@ -267,9 +269,14 @@ export async function renderGitDiffOutcome(
       lines.push(
         `${entries.length} eligible file${entries.length === 1 ? "" : "s"} changed`,
       );
-    const output = redactSecrets(lines.join("\n"));
+    const output = redactSecrets(
+      [
+        "Native tracked Git comparison; new untracked content is not included. An empty diff does not establish that the whole workspace is unchanged.",
+        ...lines,
+      ].join("\n"),
+    );
     const rendered = formatProxyOutput("git", output);
-    if (getTokenCount(`${rendered}\n`) <= LIMIT)
+    if (getTokenCount(`${rendered}\n`) <= allowance)
       return { status: "success", content: output, truncated: false };
     return failure("Git diff summary too large. Choose a narrower path.");
   } catch {

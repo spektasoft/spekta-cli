@@ -13,7 +13,10 @@ export interface MutationResult {
   cliOutput?: string;
 }
 
-export type MutationOutcome = OperationOutcome<MutationResult>;
+export type MutationOutcome = Exclude<
+  OperationOutcome<MutationResult>,
+  { status: "partial_result" }
+>;
 
 function responseTokens(
   message: string,

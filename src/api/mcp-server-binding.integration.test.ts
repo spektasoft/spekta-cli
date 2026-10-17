@@ -307,20 +307,18 @@ describe("MCP server workspace binding", () => {
     expect(secondShell).toMatchObject({ isError: false });
     expect(firstGit).not.toHaveProperty("isError", true);
     expect(secondGit).not.toHaveProperty("isError", true);
-    expect(executeRtkCommand).toHaveBeenNthCalledWith(1, "ls", ["."], {
+    expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["."], {
       root: fixture.root,
     });
-    expect(executeRtkCommand).toHaveBeenNthCalledWith(2, "ls", ["."], {
+    expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["."], {
       root: secondRoot,
     });
-    expect(executeRtkCommand).toHaveBeenNthCalledWith(
-      3,
+    expect(executeRtkCommand).toHaveBeenCalledWith(
       "git",
       ["status", "--short"],
       { root: fixture.root },
     );
-    expect(executeRtkCommand).toHaveBeenNthCalledWith(
-      4,
+    expect(executeRtkCommand).toHaveBeenCalledWith(
       "git",
       ["status", "--short"],
       { root: secondRoot },

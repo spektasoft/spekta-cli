@@ -44,10 +44,21 @@ describe("validateProxyRequest", () => {
     },
   );
 
-  it("rejects multiple operands and invalid operand characters", () => {
-    expect(() => validateProxyRequest("ls", [".", "directory"])).toThrow(
-      /at most one/i,
+  it("does not echo an unsupported operand in the safe usage failure", () => {
+    let message = "";
+    try {
+      validateProxyRequest("ls", ["--private-operand-name"]);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+    expect(message).toBe(
+      "usage_error: Unsupported option for ls. Use spekta help ls.",
     );
+    expect(message).not.toContain("private-operand-name");
+  });
+
+  it("accepts multiple operands and rejects invalid operand characters", () => {
+    expect(() => validateProxyRequest("ls", [".", "directory"])).not.toThrow();
     for (const operand of ["", "bad\0name", "bad\nname", "bad\rname"]) {
       expect(() => validateProxyRequest("ls", [operand])).toThrow(
         /invalid directory operand/i,
@@ -55,16 +66,14 @@ describe("validateProxyRequest", () => {
     }
   });
 
-  it("rejects files, missing directories, and dangling symlinks", () => {
+  it("leaves existence and directory checks to per-operand outcomes", () => {
     fs.symlinkSync(
       path.join(workspace, "missing"),
       path.join(workspace, "dangling"),
       "dir",
     );
     for (const operand of ["file.txt", "missing", "dangling"]) {
-      expect(() => validateProxyRequest("ls", [operand])).toThrow(
-        /existing workspace directory/i,
-      );
+      expect(() => validateProxyRequest("ls", [operand])).not.toThrow();
     }
   });
 
@@ -79,27 +88,23 @@ describe("validateProxyRequest", () => {
     expect(() => validateProxyRequest("ls", ["..internal"])).not.toThrow();
   });
 
-  it("checks workspace containment even when ls has no operand", () => {
+  it("leaves workspace containment to the per-operand outcome", () => {
     fs.ensureDirSync(path.join(workspace, ".env"));
     vi.spyOn(process, "cwd").mockReturnValue(path.join(workspace, ".env"));
-    expect(() => validateProxyRequest("ls", [])).toThrow(/restricted/i);
+    expect(() => validateProxyRequest("ls", [])).not.toThrow();
   });
 
-  it("fails closed when the directory cannot be inspected", () => {
+  it("does not inspect directory metadata during syntax validation", () => {
     vi.spyOn(fs, "statSync").mockImplementation(() => {
       throw Object.assign(new Error("permission denied"), { code: "EACCES" });
     });
-    expect(() => validateProxyRequest("ls", ["directory"])).toThrow(
-      /existing workspace directory/i,
-    );
+    expect(() => validateProxyRequest("ls", ["directory"])).not.toThrow();
   });
 
-  it("propagates canonical lookup failures to the caller without permitting execution", () => {
+  it("does not perform canonical path lookup during syntax validation", () => {
     vi.spyOn(fs, "realpathSync").mockImplementation(() => {
       throw new Error("canonical lookup failed");
     });
-    expect(() => validateProxyRequest("ls", ["directory"])).toThrow(
-      /canonical lookup failed/i,
-    );
+    expect(() => validateProxyRequest("ls", ["directory"])).not.toThrow();
   });
 });

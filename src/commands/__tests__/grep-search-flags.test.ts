@@ -61,13 +61,13 @@ describe("getGrepContent - flags", () => {
       pattern: "needle",
       path: "../outside",
     });
-    expect(result).toContain("Search rejected");
+    expect(result).toContain("unavailable_access:");
     expect(result).not.toContain("outside");
     expect(execa).not.toHaveBeenCalled();
   });
 
   it("bounds policy failures including the MCP error envelope", async () => {
-    vi.mocked(getGrepTokenLimit).mockReturnValue(1);
+    vi.mocked(getGrepTokenLimit).mockReturnValue(2000);
     vi.mocked(validateReadPathAccess).mockRejectedValueOnce(
       new Error("Access Denied: /private/secret.env"),
     );
@@ -78,7 +78,7 @@ describe("getGrepContent - flags", () => {
     );
     expect(outcome.status).toBe("policy_rejection");
     if (outcome.status !== "policy_rejection") return;
-    expect(outcome.message).toBe("");
+    expect(outcome.message).toContain("unavailable_access:");
     expect(
       getGrepResponseTokenCount(outcome.message, "id", true),
     ).toBeLessThanOrEqual(
@@ -94,14 +94,14 @@ describe("getGrepContent - flags", () => {
         throw new Error("ENOENT");
       });
     await expect(getGrepContent({ pattern: "needle" })).rejects.toThrow(
-      "ripgrep is unavailable",
+      "internal_failure: Search failed.",
     );
     vi.mocked(execa)
       .mockImplementationOnce(() => mockExecaStream("version"))
       .mockImplementationOnce(() => mockExecaStream("rg version"))
       .mockImplementationOnce(() => mockExecaStream("", 2));
     await expect(getGrepContent({ pattern: "needle" })).rejects.toThrow(
-      "Ripgrep error",
+      "internal_failure: Search failed.",
     );
   });
 

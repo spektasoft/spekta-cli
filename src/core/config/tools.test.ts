@@ -73,6 +73,10 @@ xml_example: "<read />"
         description:
           "Case mode: sensitive (default), insensitive (-i/--ignore-case), or smart (-S/--smart-case).",
       },
+      allowance: {
+        description:
+          "Optional positive whole-number token allowance for the complete rendered response, within SPEKTA_GREP_TOKEN_CEILING (16000 by default).",
+      },
     });
   });
 

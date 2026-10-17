@@ -12,9 +12,10 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
   read: {
     title: "read — Read eligible workspace files",
     purpose:
-      "Print file content and line/token metadata, compacting full files when applicable.",
+      "Print complete original lines with accurate coverage and continuation ranges.",
     usage: [
-      "spekta read <path[range]>... [--save]",
+      "spekta read [--save] [--allowance <tokens>] [--expected-version <marker>] <path[start,end]>...",
+      "spekta read --overview [--save] [--allowance <tokens>] <path>...",
       "spekta read [--save]",
       "spekta help read",
     ],
@@ -23,7 +24,7 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
       {
         heading: "Operands and ranges",
         lines: [
-          "Direct reading requires one or more literal file paths; multiple paths are combined in one response.",
+          "Direct reading requires one or more literal file paths; multiple paths share one response budget. Mixed batches retain eligible siblings and identify every operand by its one-based position.",
           "Paths are relative to the current workspace; absolute paths must remain inside it. No glob expansion is provided by Spekta.",
           "Optionally append [start,end] for inclusive, 1-based line ranges; $ means the last line.",
           "path[10,20] reads lines 10–20; path[10,$] or path[10] reads from line 10 to EOF.",
@@ -36,6 +37,8 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Options and saving",
         lines: [
           "--save  Save rendered output to a temporary spekta-read-<timestamp>.md file, reporting its path.",
+          "--overview  Opt in to a structural overview. It may omit original source evidence, which is identified by absolute line markers. Cannot be combined with an explicit range; unsupported formats return labeled original content with normal chunking.",
+          "--expected-version <marker>  Check the Version marker from an earlier read. Also accepts --expected-version=<marker>. Requires exactly one file path.",
           "Without --save, direct reads print to stdout. --save does not take an output-path value.",
           "SPEKTA_EDITOR opens saved output unless SPEKTA_NO_EDITOR=1. With no editor, saved content is also printed.",
           "--help or -h as the first or final argument shows this topic; help read is equivalent.",
@@ -46,10 +49,19 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Defaults and response budgets",
         lines: [
           "SPEKTA_READ_TOKEN_LIMIT defaults to 1000 tokens for the complete response, including metadata and formatting.",
-          "SPEKTA_COMPACT_THRESHOLD defaults to 500 tokens. Full-file direct reads above this threshold attempt syntax-aware compaction; unsupported files may remain uncompressed with a warning.",
-          "Explicit ranges return original lines without compaction. Choose a narrower range when content exceeds the response budget.",
-          "Oversized results exit nonzero and report incomplete content or bounded guidance. --save uses the same bounded result.",
-          "The interactive picker bypasses per-file compaction and range checks; the final combined response is still bounded.",
+          "--allowance <tokens> requests a positive whole-number response allowance. The default is SPEKTA_READ_TOKEN_LIMIT (1000); it covers the whole rendered response and cannot exceed SPEKTA_READ_TOKEN_CEILING (8000). The workspace owner sets the ceiling; it is not a security boundary. Invalid and over-ceiling values are rejected with guidance.",
+          "Example: spekta read --allowance 2000 'src/index.ts[1,200]'",
+          "Ordinary full-file and explicit-range reads return original content. The legacy SPEKTA_COMPACT_THRESHOLD (default 500 tokens) does not affect ordinary reads or explicit overviews.",
+          "When a read exceeds the response budget, Spekta returns a contiguous chunk of complete original lines with the actual delivered range and a Next range operand. Repeat that operand with --expected-version set to the earlier Version marker to continue safely; ranges extending beyond EOF report only existing lines.",
+          "Each rendered file includes a Version marker for its canonical target and original bytes, including empty files and ranges beyond EOF. MCP accepts the same marker as expectedVersion.",
+          "version_mismatch returns no content and exits nonzero. Discard earlier chunks and restart from the original requested range without --expected-version; for MCP, omit expectedVersion.",
+          "Eligibility and canonical targets are checked again on every request. Newly unavailable targets return unavailable_access. Version checking does not provide an atomic snapshot across files; omitting the expected version reads the currently eligible content.",
+          "An incomplete read exits nonzero with output_limit_exceeded. A single line that cannot fit is withheld with guidance to request a supported allowance increase; lines are never shortened. Empty files and requests beyond EOF report no lines.",
+          "Printed and saved results use the same complete-line contract. The complete response budget includes headings, coverage, version markers, continuation guidance, the MCP envelope and the save-path notice when applicable.",
+          "Multi-file reads report Batch: success or Batch: partial_result and an explicit outcome for every operand. returned means the requested range is complete; incomplete includes a chunk; budget_limited means no requested line fits; unavailable conceals the path; unattempted means retrieval could not start.",
+          "All operand metadata is reserved before content retrieval. Conservative reservation can reject a batch whose metadata cannot fit; split it into fewer operands or request a supported allowance increase. Readable operands share content opportunities fairly, and unused allowance is redistributed.",
+          "Each readable batch operand reports its original requested range and Version. Continue each Next range separately with --expected-version, or MCP expectedVersion. A single expected version still requires exactly one path.",
+          "Partial batches exit nonzero and MCP marks isError while preserving useful content. Whole lines are never shortened or compacted to fit.",
           "Configuration precedence is shell environment, workspace .env, then personal Spekta .env. Invalid read limits fall back to 1000; invalid compaction thresholds fall back to 500 (zero is allowed).",
           "Direct read and help require no AI provider credentials. Interactive selection requires Git.",
         ],
@@ -60,13 +72,14 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
           "Only eligible files inside the workspace may be disclosed. Outside paths and symlink escapes are rejected.",
           "Git ignore and Spekta ignore rules apply; explicit Spekta negations can allow Git-ignored files.",
           "Restricted filenames .env, .gitignore and .spektaignore cannot be read, and files larger than 10 MB are rejected.",
-          "Unavailable files, policy rejections and read failures exit nonzero. Help performs no read, save or initialization.",
+          "Unsupported options or nonpositive/reversed ranges yield usage_error before reading. unavailable_access conceals denied paths and existence; internal_failure conceals private diagnostics. Both identify operand positions when possible and exit nonzero. Help performs no read, save or initialization.",
         ],
       },
     ],
     examples: [
       "spekta read README.md",
       "spekta read 'src/index.ts[10,20]'",
+      "spekta read --expected-version '<Version marker from prior response>' 'src/index.ts[21,40]'",
       "spekta read 'src/index.ts[50,$]' README.md --save",
       "spekta read './notes with spaces.md[,20]'",
       "spekta read ./--help",
@@ -169,7 +182,9 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
   rg: topic(
     "rg — Search eligible workspace files",
     "Search eligible workspace files through RTK with a documented subset of native ripgrep operands.",
-    ["spekta rg [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]..."],
+    [
+      "spekta rg [--allowance TOKENS] [--deadline-ms MS] [--profile] [-e PATTERN]... [PATTERN] [PATH]... [-- PATH]...",
+    ],
     [
       {
         heading: "Arguments and behavior",
@@ -178,13 +193,19 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
           "Repeat -e/--regexp for alternative patterns and -g/--glob for ordered inclusion or exclusion filters; glob values retain commas. Use -i/--ignore-case, -s/--case-sensitive, or -S/--smart-case (case-sensitive by default). Use -- before literal dash-prefixed operands. Spekta keeps eligible-file restrictions and its own output formatting; unsupported options are rejected. MCP accepts patterns, paths, globs, and case_mode as separate values.",
           "Only the documented options are supported; other ripgrep flags, stdin, and empty or whitespace-only patterns are rejected. Spekta applies workspace eligibility and response limits, so this is not full native ripgrep compatibility.",
           "Search is limited to eligible workspace files and applies Git and Spekta ignore rules. Restricted paths and symlink escapes are rejected.",
+          "Search has a finite experimental deadline of 30000 ms by default. Set --deadline-ms MS to override it; MCP accepts deadline_ms. Caller cancellation and deadline expiry stop search and return explicit incomplete outcomes.",
+          "Multiple requested roots report positional outcomes. Unavailable operands conceal their names; requested scope is incomplete even when eligible roots have no matches. Overflow cancels search and withholds every match. Reduce roots or narrow the pattern/path/glob, or increase --allowance within its configured ceiling.",
         ],
       },
       {
         heading: "Execution and response budget",
         lines: [
           "Search runs through rtk proxy rg. Missing RTK or ripgrep is reported as an engine failure.",
-          "SPEKTA_GREP_TOKEN_LIMIT (the retained historical setting) defaults to 2000 tokens; results are also bounded by 500 matches and 100 files. Overflow withholds every match and cancels the RTK search process tree.",
+          "After two seconds, long searches report a fixed phase on stderr; subsequent phase changes and five-second heartbeats follow, capped at four progress events. Fast searches emit no progress. MCP sends notifications/progress only when the caller supplied a progressToken. Progress contains no roots, counts, matches, or backend text.",
+          "Use --profile to add aggregate preparation and search timings to the final response when the allowance has room. MCP accepts profile: true. Timing metadata reserves response allowance and is suppressed for denied or partial scopes.",
+          "SPEKTA_GREP_TOKEN_LIMIT (the retained historical setting) defaults to 2000 tokens. One --allowance TOKENS value may appear before --; it must be a positive whole number no greater than SPEKTA_GREP_TOKEN_CEILING (16000 by default) and covers the complete rendered response. Results are also bounded by 500 matches and 100 files.",
+          "usage_error, unavailable_access, internal_failure, no_matches, and output_limit_exceeded label the public outcome. Failures exit nonzero; no_matches is a complete successful empty search. Overflow withholds every match and cancels the RTK process tree. Narrow with a symbol/pattern (-e 'class Name'), path (src/module/file.ts), or glob (-g '*.ts').",
+          "Accepted requests budget the complete rendered response, including every success, operational failure, and final metadata, to the requested allowance. Rejected invalid, over-ceiling, or too-small allowances use the configured default whenever possible. If mandatory MCP ID echo prevents a nonempty diagnostic from fitting, only the rejected response may exceed the default; its diagnostic body is capped at 64 tokens and contains no matches or request contents. The complete response can grow with the ID and has no absolute cap. Accepted allowances are never enlarged.",
         ],
       },
     ],
@@ -400,8 +421,11 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Arguments and output",
         lines: [
           "Both --global and --codex are required in that order. No other arguments are accepted.",
-          "The report lists component states, trust and activation status, followed by runtime verification steps.",
+          "The report identifies the invoked executable and its artifact SHA-256, build version, build source revision and source state, configured hook routing, component states, trust and activation, followed by runtime verification steps. Unavailable identity or provenance is unknown; protected configuration values and denied paths are withheld.",
+          "To attribute a running command, invoke status through the same executable or absolute entrypoint used for that command. Status resolves its own invocation rather than another installation on PATH. The artifact SHA-256 identifies the on-disk entrypoint; a running process may have loaded earlier bytes.",
+          "Source revision and clean/modified state are captured at build time. They do not verify correspondence to the source currently being inspected: source correspondence remains unknown. Modification timestamps alone prove neither source correspondence nor host activation.",
           "Configuration presence does not establish that Codex trusts or has activated the integration. Status is read-only; help does not inspect configuration.",
+          "Effective allowances report defaults and finite ceilings for read, search, discovery (list), and Git inspection. An omitted caller allowance uses the default; a valid positive whole number through the ceiling is honored. Invalid or over-ceiling caller allowances are rejected. Invalid settings use safe fallbacks; unresolved configuration is labeled without exposing values. Precedence is shell environment, workspace .env, then personal Spekta .env.",
         ],
       },
     ],

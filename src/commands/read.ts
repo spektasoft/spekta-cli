@@ -1,28 +1,42 @@
-import { getReadTokenLimit } from "../core/config";
-import { processOutput } from "../utils/editor-utils";
-import { Logger } from "../utils/logger";
-import { FileRequest, getFileLines, getTokenCount } from "../utils/read-utils";
+import fs from "fs-extra";
+import { getEnv, getReadTokenLimit } from "../core/config";
+import {
+  resolveAllowanceSettings,
+  resolveRequestAllowance,
+} from "../core/config/allowance";
+import { getTempPath } from "../utils/fs-utils";
+import { openEditor } from "../utils/editor-utils";
+import {
+  FileRequest,
+  getVersionedFileLines,
+  isReadVersion,
+  getTokenCount,
+  parseFilePathWithRange,
+} from "../utils/read-utils";
 import { validateReadPathAccess } from "../utils/security";
 import {
   resolveWorkspace,
   type ResolvedWorkspace,
   type WorkspaceContext,
 } from "../utils/workspace";
-import { analyzeFile } from "../utils/file-analyzer";
 import {
   boundFailureOutcome,
   getOutcomeText,
   type FailureOutcome,
   type OperationOutcome,
 } from "../core/operation-outcome";
-import { formatReadOutput, prependCompactionAdvisory } from "./read-formatter";
+import { formatReadOutput } from "./read-formatter";
+import { getReadBatchOutcome } from "./read-batch";
+import { compactFile } from "../utils/compactor";
 
-function responseTokens(
+function measureReadResponse(
   text: string,
-  requestId?: string | number,
-  isError = false,
+  requestId: string | number | undefined,
+  isError: boolean,
+  suffix: string,
+  measure: (value: string) => number,
 ): number {
-  const cli = getTokenCount(`${text}\n`);
+  const cli = measure(`${text}${suffix}`);
   if (requestId === undefined) return cli;
   const mcp = JSON.stringify({
     jsonrpc: "2.0",
@@ -32,11 +46,27 @@ function responseTokens(
       content: [{ type: "text", text }],
     },
   });
-  return Math.max(cli, getTokenCount(`${mcp}\n`));
+  return Math.max(cli, measure(`${mcp}\n`));
+}
+
+function responseTokens(
+  text: string,
+  requestId?: string | number,
+  isError = false,
+  suffix = "",
+): number {
+  return measureReadResponse(text, requestId, isError, suffix, getTokenCount);
 }
 
 const READ_LIMIT_GUIDANCE =
-  "Read result exceeds the response budget; content is incomplete. Request a narrower path or line range.";
+  "output_limit_exceeded: Read result exceeds the response budget. Request a narrower path or line range.";
+
+function allowanceIncreaseHint(limit: number): string {
+  const ceiling = resolveAllowanceSettings("read").ceilingTokens;
+  return ceiling > limit
+    ? ` A larger allowance up to ${ceiling} tokens is supported.`
+    : "";
+}
 
 export function getMinimumMcpReadResponseBudget(
   requestId: string | number,
@@ -48,87 +78,214 @@ function boundedReadFailure(
   status: FailureOutcome["status"],
   message: string,
   requestId?: string | number,
+  suffix = "",
+  limit: number = getReadTokenLimit(),
 ): FailureOutcome {
   const budget =
     requestId === undefined
-      ? getReadTokenLimit()
-      : Math.max(
-          getReadTokenLimit(),
-          getMinimumMcpReadResponseBudget(requestId),
-        );
+      ? limit
+      : Math.max(limit, getMinimumMcpReadResponseBudget(requestId));
   const fallback =
-    status === "policy_rejection"
-      ? "Read rejected by workspace policy."
-      : status === "engine_failure"
-        ? "Read failed."
-        : "Read too large; narrow the request.";
+    status === "usage_error"
+      ? "usage_error: Use spekta help read."
+      : status === "policy_rejection"
+        ? "unavailable_access: Read rejected by workspace policy."
+        : status === "engine_failure"
+          ? "internal_failure: Read failed."
+          : status === "version_mismatch"
+            ? "version_mismatch: Restart without --expected-version (MCP: omit expectedVersion)."
+            : "output_limit_exceeded: Split the batch or narrow the range.";
   return boundFailureOutcome(status, message, fallback, budget, (candidate) =>
     Math.max(
-      responseTokens(candidate, requestId, true),
-      getTokenCount(`[ERROR] ${candidate}\n`),
+      responseTokens(candidate, requestId, true, suffix),
+      getTokenCount(`${candidate}${suffix}`),
     ),
   );
 }
 
-function fitIncomplete(
-  content: string,
-  budget: number,
-  requestId?: string | number,
-): string {
-  const marker =
-    "[INCOMPLETE: response budget reached; request a narrower line range.]\n";
-  let low = 0;
-  let high = content.length;
-  let best = "";
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    const candidate = `${content.slice(0, middle)}${marker}`;
-    if (responseTokens(candidate, requestId, true) <= budget) {
-      best = candidate;
-      low = middle + 1;
-    } else high = middle - 1;
+export function readUsageFailure(requestId?: string | number): FailureOutcome {
+  return boundedReadFailure(
+    "usage_error",
+    "usage_error: Read requires literal paths with inclusive positive line ranges. Use spekta help read.",
+    requestId,
+  );
+}
+
+export interface ReadCliArgs {
+  operands: string[];
+  save: boolean;
+  allowance?: string;
+  expectedVersion?: string;
+  overview: boolean;
+  malformed: boolean;
+}
+
+export function splitReadArgs(args: string[]): ReadCliArgs {
+  const operands: string[] = [];
+  let save = false;
+  let allowance: string | undefined;
+  let expectedVersion: string | undefined;
+  let malformed = false;
+  let overview = false;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--save") save = true;
+    else if (arg === "--overview") {
+      if (overview) malformed = true;
+      overview = true;
+    } else if (arg.startsWith("--overview=")) malformed = true;
+    else if (arg === "--allowance" || arg.startsWith("--allowance=")) {
+      const value =
+        arg === "--allowance" ? args[++i] : arg.slice("--allowance=".length);
+      if (value === undefined || allowance !== undefined) malformed = true;
+      else allowance = value;
+    } else if (
+      arg === "--expected-version" ||
+      arg.startsWith("--expected-version=")
+    ) {
+      const value =
+        arg === "--expected-version"
+          ? args[++i]
+          : arg.slice("--expected-version=".length);
+      if (value === undefined || expectedVersion !== undefined)
+        malformed = true;
+      else expectedVersion = value;
+    } else operands.push(arg);
   }
+  return { operands, save, allowance, expectedVersion, overview, malformed };
+}
+
+export function resolveReadAllowance(
+  raw: unknown,
+  requestId?: string | number,
+): { allowance?: number; failure?: FailureOutcome } {
+  const result = resolveRequestAllowance("read", raw);
+  if (result.status === "ok") return { allowance: result.requested };
+  const ceiling = result.settings.ceilingTokens;
+  if (result.status === "over_ceiling")
+    return {
+      failure: boundedReadFailure(
+        "output_limit_exceeded",
+        `output_limit_exceeded: Requested allowance ${result.requested} exceeds the configured ceiling of ${ceiling} tokens. Request ${ceiling} or fewer, or a narrower range.`,
+        requestId,
+      ),
+    };
+  return {
+    failure: boundedReadFailure(
+      "usage_error",
+      `usage_error: Allowance must be a positive whole number of tokens no greater than ${ceiling}. Use spekta help read.`,
+      requestId,
+    ),
+  };
+}
+
+export function parseReadRequests(paths: string[]): FileRequest[] {
+  return paths.map((operand) => {
+    if (!operand || operand.startsWith("-"))
+      throw new Error("Invalid read operand");
+    const request = parseFilePathWithRange(operand);
+    if (!validReadRequest(request)) throw new Error("Invalid read range");
+    return request;
+  });
+}
+
+function validReadRequest(request: FileRequest): boolean {
   return (
-    best ||
-    (responseTokens(READ_LIMIT_GUIDANCE, requestId, true) <= budget
-      ? READ_LIMIT_GUIDANCE
-      : "")
+    typeof request.path === "string" &&
+    request.path.length > 0 &&
+    (!request.range ||
+      (Number.isSafeInteger(request.range.start) &&
+        request.range.start > 0 &&
+        (request.range.end === "$" ||
+          (Number.isSafeInteger(request.range.end) &&
+            request.range.end >= request.range.start))))
   );
 }
 
 export function boundReadResponse(
   content: string,
   requestId?: string | number,
+  suffix = "",
+  limit: number = getReadTokenLimit(),
 ): OperationOutcome<string> {
-  const configuredBudget = getReadTokenLimit();
+  const configuredBudget = limit;
   const budget =
     requestId === undefined
       ? configuredBudget
       : Math.max(configuredBudget, getMinimumMcpReadResponseBudget(requestId));
-  if (responseTokens(content, requestId) <= budget)
+  if (responseTokens(content, requestId, false, suffix) <= budget)
     return { status: "success", value: content };
   return {
     status: "output_limit_exceeded",
-    message: fitIncomplete(content, budget, requestId),
+    message: boundedReadFailure(
+      "output_limit_exceeded",
+      `${READ_LIMIT_GUIDANCE}${allowanceIncreaseHint(configuredBudget)}`,
+      requestId,
+      suffix,
+      configuredBudget,
+    ).message,
   };
 }
 
 /**
- * Core logic for reading files, applying compaction, and calculating tokens.
- * This function returns the formatted string directly.
+ * Plan original-line reads against the complete transport response budget.
  */
 export async function getReadOutcome(
   requests: FileRequest[],
-  interactive = false,
+  _interactive = false,
   workspace?: WorkspaceContext,
   requestId?: string | number,
+  suffix = "",
+  allowance?: number,
+  expectedVersion?: unknown,
+  overview = false,
 ): Promise<OperationOutcome<string>> {
-  if (!requests || requests.length === 0)
-    return boundedReadFailure(
-      "policy_rejection",
-      "Read requires at least one file path.",
-      requestId,
-    );
+  // Retain the interactive parameter for existing callers; all reads share planning.
+  void _interactive;
+  if (
+    !requests ||
+    requests.length === 0 ||
+    requests.some((request) => !validReadRequest(request)) ||
+    (overview && requests.some((request) => request.range !== undefined)) ||
+    (expectedVersion !== undefined &&
+      (requests.length !== 1 || !isReadVersion(expectedVersion)))
+  )
+    return overview && requests?.some((request) => request.range !== undefined)
+      ? boundedReadFailure(
+          "usage_error",
+          "usage_error: Overview cannot be combined with an explicit range; omit overview or remove the range.",
+          requestId,
+          suffix,
+          allowance ?? getReadTokenLimit(),
+        )
+      : readUsageFailure(requestId);
+
+  if (requests.length > 1) {
+    const limit = allowance ?? getReadTokenLimit();
+    const budget =
+      requestId === undefined
+        ? limit
+        : Math.max(limit, getMinimumMcpReadResponseBudget(requestId));
+    return getReadBatchOutcome(requests, workspace, {
+      budget,
+      measure: (text, isError) =>
+        responseTokens(text, requestId, isError, suffix),
+      metadataBytes: (text) =>
+        measureReadResponse(text, requestId, true, suffix, (value) =>
+          Buffer.byteLength(value, "utf8"),
+        ),
+      failure: (message) =>
+        boundedReadFailure(
+          "output_limit_exceeded",
+          message,
+          requestId,
+          suffix,
+          limit,
+        ),
+      increaseHint: allowanceIncreaseHint(limit),
+      overview,
+    });
+  }
 
   let resolvedWorkspace: ResolvedWorkspace;
   try {
@@ -136,102 +293,148 @@ export async function getReadOutcome(
   } catch {
     return boundedReadFailure(
       "policy_rejection",
-      "Read rejected: workspace is unavailable.",
+      "Read rejected: unavailable_access; workspace is unavailable.",
       requestId,
+      suffix,
+      allowance ?? getReadTokenLimit(),
     );
   }
-  const tokenLimit = getReadTokenLimit();
+  const tokenLimit = allowance ?? getReadTokenLimit();
   let combinedOutput = "";
-  let anyCompacted = false;
 
-  for (const req of requests) {
+  for (const [position, req] of requests.entries()) {
     const isRangeRequest = !!req.range;
+    const unavailable = () =>
+      boundedReadFailure(
+        "policy_rejection",
+        `Read rejected: unavailable_access; Operand ${position + 1} is unavailable under workspace policy.`,
+        requestId,
+        suffix,
+        tokenLimit,
+      );
+    const changed = () =>
+      boundedReadFailure(
+        "version_mismatch",
+        `version_mismatch: Operand ${position + 1} changed. Discard earlier chunks and restart from the original requested range without --expected-version (MCP: omit expectedVersion).`,
+        requestId,
+        suffix,
+        tokenLimit,
+      );
+
     let readPath: string;
     try {
       readPath = await validateReadPathAccess(req.path, resolvedWorkspace);
     } catch {
-      return boundedReadFailure(
-        "policy_rejection",
-        "Read rejected: one or more requested files are unavailable under workspace policy.",
-        requestId,
-      );
+      return unavailable();
     }
 
     try {
-      if (!isRangeRequest && !interactive) {
-        const analysis = await analyzeFile(req.path, resolvedWorkspace);
-        const content = analysis.content;
-        const total = analysis.totalLines;
-        const isCompacted = analysis.isCompacted;
-        const fullTokens = analysis.rawTokens;
-        const compactionWarning = analysis.compactionWarning ?? "";
-
-        if (isCompacted) anyCompacted = true;
-
-        const tokens = analysis.finalTokens;
-        const exceedsLimit = analysis.exceedsLimit;
-
-        combinedOutput += formatReadOutput({
-          path: req.path,
-          content,
-          total,
-          isRangeRequest: false,
-          tokens,
-          fullTokens,
-          isCompacted,
-          exceedsLimit,
-          warning: compactionWarning,
-        });
-        continue;
-      }
-
-      const { lines, total: rangeTotal } = await getFileLines(
+      const { lines, total, fullLines, version } = await getVersionedFileLines(
         readPath,
         req.range || { start: 1, end: "$" },
       );
-      const total = rangeTotal;
-
-      const content = lines.join("\n");
-      const tokens = getTokenCount(content);
-
-      if (!interactive && tokens > tokenLimit) {
-        return boundedReadFailure(
-          "output_limit_exceeded",
-          "Requested read exceeds the response budget; request a narrower line range.",
-          requestId,
-        );
+      let currentPath: string;
+      try {
+        currentPath = await validateReadPathAccess(req.path, resolvedWorkspace);
+      } catch {
+        return unavailable();
       }
+      if (currentPath !== readPath) return changed();
+      if (expectedVersion !== undefined && expectedVersion !== version)
+        return changed();
+      const fullTokens = getTokenCount(fullLines.join("\n"));
+      const structural = overview
+        ? compactFile(req.path, fullLines.join("\n"))
+        : undefined;
+      const isStructuralOverview = !!structural?.isCompacted;
+      const overviewContent = isStructuralOverview ? structural.content : "";
 
-      let fullTokens = tokens;
-      if (isRangeRequest) {
-        const fullFile = await getFileLines(readPath, { start: 1, end: "$" });
-        fullTokens = getTokenCount(fullFile.lines.join("\n"));
+      const start = req.range?.start ?? 1;
+      const render = (count: number) => {
+        const chunk = isStructuralOverview
+          ? overviewContent
+          : lines.slice(0, count).join("\n");
+        const end = start + count - 1;
+        const incomplete = !isStructuralOverview && count < lines.length;
+        const body = formatReadOutput({
+          path: req.path,
+          content: isStructuralOverview ? overviewContent : chunk,
+          total,
+          isRangeRequest: isRangeRequest || incomplete,
+          rangeStart: start,
+          rangeEnd: end,
+          tokens: getTokenCount(chunk),
+          fullTokens,
+          empty: count === 0,
+          version,
+          isCompacted: isStructuralOverview,
+          overview,
+        });
+        return incomplete
+          ? `${body}[INCOMPLETE: output_limit_exceeded; Next range: ${req.path}[${end + 1},${start + lines.length - 1}]; use Version as expected version]\n`
+          : body;
+      };
+      const complete = render(isStructuralOverview ? 0 : lines.length);
+      const budget =
+        requestId === undefined
+          ? tokenLimit
+          : Math.max(tokenLimit, getMinimumMcpReadResponseBudget(requestId));
+      if (
+        requests.length === 1 &&
+        responseTokens(complete, requestId, false, suffix) > budget
+      ) {
+        if (isStructuralOverview) {
+          return boundedReadFailure(
+            "output_limit_exceeded",
+            `output_limit_exceeded: Structural overview for Operand ${position + 1} is indivisible and exceeds the response budget. Request a larger allowance or omit --overview and use targeted original ranges.${allowanceIncreaseHint(tokenLimit)}`,
+            requestId,
+            suffix,
+            tokenLimit,
+          );
+        }
+        let low = 1;
+        let high = lines.length - 1;
+        let best = "";
+        while (low <= high) {
+          const count = Math.floor((low + high) / 2);
+          const candidate = render(count);
+          if (responseTokens(candidate, requestId, true, suffix) <= budget) {
+            best = candidate;
+            low = count + 1;
+          } else high = count - 1;
+        }
+        return best
+          ? { status: "output_limit_exceeded", message: best }
+          : boundedReadFailure(
+              "output_limit_exceeded",
+              `output_limit_exceeded: Operand 1 line ${start} cannot fit with read metadata. Request a smaller range; lines are never shortened.${allowanceIncreaseHint(tokenLimit)}`,
+              requestId,
+              suffix,
+              tokenLimit,
+            );
       }
-
-      combinedOutput += formatReadOutput({
-        path: req.path,
-        content,
-        total,
-        isRangeRequest,
-        rangeStart: req.range?.start,
-        rangeEnd: req.range?.end,
-        tokens,
-        fullTokens,
-        exceedsLimit: !interactive && tokens > tokenLimit,
-      });
+      combinedOutput += complete;
     } catch {
+      try {
+        const currentPath = await validateReadPathAccess(
+          req.path,
+          resolvedWorkspace,
+        );
+        if (currentPath !== readPath) return changed();
+      } catch {
+        return unavailable();
+      }
       return boundedReadFailure(
         "engine_failure",
-        "Read failed while accessing an authorized file.",
+        `Read failed: internal_failure while accessing authorized Operand ${position + 1}.`,
         requestId,
+        suffix,
+        tokenLimit,
       );
     }
   }
 
-  const output = anyCompacted
-    ? prependCompactionAdvisory(combinedOutput)
-    : combinedOutput;
-  return boundReadResponse(output, requestId);
+  return boundReadResponse(combinedOutput, requestId, suffix, tokenLimit);
 }
 
 /** Compatibility renderer for existing internal string consumers. */
@@ -256,32 +459,61 @@ export async function runRead(
     save?: boolean;
     interactive?: boolean;
     workspace?: WorkspaceContext;
+    allowance?: number;
+    expectedVersion?: string;
+    overview?: boolean;
   } = {},
 ) {
   try {
+    const savedPath = options.save ? getTempPath("spekta-read") : undefined;
+    const suffix = savedPath ? `Output saved to: ${savedPath}\n` : "";
+    const limit = options.allowance ?? getReadTokenLimit();
+    if (responseTokens(suffix) > limit) {
+      process.stdout.write(
+        getOutcomeText(
+          boundedReadFailure(
+            "output_limit_exceeded",
+            `output_limit_exceeded: Save metadata exceeds the response budget; omit --save.${allowanceIncreaseHint(limit)}`,
+            undefined,
+            "",
+            limit,
+          ),
+        ),
+      );
+      process.exitCode = 1;
+      return;
+    }
     const outcome = await getReadOutcome(
       requests,
       options.interactive ?? false,
       options.workspace,
+      undefined,
+      suffix,
+      options.allowance,
+      options.expectedVersion,
+      options.overview,
     );
     const finalContent = getOutcomeText(outcome);
+    if (outcome.status !== "success") process.exitCode = 1;
 
-    if (
-      outcome.status === "policy_rejection" ||
-      outcome.status === "engine_failure" ||
-      outcome.status === "output_limit_exceeded"
-    ) {
-      process.exitCode = 1;
-    }
-
-    if (options.save) {
-      await processOutput(finalContent, "spekta-read");
+    if (savedPath) {
+      await fs.writeFile(savedPath, finalContent, "utf8");
+      const env = await getEnv();
+      if (env.SPEKTA_EDITOR && env.SPEKTA_NO_EDITOR !== "1") {
+        await openEditor(env.SPEKTA_EDITOR, savedPath);
+        process.stdout.write(suffix);
+      } else {
+        process.stdout.write(`${finalContent}${suffix}`);
+      }
     } else {
       process.stdout.write(finalContent);
     }
   } catch {
-    const failure = boundedReadFailure("engine_failure", "Read failed.");
-    if (failure.message) Logger.error(failure.message);
+    const failure = boundedReadFailure(
+      "engine_failure",
+      "internal_failure: Read failed.",
+    );
+    process.stdout.write(failure.message);
     process.exitCode = 1;
   }
 }

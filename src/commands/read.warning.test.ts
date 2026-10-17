@@ -1,48 +1,47 @@
+import fs from "fs-extra";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import * as config from "../core/config";
-import * as compactor from "../utils/compactor";
-import * as readUtils from "../utils/read-utils";
-import * as security from "../utils/security";
-import { Logger } from "../utils/logger";
-import { getReadContent } from "./read";
+import {
+  createWorkspaceFixture,
+  type WorkspaceFixture,
+} from "../__tests__/workspace-fixture";
+import { dispatchCommand } from "../cli/commands";
+import { createToolRegistry } from "../api/mcp-server/registry";
 
-vi.mock("../core/config");
-vi.mock("../utils/read-utils");
-vi.mock("../utils/security");
-vi.mock("../utils/compactor");
-vi.mock("../utils/logger", () => ({
-  Logger: { warn: vi.fn(), error: vi.fn() },
-}));
-
-describe("compaction warning surfacing", () => {
-  beforeEach(() => {
-    vi.mocked(config.getReadTokenLimit).mockReturnValue(100000);
-    vi.mocked(config.getCompactThreshold).mockReturnValue(10);
-    vi.mocked(security.validateReadPathAccess).mockImplementation((target) =>
-      Promise.resolve(target),
-    );
-    vi.mocked(readUtils.getFileLines).mockResolvedValue({
-      lines: Array.from({ length: 200 }, (_, i) => `line ${i}`),
-      total: 200,
-    });
-    vi.mocked(readUtils.getTokenCount).mockReturnValue(500);
+let fixture: WorkspaceFixture;
+let exitCode: typeof process.exitCode;
+beforeEach(async () => {
+  exitCode = process.exitCode;
+  fixture = await createWorkspaceFixture();
+  process.chdir(fixture.root);
+});
+afterEach(async () => {
+  vi.restoreAllMocks();
+  await fixture.cleanup();
+  process.exitCode = exitCode;
+});
+async function cli(args: string[]) {
+  let output = "";
+  vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+    output += String(chunk);
+    return true;
   });
+  await dispatchCommand("read", args);
+  return output;
+}
 
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it("includes a compaction warning in the bounded response without marking the file as compacted", async () => {
-    vi.mocked(compactor.compactFile).mockReturnValue({
-      content: "unchanged content",
-      isCompacted: false,
-      warning:
-        'Compaction skipped: "rust" support is not yet verified for structural compaction.',
-    });
-
-    const output = await getReadContent([{ path: "main.rs" }], false);
-
-    expect(Logger.warn).not.toHaveBeenCalled();
-    expect(output).toContain("Compaction skipped");
+describe("original reads of formats without structural compaction", () => {
+  it("returns original lines without a compaction warning", async () => {
+    process.env.SPEKTA_COMPACT_THRESHOLD = "0";
+    const source = 'fn main() {\n    println!("original detail");\n}\n';
+    await fs.writeFile(path.join(fixture.root, "main.rs"), source);
+    const output = await cli(["main.rs"]);
+    expect(output).toContain(source);
+    expect(output).not.toContain("Compaction skipped");
+    expect(output).not.toContain("COMPACTION NOTICE");
+    const response = await createToolRegistry({
+      root: fixture.root,
+    }).spekta_read.handler({ paths: ["main.rs"] });
+    expect(response.content[0].text).toBe(output);
   });
 });

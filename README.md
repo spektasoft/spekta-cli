@@ -31,6 +31,10 @@ spekta read README.md
 
 Use `spekta --help` for the command list and `spekta <command> --help` or `spekta help <command>` for command details. AI workflows that call a provider need that provider's credentials: OpenRouter configurations without an explicit type use `OPENROUTER_API_KEY`; Gemini configurations use `GEMINI_API_KEY`. Help and workspace inspection do not require those keys.
 
+### Searching workspace roots
+
+`spekta rg` reports one positional outcome per requested root. Unavailable roots are identified by position without disclosing their names, and requested scope remains incomplete even when the eligible roots have no matches. If the response budget is exceeded, Spekta cancels the search and withholds every match. Reduce the requested roots or narrow the search with a pattern, path, or glob; you can also increase `--allowance` within the configured ceiling.
+
 ## Set up Codex
 
 Spekta's Codex hook can route supported shell inspection requests through Spekta's workspace policies. Preview the proposed changes first, then apply them if they look right:
@@ -89,6 +93,7 @@ spekta git diff --help
 
 The detailed references explain the limits and configuration behind common workflows:
 
+- [Agent command and recovery reference](guides/agent-reference.md): retrieval commands, bounded recovery, routing, status interpretation, and handoffs.
 - [Workspace inspection](guides/inspection.md): discovery, Git inspection, policy, and response limits.
 - [Prompts and workflows](guides/workflows.md): prompt templates, generated output, and commit workflows.
 - [Runtime and configuration](guides/configuration.md): assets, providers, environment variables, and ignore rules.

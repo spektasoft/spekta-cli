@@ -33,6 +33,12 @@ describe.skipIf(missing.length > 0)(
       expect(head.mcp.content[0].text).toContain("-other-v2");
       expect(head.mcp.content[0].text).toContain("+unstaged-copy");
       expect(head.mcp.content[0].text).not.toContain("+staged-copy");
+      expect(working.mcp.content[0].text).toContain(
+        "Native tracked Git comparison",
+      );
+      expect(working.mcp.content[0].text).toContain(
+        "new untracked content is not included",
+      );
       expect(snapshotRepository()).toEqual(before);
     });
 
@@ -278,7 +284,9 @@ describe.skipIf(missing.length > 0)(
       const before = snapshotRepository();
       const result = await both(["diff", "--", "filename-only"]);
       expect(result.mcp.isError).toBe(false);
-      expect(result.mcp.content[0].text).toBe("");
+      expect(result.mcp.content[0].text).toContain(
+        "An empty diff does not establish that the whole workspace is unchanged.",
+      );
       expect(snapshotRepository()).toEqual(before);
     });
 

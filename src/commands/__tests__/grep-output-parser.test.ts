@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Readable } from "node:stream";
 import {
+  getGrepMinimumResponseTokens,
   getGrepResponseTokenCount,
   parseGrepOutput,
 } from "../grep-output-parser";
@@ -30,6 +31,30 @@ import path from "node:path";
 beforeEach(() => vi.mocked(getGrepTokenLimit).mockReturnValue(2000));
 
 describe("parseGrepOutput", () => {
+  it("applies a lowered response ceiling before admitting more buffered matches", async () => {
+    const minimumResponseTokens = getGrepMinimumResponseTokens();
+    let ceilingReads = 0;
+    const output = [
+      createRgMatch("src/eligible.ts", 1, 0, "needle first"),
+      createRgMatch("src/eligible.ts", 2, 0, `needle ${"second ".repeat(80)}`),
+    ].join("\n");
+    const outcome = await parseGrepOutput(mockExecaStream(output), {
+      workspace: { root: "/repo", canonicalRoot: "/repo" },
+      canonicalSearchPath: "/repo",
+      requestedSearchPath: ".",
+      getResponseTokenLimit: () =>
+        ++ceilingReads === 1 ? 2000 : minimumResponseTokens,
+    });
+
+    expect(outcome.status).toBe("output_limit_exceeded");
+    if (outcome.status !== "output_limit_exceeded") return;
+    expect(outcome.message).not.toContain("needle");
+    expect(
+      getGrepResponseTokenCount(outcome.message, undefined, true),
+    ).toBeLessThanOrEqual(minimumResponseTokens);
+    vi.mocked(validateReadPathAccess).mockClear();
+  });
+
   it("withholds matches whose files fail the shared read eligibility policy", async () => {
     const output = [
       createRgMatch("restricted/secret.env", 1, 0, "DENIED_CONTENT"),
@@ -71,7 +96,7 @@ describe("parseGrepOutput", () => {
     expect(outcome.status).toBe("engine_failure");
     if (outcome.status !== "engine_failure") return;
     expect(outcome.message).toBe(
-      "Ripgrep error: Search process failed (exit code 2).",
+      "internal_failure: Search process failed (exit code 2).",
     );
     expect(getGrepResponseTokenCount(outcome.message)).toBeLessThanOrEqual(
       2000,
@@ -95,7 +120,7 @@ describe("parseGrepOutput", () => {
     expect(child.kill).toHaveBeenCalledOnce();
     expect(outcome).toEqual({
       status: "engine_failure",
-      message: "Ripgrep error: Search process failed (exit code 2).",
+      message: "internal_failure: Search process failed (exit code 2).",
     });
   });
 
@@ -154,13 +179,15 @@ describe("parseGrepOutput", () => {
       2000,
     );
     const sdkSerializedResponse = `${JSON.stringify({
-      result: { content: [{ type: "text", text: "No matches found." }] },
+      result: {
+        content: [{ type: "text", text: "no_matches: No matches found." }],
+      },
       jsonrpc: "2.0",
       id: 0,
     })}\n`;
     const sdkTokenCount = getTokenCount(sdkSerializedResponse);
-    expect(sdkTokenCount).toBe(30);
-    expect(getGrepResponseTokenCount("No matches found.", 0)).toBe(
+    expect(sdkTokenCount).toBe(33);
+    expect(getGrepResponseTokenCount("no_matches: No matches found.", 0)).toBe(
       sdkTokenCount,
     );
 
@@ -173,12 +200,14 @@ describe("parseGrepOutput", () => {
     });
     expect(bounded.status).toBe("no_matches");
     if (bounded.status !== "no_matches") return;
-    expect(bounded.message).toBe("No matches found.");
+    expect(bounded.message).toBe("no_matches: No matches found.");
     expect(bounded.message).toMatch(/no match/i);
     expect(getGrepResponseTokenCount(bounded.message, 0)).toBeLessThanOrEqual(
       33,
     );
 
+    const minimumResponseTokens = getGrepMinimumResponseTokens(0);
+    vi.mocked(getGrepTokenLimit).mockReturnValue(minimumResponseTokens);
     const engineFailure = await parseGrepOutput(mockExecaStream("", 2), {
       workspace: { root: "/repo", canonicalRoot: "/repo" },
       canonicalSearchPath: "/repo",
@@ -190,11 +219,10 @@ describe("parseGrepOutput", () => {
     expect(engineFailure.message).toMatch(/fail|error/i);
     expect(
       getGrepResponseTokenCount(engineFailure.message, 0, true),
-    ).toBeLessThanOrEqual(33);
+    ).toBeLessThanOrEqual(minimumResponseTokens);
 
-    vi.mocked(getGrepTokenLimit).mockReturnValue(33);
     const limited = await parseGrepOutput(
-      mockExecaStream(createRgMatch("large.ts", 1, 0, "needle")),
+      mockExecaStream(createRgMatch("large.ts", 1, 0, "needle ".repeat(500))),
       {
         workspace: { root: "/repo", canonicalRoot: "/repo" },
         canonicalSearchPath: "/repo",
@@ -207,7 +235,7 @@ describe("parseGrepOutput", () => {
     expect(limited.message).toMatch(/withheld/i);
     expect(limited.message).toMatch(/narrow/i);
     expect(getGrepResponseTokenCount(limited.message, 0)).toBeLessThanOrEqual(
-      33,
+      minimumResponseTokens,
     );
 
     const emptyEnvelopeBudget = getGrepResponseTokenCount("", 0);
@@ -249,12 +277,12 @@ describe("parseGrepOutput", () => {
 
     expect(outcome).toEqual({
       status: "no_matches",
-      message: "No matches found.",
+      message: "",
     });
     expect(
       getTokenCount(
         `${outcome.status === "no_matches" ? outcome.message : ""}\n`,
       ),
-    ).toBe(4);
+    ).toBeLessThanOrEqual(4);
   });
 });

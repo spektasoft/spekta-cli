@@ -43,14 +43,23 @@ describe("workspace searches with real ripgrep", () => {
       { pattern: "needle", path: "alias" },
       { root: fixture.root },
     );
-    const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+    const mcp = (await TOOL_REGISTRY.spekta_rg.handler(
       { patterns: ["needle"], paths: ["alias"] },
       { root: fixture.root },
       1,
-    );
+    )) as unknown as {
+      content: Array<{ text?: unknown }>;
+      isError?: boolean;
+    };
 
-    const cliText = cli.status === "success" ? cli.value : cli.message;
-    const mcpText = mcp.content[0]?.text ?? "";
+    const cliText = String(
+      cli.status === "success" || cli.status === "partial_result"
+        ? cli.value
+        : cli.message,
+    );
+    const mcpTextCandidate = mcp.content[0]?.text;
+    const mcpText =
+      typeof mcpTextCandidate === "string" ? mcpTextCandidate : "";
     for (const text of [cliText, mcpText]) {
       expect(text).toContain("INTERNAL");
       expect(text).not.toMatch(
@@ -76,7 +85,7 @@ describe("workspace searches with real ripgrep", () => {
       { pattern: "needle", path: target },
       { root: fixture.root },
     );
-    expect(result).toContain("Search rejected");
+    expect(result).toContain("unavailable_access:");
     expect(result).not.toContain(target);
     expect(
       vi
@@ -90,7 +99,7 @@ describe("workspace searches with real ripgrep", () => {
       { pattern: "needle", path: outsidePath },
       { root: fixture.root },
     );
-    expect(outsideResult).toContain("Search rejected");
+    expect(outsideResult).toContain("unavailable_access:");
     expect(outsideResult).not.toContain(outsidePath);
     const handle = await fs.open(path.join(fixture.root, "huge.txt"), "w");
     try {
@@ -102,7 +111,7 @@ describe("workspace searches with real ripgrep", () => {
       { pattern: "needle", path: "huge.txt" },
       { root: fixture.root },
     );
-    expect(oversized).toContain("Search rejected");
+    expect(oversized).toContain("unavailable_access:");
     expect(oversized).not.toContain("huge.txt");
   });
   it.each([undefined, "*.txt,*"])(

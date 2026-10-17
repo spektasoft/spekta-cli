@@ -77,7 +77,7 @@ describe("RTK execution", () => {
   });
 
   it.each([undefined, 7])(
-    "formats success without clearing prior status %s",
+    "marks an over-budget listing incomplete with status %s",
     async (previous) => {
       process.exitCode = previous;
       const names = [
@@ -102,12 +102,12 @@ describe("RTK execution", () => {
       const output = vi.mocked(console.log).mock.calls[0][0] as string;
       expect(output).toContain("### spekta ls");
       expect(output).toContain("a-first.txt");
-      expect(output).toContain("z-last.txt");
-      expect(output).toContain("lines collapsed");
+      expect(output).toContain("Operand 1: incomplete; output_limit_exceeded");
+      expect(output).toContain("Listing incomplete.");
       expect(output).not.toContain(secret);
       expect(getTokenCount(`${output}\n`)).toBeLessThanOrEqual(1000);
       expect(console.error).not.toHaveBeenCalled();
-      expect(process.exitCode).toBe(previous);
+      expect(process.exitCode).toBe(1);
     },
   );
 
@@ -128,8 +128,34 @@ describe("RTK execution", () => {
     expect(console.error).not.toHaveBeenCalled();
   });
 
+  it("parses one CLI allowance and rejects repeated allowance options", async () => {
+    const workspace = makeWorkspace(["visible.txt"]);
+    mockRtkResult({
+      stdout: "visible.txt\n",
+      stderr: "",
+      exitCode: 0,
+      failed: false,
+    });
+    await runRtkProxy("ls", ["--allowance", "2000", "."], workspace);
+    expect(
+      mockExeca.mock.calls.filter(([file]) => file === "rtk")[0][1],
+    ).toEqual(["proxy", "ls", "-1Ab", "--", "."]);
+    expect(console.log).toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    await runRtkProxy(
+      "ls",
+      ["--allowance=100", "--allowance", "200"],
+      workspace,
+    );
+    expect(mockExeca).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      "usage_error: ls accepts one --allowance value. Use spekta help ls.",
+    );
+  });
+
   it.each([false, true])(
-    "reports status 7 with empty output=%s",
+    "reports a safe per-operand failure with empty output=%s",
     async (empty) => {
       const workspace = makeWorkspace([".env"]);
       mockRtkResult({
@@ -143,13 +169,12 @@ describe("RTK execution", () => {
 
       expect(console.log).toHaveBeenCalledTimes(1);
       const output = vi.mocked(console.log).mock.calls[0][0] as string;
-      expect(output).toContain("[FAILED: Exit 7]");
-      expect(output).toContain("RTK command failed with exit status 7.");
+      expect(output).toContain("Operand 1: internal_failure; listing failed");
       expect(output).not.toContain(secret);
       expect(output).not.toContain("USEFUL_STDERR");
       expect(output).not.toContain(".env");
       expect(console.error).not.toHaveBeenCalled();
-      expect(process.exitCode).toBe(7);
+      expect(process.exitCode).toBe(1);
     },
   );
 
@@ -161,7 +186,7 @@ describe("RTK execution", () => {
     await runRtkProxy("ls", []);
 
     expect(console.error).toHaveBeenCalledWith(
-      expect.stringMatching(/rtk[\s\S]*not found/i),
+      "RTK listing failed before output could be checked.",
     );
     expect(console.log).not.toHaveBeenCalled();
     expect(process.exitCode).toBe(1);
@@ -181,14 +206,14 @@ describe("RTK execution", () => {
       );
       mockExeca.mockResolvedValueOnce(failure as never);
       await expect(runRtkProxy("ls", [])).resolves.toBeUndefined();
-      const diagnostic = vi.mocked(console.error).mock.calls[0][0] as string;
-      expect(diagnostic).toContain("RTK listing failed");
-      expect(diagnostic).not.toContain("USEFUL_START");
-      expect(diagnostic).not.toContain("USEFUL_STDERR");
-      expect(diagnostic).not.toContain("failure line");
-      expect(diagnostic).not.toContain(secret);
-      expect(getTokenCount(diagnostic)).toBeLessThanOrEqual(1000);
-      expect(console.log).not.toHaveBeenCalled();
+      const output = vi.mocked(console.log).mock.calls[0][0] as string;
+      expect(output).toContain("Operand 1: internal_failure; listing failed");
+      expect(output).not.toContain("USEFUL_START");
+      expect(output).not.toContain("USEFUL_STDERR");
+      expect(output).not.toContain("failure line");
+      expect(output).not.toContain(secret);
+      expect(getTokenCount(output)).toBeLessThanOrEqual(1000);
+      expect(console.error).not.toHaveBeenCalled();
       expect(process.exitCode).toBe(1);
     },
   );

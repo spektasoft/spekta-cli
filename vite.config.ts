@@ -1,6 +1,8 @@
 import { defineConfig } from "vitest/config";
 import { builtinModules } from "module";
 import { viteStaticCopy } from "vite-plugin-static-copy";
+import { fileURLToPath } from "node:url";
+import { buildMetadataPlugin } from "./src/build-metadata.ts";
 
 export default defineConfig({
   build: {
@@ -19,6 +21,7 @@ export default defineConfig({
     ssr: true,
   },
   plugins: [
+    buildMetadataPlugin(fileURLToPath(new URL(".", import.meta.url))),
     viteStaticCopy({
       targets: [
         {

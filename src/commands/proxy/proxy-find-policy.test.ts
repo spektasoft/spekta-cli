@@ -65,11 +65,8 @@ describe("restricted find through validateProxyRequest", () => {
     { args: [".", "-name", "*.ts", "-name", "*.js"] },
     { args: [".", "-print", "-print"] },
     { args: [".", "-print", "-name", "*.ts"] },
-    { args: [".", "directory"] },
     { args: [".", "-type", "f", "directory"] },
   ])("rejects malformed expressions $args", ({ args }) => {
-    expect(() => validateProxyRequest("find", args)).toThrow(
-      /Execution refused/i,
-    );
+    expect(() => validateProxyRequest("find", args)).toThrow(/usage_error/i);
   });
 });

@@ -58,9 +58,17 @@ export function getReadTokenLimit(): number {
   const raw = getEnvValue("SPEKTA_READ_TOKEN_LIMIT", "1000");
   const parsed = parseInt(raw, 10);
   if (isNaN(parsed) || parsed <= 0) {
-    console.warn(
-      `Invalid SPEKTA_READ_TOKEN_LIMIT value "${raw}", falling back to 1000`,
-    );
+    console.warn("Invalid SPEKTA_READ_TOKEN_LIMIT setting; using its fallback");
+    return 1000;
+  }
+  return parsed;
+}
+
+export function getListTokenLimit(): number {
+  const raw = getEnvValue("SPEKTA_LIST_TOKEN_LIMIT", "1000");
+  const parsed = parseInt(raw, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    console.warn("Invalid SPEKTA_LIST_TOKEN_LIMIT setting; using its fallback");
     return 1000;
   }
   return parsed;
@@ -70,10 +78,18 @@ export function getGrepTokenLimit(): number {
   const raw = getEnvValue("SPEKTA_GREP_TOKEN_LIMIT", "2000");
   const parsed = parseInt(raw, 10);
   if (isNaN(parsed) || parsed <= 0) {
-    console.warn(
-      `Invalid SPEKTA_GREP_TOKEN_LIMIT value "${raw}", falling back to 2000`,
-    );
+    console.warn("Invalid SPEKTA_GREP_TOKEN_LIMIT setting; using its fallback");
     return 2000;
+  }
+  return parsed;
+}
+
+export function getGitTokenLimit(): number {
+  const raw = getEnvValue("SPEKTA_GIT_TOKEN_LIMIT", "1000");
+  const parsed = parseInt(raw, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    console.warn("Invalid SPEKTA_GIT_TOKEN_LIMIT setting; using its fallback");
+    return 1000;
   }
   return parsed;
 }

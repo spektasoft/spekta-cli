@@ -4,7 +4,14 @@ import { runPromptRunner } from "../commands/prompt";
 import { runCommitRange } from "../commands/commit-range";
 import { runRg } from "../commands/rg";
 import { runPr } from "../commands/pr";
-import { runRead } from "../commands/read";
+import {
+  runRead,
+  parseReadRequests,
+  readUsageFailure,
+  resolveReadAllowance,
+  splitReadArgs,
+} from "../commands/read";
+import { getOutcomeText } from "../core/operation-outcome";
 import { runReadInteractive } from "../commands/read-interactive";
 import { runRepl } from "../commands/repl";
 import { runReplace } from "../commands/replace";
@@ -16,7 +23,6 @@ import { runDiagnostic } from "../commands/diagnostic";
 import { runDiagnosticInteractive } from "../commands/diagnostic-interactive";
 import { runRtkProxy } from "../commands/proxy";
 import { searchableSelect } from "../ui/ui";
-import { parseFilePathWithRange } from "../utils/read-utils";
 import {
   runCodexSetup,
   runCodexStatus,
@@ -51,16 +57,38 @@ export const COMMANDS: Record<string, CommandDefinition> = {
   read: {
     name: "Read Files",
     run: async (args?: string[]) => {
-      const safeArgs = args || [];
-      const fileArgs = safeArgs.filter((arg) => arg !== "--save");
-      const isSave = safeArgs.includes("--save");
-
-      if (fileArgs.length === 0) {
+      const parsed = splitReadArgs(args || []);
+      if (
+        parsed.operands.length === 0 &&
+        !parsed.overview &&
+        parsed.allowance === undefined &&
+        parsed.expectedVersion === undefined &&
+        !parsed.malformed
+      ) {
         await runReadInteractive();
-      } else {
-        const requests = fileArgs.map((arg) => parseFilePathWithRange(arg));
-        await runRead(requests, { save: isSave });
+        return;
       }
+      let requests;
+      try {
+        if (parsed.malformed) throw new Error("Invalid read options");
+        requests = parseReadRequests(parsed.operands);
+      } catch {
+        process.stdout.write(getOutcomeText(readUsageFailure()));
+        process.exitCode = 1;
+        return;
+      }
+      const resolved = resolveReadAllowance(parsed.allowance);
+      if (resolved.failure) {
+        process.stdout.write(getOutcomeText(resolved.failure));
+        process.exitCode = 1;
+        return;
+      }
+      await runRead(requests, {
+        save: parsed.save,
+        allowance: resolved.allowance,
+        expectedVersion: parsed.expectedVersion,
+        overview: parsed.overview,
+      });
     },
   },
   rg: {

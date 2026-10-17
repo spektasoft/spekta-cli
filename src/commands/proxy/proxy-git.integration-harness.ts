@@ -35,6 +35,8 @@ function createRealGitContext() {
     "GIT_CONFIG_NOSYSTEM",
     "GIT_CONFIG_COUNT",
     "GIT_CONFIG_PARAMETERS",
+    "SPEKTA_GIT_TOKEN_LIMIT",
+    "SPEKTA_GIT_TOKEN_CEILING",
   ];
 
   async function git(args: string[]) {
@@ -88,13 +90,28 @@ function createRealGitContext() {
     visit("");
     return entries;
   }
-  async function both(args: string[]) {
+  async function both(args: string[], allowance?: number) {
+    const cliArgs =
+      allowance === undefined
+        ? args
+        : [
+            ...args.slice(
+              0,
+              args.indexOf("--") < 0 ? args.length : args.indexOf("--"),
+            ),
+            "--allowance",
+            String(allowance),
+            ...args.slice(
+              args.indexOf("--") < 0 ? args.length : args.indexOf("--"),
+            ),
+          ];
     vi.mocked(console.log).mockClear();
     vi.mocked(console.error).mockClear();
-    await runRtkProxy("git", args);
+    await runRtkProxy("git", cliArgs);
     const mcp = await TOOL_REGISTRY.spekta_shell.handler({
       command: "git",
       args,
+      ...(allowance === undefined ? {} : { allowance }),
     });
     const cli = vi
       .mocked(console.log)

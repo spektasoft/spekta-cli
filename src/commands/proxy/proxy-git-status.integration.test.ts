@@ -3,6 +3,9 @@ import path from "path";
 import { execa } from "execa";
 import { describe, expect, it, vi } from "vitest";
 import { getTokenCount } from "../../utils/read-utils";
+import { resolveAllowanceSettings } from "../../core/config/allowance";
+import { formatProxyOutput } from "./proxy-output";
+import { boundGitCliResponse } from "./proxy-git-response-budget";
 import { missing, useRealGitFixture } from "./proxy-git.integration-harness";
 
 describe.skipIf(missing.length > 0)(
@@ -43,6 +46,72 @@ describe.skipIf(missing.length > 0)(
         expect(result.mcp.isError).toBe(false);
         expect(result.mcp.content[0].text).toContain("main");
       }
+    });
+    it("reports eligible untracked files while native ignored entries remain absent", async () => {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "ignored-new.txt\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "ignored-new.txt"),
+        "hidden\n",
+      );
+      const result = await context.both(["status"]);
+      expect(result.mcp.content[0].text).toContain(
+        "eligible untracked entries may appear",
+      );
+      expect(result.mcp.content[0].text).toContain('"untracked.txt"');
+      expect(JSON.stringify(result)).not.toContain("ignored-new.txt");
+    });
+    it("uses explicit allowances and rejects values above the configured ceiling", async () => {
+      process.env.SPEKTA_GIT_TOKEN_CEILING = "1200";
+      for (let index = 0; index < 60; index++)
+        fs.writeFileSync(
+          path.join(context.workspace, `allowance-long-filename-${index}.txt`),
+          "safe",
+        );
+      const small = await context.both(["status"], 300);
+      expect(small.cli).toContain("OUTPUT TRUNCATED");
+      expect(getTokenCount(small.cli + "\n")).toBeLessThanOrEqual(300);
+      const larger = await context.both(["status"], 1200);
+      expect(larger.cli).not.toContain("OUTPUT TRUNCATED");
+      const rejected = await context.both(["status"], 1201);
+      expect(rejected.mcp.isError).toBe(true);
+      expect(rejected.mcp.content[0].text).toContain(
+        "configured Git ceiling of 1200 tokens",
+      );
+    }, 20000);
+    it("budgets unsupported option guidance across the complete CLI response", async () => {
+      const wide = await context.both(["status", "--not-supported"], 1000);
+      expect(wide.cli).toContain("spekta help git status");
+      expect(wide.mcp.content[0].text).toContain("spekta help git status");
+
+      const narrow = await context.both(["status", "--not-supported"], 20);
+      expect(narrow.cli).toContain("output_limit_exceeded");
+      expect(getTokenCount(narrow.cli + "\n")).toBeLessThanOrEqual(20);
+
+      const tooSmall = await context.both(["status"], 1);
+      expect(tooSmall.cli).toContain("usage_error");
+      expect(tooSmall.mcp.content[0].text).toContain("usage_error");
+      expect(getTokenCount(tooSmall.cli + "\n")).toBeLessThanOrEqual(
+        resolveAllowanceSettings("git").defaultTokens,
+      );
+    });
+    it("counts the newline written by console.log at the allowance boundary", async () => {
+      const rendered = formatProxyOutput("git", "output_limit_exceeded", {
+        exitCode: 1,
+      });
+      expect(getTokenCount(rendered)).toBe(19);
+      expect(getTokenCount(`${rendered}\n`)).toBe(20);
+      expect(boundGitCliResponse(rendered, 19, "bounded fallback")).toBe(
+        "bounded fallback",
+      );
+
+      const result = await context.both(["status"], 19);
+      expect(result.cli).toContain("usage_error");
+      expect(getTokenCount(`${result.cli}\n`)).toBeLessThanOrEqual(
+        resolveAllowanceSettings("git").defaultTokens,
+      );
     });
     it("retains eligible rename endpoints and deleted paths while hiding denied endpoints", async () => {
       await context.fixtureGit(["mv", "file.txt", "renamed.txt"]);
