@@ -2,6 +2,9 @@
   "name": "spekta-cli",
   "version": "1.0.0",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "bin": {
     "spekta": "./dist/index.js",
     "spekta-codex-hook": "./dist/codex-hook.js"
@@ -44,7 +47,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/fs-extra": "^11.0.4",
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.6.5",
     "@types/nunjucks": "^3.2.6",
     "eslint": "^10.13.0",
     "typescript": "^6.0.3",
