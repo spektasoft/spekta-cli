@@ -29,7 +29,7 @@
     "boxen": "^9.0.0",
     "chalk": "^6.0.1",
     "dotenv": "^18.0.8",
-    "execa": "^9.6.1",
+    "execa": "^10.2.0",
     "fs-extra": "^11.4.1",
     "gpt-tokenizer": "^3.4.0",
     "gray-matter": "^4.0.3",
