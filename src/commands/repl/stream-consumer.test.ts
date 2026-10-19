@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { consumeAssistantStream } from "./stream-consumer";
 import { ChatCompletionChunkWithReasoning } from "../../api/api";
+import { parseToolCalls } from "../../utils/agent-utils";
 
 async function* createMockStream(
   chunks: Array<{ content?: string; reasoning?: string }>,
@@ -120,5 +121,56 @@ describe("consumeAssistantStream", () => {
     expect(stdoutMock.write).toHaveBeenCalledWith(
       expect.stringContaining("[Interrupted by user]"),
     );
+  });
+
+  it("assembles streamed tool markup across chunks before parsing tool calls", async () => {
+    const toolMarkup = [
+      '<write path="src/generated.ts">',
+      "export const answer = 42;",
+      "</write>",
+    ];
+    const result = await consumeAssistantStream(
+      createMockStream(toolMarkup.map((content) => ({ content }))),
+      {
+        spinner: { stop: vi.fn() } as never,
+        stdout: { write: vi.fn() },
+      },
+    );
+
+    expect(result.content).toBe(toolMarkup.join(""));
+    expect(parseToolCalls(result.content)).toEqual([
+      {
+        type: "write",
+        path: "src/generated.ts",
+        content: "export const answer = 42;",
+        raw: '<write path="src/generated.ts">export const answer = 42;</write>',
+      },
+    ]);
+  });
+
+  it("accepts empty-choice chunks and returns assembled text when the stream completes", async () => {
+    let completed = false;
+    async function* stream(): AsyncIterable<unknown> {
+      await Promise.resolve();
+      yield { choices: [] };
+      yield {
+        choices: [
+          { delta: { content: "final answer" }, finish_reason: "stop" },
+        ],
+      };
+      completed = true;
+    }
+
+    const result = await consumeAssistantStream(stream(), {
+      spinner: { stop: vi.fn() } as never,
+      stdout: { write: vi.fn() },
+    });
+
+    expect(completed).toBe(true);
+    expect(result).toEqual({
+      content: "final answer",
+      reasoning: "",
+      interrupted: false,
+    });
   });
 });
