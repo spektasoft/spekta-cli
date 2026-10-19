@@ -53,6 +53,39 @@ describe("consumeAssistantStream", () => {
     expect(stdoutMock.write).toHaveBeenCalledWith("world!");
   });
 
+  it("keeps streamed output ANSI-free when color is disabled", async () => {
+    const originalForceColor = process.env.FORCE_COLOR;
+    process.env.FORCE_COLOR = "0";
+    const stdoutMock = { write: vi.fn() };
+    const mockSpinner = {
+      start: vi.fn().mockReturnThis(),
+      stop: vi.fn().mockReturnThis(),
+      fail: vi.fn().mockReturnThis(),
+    };
+
+    try {
+      const result = await consumeAssistantStream(
+        createMockStream([{ reasoning: "thinking" }, { content: "answer" }]),
+        { spinner: mockSpinner as never, stdout: stdoutMock },
+      );
+      const output = stdoutMock.write.mock.calls.join("");
+
+      expect(output).toContain("Assistant:\n");
+      expect(output).toContain("Thought:\n");
+      expect(output).toContain("thinking");
+      expect(output).toContain("answer");
+      expect(output.includes(`${String.fromCharCode(27)}[`)).toBe(false);
+      expect(result.content).toBe("answer");
+      expect(result.reasoning).toBe("thinking");
+    } finally {
+      if (originalForceColor === undefined) {
+        delete process.env.FORCE_COLOR;
+      } else {
+        process.env.FORCE_COLOR = originalForceColor;
+      }
+    }
+  });
+
   it("handles AbortError during streaming gracefully and flags interruption", async () => {
     const abortError = new Error("Aborted");
     abortError.name = "AbortError";

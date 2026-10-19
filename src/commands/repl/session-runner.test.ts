@@ -72,6 +72,52 @@ describe("SessionRunner", () => {
     );
   });
 
+  it("renders multiline user messages at the active terminal width", async () => {
+    const originalColumns = Object.getOwnPropertyDescriptor(
+      process.stdout,
+      "columns",
+    );
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.mocked(callAIStreamWithProvider).mockResolvedValue({} as never);
+
+    try {
+      for (const width of [40, 80, 120]) {
+        Object.defineProperty(process.stdout, "columns", {
+          configurable: true,
+          value: width,
+        });
+        logSpy.mockClear();
+        vi.mocked(getUserMessage)
+          .mockReset()
+          .mockResolvedValueOnce("first line\nsecond line")
+          .mockResolvedValueOnce("exit");
+
+        const runner = new SessionRunner(`session-${width}`, provider, []);
+        await runner.start();
+
+        const renderedUserMessage = String(logSpy.mock.calls[0][0]);
+        const lines = renderedUserMessage.trimEnd().split("\n");
+        expect(lines[0]).toMatch(/^┌/);
+        expect(lines.at(-1)).toMatch(/└/);
+        expect(new Set(lines.map((line) => line.length)).size).toBe(1);
+        expect(lines.every((line) => line.length <= width)).toBe(true);
+        expect(renderedUserMessage).toContain("first line");
+        expect(renderedUserMessage).toContain("second line");
+        expect(
+          renderedUserMessage.includes(`${String.fromCharCode(27)}[`),
+        ).toBe(false);
+      }
+    } finally {
+      if (originalColumns) {
+        Object.defineProperty(process.stdout, "columns", originalColumns);
+      } else {
+        delete (process.stdout as NodeJS.WriteStream & { columns?: number })
+          .columns;
+      }
+      logSpy.mockRestore();
+    }
+  });
+
   it("automatically triggers the next AI turn without prompt when tool results exist", async () => {
     vi.mocked(getUserMessage)
       .mockResolvedValueOnce("Call tool")
