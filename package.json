@@ -31,7 +31,7 @@
     "dotenv": "^18.0.8",
     "execa": "^10.2.0",
     "fs-extra": "^11.4.1",
-    "gpt-tokenizer": "^3.4.0",
+    "gpt-tokenizer": "^4.1.0",
     "gray-matter": "^4.0.3",
     "ignore": "^7.0.12",
     "inquirer-autocomplete-standalone": "^0.8.1",
