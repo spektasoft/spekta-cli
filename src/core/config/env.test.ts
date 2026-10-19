@@ -27,6 +27,10 @@ describe("Environment Loading", () => {
       "SHARED",
       "TEST_GLOBAL_VAR",
       "TEST_LOCAL_VAR",
+      "QUOTED_VALUE",
+      "MULTILINE_VALUE",
+      "EMPTY_VALUE",
+      "QUIET_VALUE",
     ];
     keysToClean.forEach((key) => delete process.env[key]);
 
@@ -34,6 +38,7 @@ describe("Environment Loading", () => {
     await fs.remove(tempTestDir);
     await fs.remove(tempHome);
     resetInternalState();
+    vi.restoreAllMocks();
   });
 
   it("should load global environment variables", async () => {
@@ -86,5 +91,32 @@ describe("Environment Loading", () => {
     expect(process.env.GLOBAL_ONLY).toBe("global_value");
     expect(process.env.LOCAL_ONLY).toBe("local_value");
     expect(process.env.SHARED).toBe("local");
+  });
+
+  it("preserves quoted, multiline, and empty values from environment files", async () => {
+    await fs.writeFile(
+      path.join(tempTestDir, ".env"),
+      'QUOTED_VALUE="value with spaces"\nMULTILINE_VALUE="first line\nsecond line"\nEMPTY_VALUE=',
+    );
+
+    await getEnv();
+
+    expect(process.env.QUOTED_VALUE).toBe("value with spaces");
+    expect(process.env.MULTILINE_VALUE).toBe("first line\nsecond line");
+    expect(process.env.EMPTY_VALUE).toBe("");
+  });
+
+  it("loads successfully when environment files are missing", async () => {
+    await expect(getEnv()).resolves.toBe(process.env);
+  });
+
+  it("does not emit dotenv injection messages while loading", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    await fs.writeFile(path.join(tempTestDir, ".env"), "QUIET_VALUE=loaded");
+
+    await getEnv();
+
+    expect(process.env.QUIET_VALUE).toBe("loaded");
+    expect(logSpy).not.toHaveBeenCalled();
   });
 });
