@@ -17,7 +17,7 @@ export default defineConfig({
         banner: "#!/usr/bin/env node",
       },
     },
-    target: "node20",
+    target: "node22",
     ssr: true,
   },
   plugins: [

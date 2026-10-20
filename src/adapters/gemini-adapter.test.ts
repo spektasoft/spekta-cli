@@ -115,6 +115,169 @@ describe("callGemini", () => {
       callGemini("fake-key", "gemini-2.0-flash", messages),
     ).rejects.toThrow("empty response");
   });
+
+  it("preserves model configuration, system instruction, and chat history", async () => {
+    const sendMessage = vi.fn().mockResolvedValue({
+      response: {
+        candidates: [{ content: { parts: [{ text: "Gemini continuation" }] } }],
+      },
+    });
+    const startChat = vi.fn().mockReturnValue({ sendMessage });
+    const getGenerativeModel = vi.fn().mockReturnValue({ startChat });
+    const mockClient = { getGenerativeModel };
+    const genai = await import("@google/generative-ai");
+    vi.mocked(genai.GoogleGenerativeAI).mockImplementationOnce(function () {
+      return mockClient as unknown as GoogleGenerativeAI;
+    });
+
+    const generationConfig = { temperature: 0.3, topP: 0.8 };
+    const result = await callGemini(
+      "history-key",
+      "gemini-2.0-flash",
+      [
+        { role: "system", content: "Follow the system instruction." },
+        { role: "user", content: "Earlier question" },
+        { role: "assistant", content: "Earlier answer" },
+        { role: "user", content: "Current question" },
+      ],
+      generationConfig,
+    );
+
+    expect(getGenerativeModel).toHaveBeenCalledWith({
+      model: "gemini-2.0-flash",
+      systemInstruction: "Follow the system instruction.",
+      generationConfig,
+    });
+    expect(startChat).toHaveBeenCalledWith({
+      history: [
+        { role: "user", parts: [{ text: "Earlier question" }] },
+        { role: "model", parts: [{ text: "Earlier answer" }] },
+      ],
+    });
+    expect(sendMessage).toHaveBeenCalledWith("Current question");
+    expect(result).toBe("Gemini continuation");
+  });
+
+  it("preserves errors returned by the Gemini SDK", async () => {
+    const providerError = new Error("Gemini request failed");
+    const genai = await import("@google/generative-ai");
+    vi.mocked(genai.GoogleGenerativeAI).mockImplementationOnce(function () {
+      return {
+        getGenerativeModel: vi.fn().mockReturnValue({
+          startChat: vi.fn().mockReturnValue({
+            sendMessage: vi.fn().mockRejectedValue(providerError),
+          }),
+        }),
+      } as unknown as GoogleGenerativeAI;
+    });
+
+    await expect(
+      callGemini("error-key", "gemini-2.0-flash", messages),
+    ).rejects.toBe(providerError);
+  });
+});
+
+describe("callGeminiStream", () => {
+  it("normalizes thought and text chunks, skips empty chunks, and completes", async () => {
+    async function* fakeStream() {
+      await Promise.resolve();
+      yield {
+        candidates: [
+          {
+            content: {
+              parts: [
+                { text: "private thought", thought: true },
+                { text: "Hello " },
+              ],
+            },
+          },
+        ],
+      };
+      yield { candidates: [{ content: { parts: [] } }] };
+      yield {
+        candidates: [{ content: { parts: [{ text: "world!" }] } }],
+      };
+    }
+
+    const mockClient = {
+      getGenerativeModel: vi.fn().mockReturnValue({
+        startChat: vi.fn().mockReturnValue({
+          sendMessageStream: vi
+            .fn()
+            .mockResolvedValue({ stream: fakeStream() }),
+        }),
+      }),
+    };
+    const genai = await import("@google/generative-ai");
+    vi.mocked(genai.GoogleGenerativeAI).mockImplementationOnce(function () {
+      return mockClient as unknown as GoogleGenerativeAI;
+    });
+
+    const chunks = await callGeminiStream(
+      "stream-key",
+      "gemini-2.0-flash",
+      messages,
+      { temperature: 0.2 },
+    );
+    const emitted: ChatCompletionChunk[] = [];
+    for await (const chunk of chunks) emitted.push(chunk);
+
+    expect(emitted).toHaveLength(2);
+    expect(emitted[0]).toMatchObject({
+      model: "gemini-2.0-flash",
+      choices: [
+        {
+          delta: {
+            content: "Hello ",
+            reasoning_details: [{ text: "private thought" }],
+          },
+          finish_reason: null,
+        },
+      ],
+    });
+    expect(emitted[1]?.choices[0]?.delta.content).toBe("world!");
+  });
+
+  it("raises AbortError when the caller cancels streaming", async () => {
+    async function* fakeStream() {
+      await Promise.resolve();
+      yield {
+        candidates: [{ content: { parts: [{ text: "first chunk" }] } }],
+      };
+    }
+
+    const mockClient = {
+      getGenerativeModel: vi.fn().mockReturnValue({
+        startChat: vi.fn().mockReturnValue({
+          sendMessageStream: vi
+            .fn()
+            .mockResolvedValue({ stream: fakeStream() }),
+        }),
+      }),
+    };
+    const genai = await import("@google/generative-ai");
+    vi.mocked(genai.GoogleGenerativeAI).mockImplementationOnce(function () {
+      return mockClient as unknown as GoogleGenerativeAI;
+    });
+    const controller = new AbortController();
+    controller.abort();
+
+    const chunks = await callGeminiStream(
+      "cancel-key",
+      "gemini-2.0-flash",
+      messages,
+      {},
+      controller.signal,
+    );
+
+    const emitted: ChatCompletionChunk[] = [];
+    await expect(
+      (async () => {
+        for await (const chunk of chunks) emitted.push(chunk);
+      })(),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(emitted).toEqual([]);
+  });
 });
 
 describe("stripGemmaThinkingTokens", () => {

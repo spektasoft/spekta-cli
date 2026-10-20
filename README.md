@@ -4,16 +4,16 @@ Spekta is a command-line tool for AI-assisted workspace work. It lets you read a
 
 ## Prerequisites and installation
 
-Install Node.js and npm, then clone the Spekta source repository. Run the installation commands from the cloned `spekta-cli` directory:
+For development, install a current Node.js 24 LTS release and use its bundled npm. Spekta supports Node.js 22 and newer at runtime. Then clone the Spekta source repository and run these commands from the cloned `spekta-cli` directory:
 
 ```bash
 git clone https://github.com/spektasoft/spekta-cli.git
 cd spekta-cli
-npm install
+npm install --package-lock=false
 npm run deploy
 ```
 
-`npm install` installs the dependencies declared by this checkout. `npm run deploy` builds Spekta and globally links both executables: `spekta` and `spekta-codex-hook`. This repository checkout is the supported installation route described here; there is no published-package installation command in this guide.
+The install command installs dependencies declared by this checkout without creating or updating a package lockfile. The deploy command builds Spekta and globally links both executables: `spekta` and `spekta-codex-hook`. This repository checkout is the supported installation route described here; there is no published-package installation command in this guide.
 
 ## First use
 
