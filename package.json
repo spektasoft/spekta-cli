@@ -13,6 +13,7 @@
     "build": "vite build",
     "deploy": "npm run build && chmod +x dist/index.js dist/codex-hook.js && npm link .",
     "test": "vitest",
+    "test:repl-color": "node scripts/verify-repl-color-policy.mjs",
     "test:codex-hook": "vitest run src/codex-hook*.test.ts",
     "test:find-backend": "SPEKTA_FIND_BACKEND_TESTS=1 vitest run src/commands/proxy/proxy-find.backend.test.ts",
     "test:json": "vitest --reporter=json --outputFile=./spekta/test-results.json",

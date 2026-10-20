@@ -1,7 +1,34 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterAll, describe, expect, it, vi, beforeEach } from "vitest";
 import { coordinateToolCalls, sanitizeToolContent } from "./tool-pipeline";
 import { parseToolCalls, executeTool } from "../../utils/agent-utils";
 import { checkbox } from "@inquirer/prompts";
+
+const originalColorEnvironment = vi.hoisted(() => {
+  const original = Object.fromEntries(
+    ["FORCE_COLOR", "NO_COLOR", "CLICOLOR", "CLICOLOR_FORCE"].map((name) => [
+      name,
+      process.env[name],
+    ]),
+  ) as Record<string, string | undefined>;
+  const enabled = process.env.SPEKTA_REPL_COLOR_POLICY === "enabled";
+
+  process.env.FORCE_COLOR = enabled ? "1" : "0";
+  delete process.env.NO_COLOR;
+  delete process.env.CLICOLOR;
+  delete process.env.CLICOLOR_FORCE;
+
+  return original;
+});
+
+afterAll(() => {
+  for (const [name, value] of Object.entries(originalColorEnvironment)) {
+    if (value === undefined) {
+      delete process.env[name];
+    } else {
+      process.env[name] = value;
+    }
+  }
+});
 
 vi.mock("../../utils/agent-utils");
 vi.mock("@inquirer/prompts");
@@ -12,13 +39,13 @@ describe("tool-pipeline", () => {
   });
 
   it("preserves proposed-tool and result box layouts at common terminal widths", async () => {
+    expect(process.env.FORCE_COLOR).toBe("0");
+    expect(process.env.NO_COLOR).toBeUndefined();
     const originalColumns = Object.getOwnPropertyDescriptor(
       process.stdout,
       "columns",
     );
-    const originalForceColor = process.env.FORCE_COLOR;
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    process.env.FORCE_COLOR = "0";
 
     try {
       for (const width of [40, 80, 120]) {
@@ -65,11 +92,6 @@ describe("tool-pipeline", () => {
       } else {
         delete (process.stdout as NodeJS.WriteStream & { columns?: number })
           .columns;
-      }
-      if (originalForceColor === undefined) {
-        delete process.env.FORCE_COLOR;
-      } else {
-        process.env.FORCE_COLOR = originalForceColor;
       }
       logSpy.mockRestore();
     }
