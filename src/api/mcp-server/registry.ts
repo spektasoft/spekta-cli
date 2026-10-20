@@ -1,4 +1,5 @@
 import { renderGitStatusOutcome } from "../../commands/proxy/proxy-git-status";
+import { renderGitCheckIgnoreOutcome } from "../../commands/proxy/proxy-git-check-ignore";
 import { renderGitBranchOutcome } from "../../commands/proxy/proxy-git-branch";
 import { renderGitHistoryOutcome } from "../../commands/proxy/proxy-git-history";
 import { renderGitBlobOutcome } from "../../commands/proxy/proxy-git-blob";
@@ -483,6 +484,13 @@ const registry: Record<string, ToolRegistryEntry> = {
           isError: true,
           content: [{ type: "text", text: formatProxyFailure(error) }],
         };
+      }
+      if (command === "git" && cleanArgs[0] === "check-ignore") {
+        const outcome = await renderGitCheckIgnoreOutcome(cleanArgs, context);
+        return respondGit(
+          outcome.status === "failure" ? outcome.message : outcome.content,
+          outcome.status === "failure",
+        );
       }
       if (command === "ls") {
         const resolvedAllowance = resolveListAllowance(allowance);

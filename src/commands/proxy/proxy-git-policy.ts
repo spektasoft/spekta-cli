@@ -222,12 +222,33 @@ export function validateGitProxyRequest(
   context?: WorkspaceContext,
 ): void {
   const subcommand = args[0];
-  if (!["status", "log", "show", "diff", "branch"].includes(subcommand)) {
+  if (
+    !["status", "log", "show", "diff", "branch", "check-ignore"].includes(
+      subcommand,
+    )
+  ) {
     fail(`unsupported Git subcommand '${subcommand ?? ""}'.`);
   }
   for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"]) {
     if (process.env[key] !== undefined)
       fail(`unsupported Git workspace override '${key}'.`);
+  }
+  if (subcommand === "check-ignore") {
+    const operands = args.slice(1);
+    const hasSeparator = operands[0] === "--";
+    const pathOperand = hasSeparator ? operands.slice(1) : operands;
+    if (
+      pathOperand.length !== 1 ||
+      pathOperand[0] === "" ||
+      (!hasSeparator && pathOperand[0].startsWith("-")) ||
+      Array.from(pathOperand[0]).some(
+        (character) =>
+          character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+      )
+    ) {
+      fail("git check-ignore requires exactly one explicit path operand.");
+    }
+    return;
   }
   if (subcommand === "branch") {
     validateBranchListing(args);

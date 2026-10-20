@@ -1,4 +1,5 @@
 import { renderGitStatusOutcome } from "./proxy-git-status";
+import { renderGitCheckIgnoreOutcome } from "./proxy-git-check-ignore";
 import { renderGitBranchOutcome } from "./proxy-git-branch";
 import { renderGitHistoryOutcome } from "./proxy-git-history";
 import { renderGitBlobOutcome } from "./proxy-git-blob";
@@ -357,6 +358,15 @@ export async function runRtkProxy(
     if (outcome.status === "partial_result" || outcome.isError)
       process.exitCode = 1;
     console.log(findCliResponse(outcome.content, outcome.isError).trimEnd());
+    return;
+  }
+  if (command === "git" && requestArgs[0] === "check-ignore") {
+    const outcome = await renderGitCheckIgnoreOutcome(requestArgs, context);
+    emitGitResponse(
+      outcome.status === "failure" ? outcome.message : outcome.content,
+      gitAllowance,
+      outcome.status === "failure" ? outcome.exitCode : 0,
+    );
     return;
   }
   if (
