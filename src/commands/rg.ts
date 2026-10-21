@@ -119,7 +119,9 @@ export async function runRg(args?: string[]) {
       continue;
     }
     if (arg.startsWith("-")) {
-      Logger.error("usage_error: Unsupported ripgrep option.");
+      Logger.error(
+        "usage_error: Unsupported ripgrep option. See `spekta help rg` for supported options.",
+      );
       process.exitCode = 1;
       return;
     }
