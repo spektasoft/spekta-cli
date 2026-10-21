@@ -219,7 +219,7 @@ export async function getReadBatchOutcome(
   const rejectMetadata = () =>
     options.failure(
       "output_limit_exceeded: Batch outcome metadata exceeds the response budget. " +
-        "Split the batch into fewer operands." +
+        "Divide the same operands into smaller groups; individual paths are a useful starting point, or request a larger supported allowance within its ceiling." +
         options.increaseHint,
     );
 
