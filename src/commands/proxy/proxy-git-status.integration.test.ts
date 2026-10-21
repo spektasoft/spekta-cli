@@ -40,6 +40,13 @@ describe.skipIf(missing.length > 0)(
         }
       }
     });
+    it("preserves staged, unstaged, and untracked short-status records", async () => {
+      const result = await context.both(["status", "--short"]);
+      expect(result.mcp.isError).toBe(false);
+      expect(result.mcp.content[0].text).toContain(' M "file.txt"');
+      expect(result.mcp.content[0].text).toContain('MM "other.txt"');
+      expect(result.mcp.content[0].text).toContain('?? "untracked.txt"');
+    });
     it("retains requested branch metadata", async () => {
       for (const flag of ["--porcelain=v1", "--porcelain=v2"]) {
         const result = await context.both(["status", flag, "--branch"]);

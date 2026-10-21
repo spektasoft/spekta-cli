@@ -89,5 +89,17 @@ export function registerHelpProcessCommandDetailsTests(
       expect(result.stderr).toBe("");
       for (const text of requiredText) expect(result.stdout).toContain(text);
     });
+    it("documents actual git status column meanings", async () => {
+      const result = await invoke(["git", "status", "--help"]);
+      expect(result.exitCode).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toContain(
+        "first column shows the index (staged) state",
+      );
+      expect(result.stdout).toContain(
+        "second shows the worktree (unstaged) state",
+      );
+      expect(result.stdout).toContain("?? marks an untracked entry");
+    });
   });
 }
