@@ -129,6 +129,15 @@ describe("runRg", () => {
     );
   });
 
+  it("rejects unsupported short flags with direct help guidance before searching", async () => {
+    const search = vi.spyOn(grepSearch, "getRgOutcome");
+    await runRg(["-n", "needle"]);
+    expect(search).not.toHaveBeenCalled();
+    expect(Logger.error).toHaveBeenCalledWith(
+      "usage_error: Unsupported ripgrep option. See `spekta help rg` for supported options.",
+    );
+  });
+
   it("preserves repeated glob filters and comma-containing values", async () => {
     const search = vi.spyOn(grepSearch, "getRgOutcome").mockResolvedValue({
       status: "no_matches",
@@ -181,7 +190,7 @@ describe("runRg", () => {
     await runRg(["--json"]);
     expect(search).not.toHaveBeenCalled();
     expect(Logger.error).toHaveBeenCalledWith(
-      "usage_error: Unsupported ripgrep option.",
+      "usage_error: Unsupported ripgrep option. See `spekta help rg` for supported options.",
     );
   });
 

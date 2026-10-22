@@ -310,7 +310,9 @@ describe("spekta rg public boundaries", () => {
     try {
       await runRg(["-e", "needle", "--unsupported-option", "root"]);
       const text = stderr.mock.calls.map(([chunk]) => String(chunk)).join("");
-      expect(text).toContain("usage_error: Unsupported ripgrep option.");
+      expect(text).toContain(
+        "usage_error: Unsupported ripgrep option. See `spekta help rg` for supported options.",
+      );
       expect(await fs.pathExists(marker)).toBe(false);
     } finally {
       stderr.mockRestore();

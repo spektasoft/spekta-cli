@@ -11,6 +11,7 @@ export const PROXY_GIT_STATUS_HELP: Record<string, HelpTopic> = {
         heading: "Options and operands",
         lines: [
           "Accepted options: -s or --short; -b or --branch; --porcelain, --porcelain=v1, or --porcelain=v2; and --untracked-files=no|normal|all.",
+          "In short status, the first column shows the index (staged) state and the second shows the worktree (unstaged) state; ?? marks an untracked entry.",
           "Put options before --. Path operands follow -- and are literal workspace paths; quote names containing spaces. Without paths, the repository is inspected.",
           "A path that begins with - must follow --. Git pathspec patterns and magic are unsupported.",
           "Spekta removes ineligible paths from the result. The configured Git response budget includes the complete CLI response; long status output is truncated and marked.",

@@ -245,20 +245,32 @@ describe.each(["cli", "mcp"] as const)(
       expect(getTokenCount(result.rendered)).toBeLessThanOrEqual(2000);
     });
 
-    it("rejects metadata overflow before reading content", async () => {
-      const read = vi.spyOn(readUtils, "getVersionedFileLines");
-      const result = await invoke(
-        transport,
-        Array.from({ length: 40 }, () => "real.txt"),
-        300,
-      );
-      expect(result.text).toContain("output_limit_exceeded");
-      expect(result.text).toMatch(/split/i);
-      expect(result.text).toMatch(/larger allowance/i);
-      expect(result.text).not.toContain("####");
-      expect(read).not.toHaveBeenCalled();
-      expect(getTokenCount(result.rendered)).toBeLessThanOrEqual(300);
-    });
+    it.each([200, 300])(
+      "gives bounded metadata rejection guidance at allowance %i before reading content",
+      async (allowance) => {
+        const read = vi.spyOn(readUtils, "getVersionedFileLines");
+        const deniedPath = ".env";
+        const result = await invoke(
+          transport,
+          Array.from({ length: 40 }, () => deniedPath),
+          allowance,
+        );
+        expect(result.text).toContain("output_limit_exceeded");
+        expect(result.text).toMatch(
+          /divide the same operands into smaller groups/i,
+        );
+        expect(result.text).toMatch(
+          /individual paths are a useful starting point/i,
+        );
+        expect(result.text).toMatch(/larger allowance/i);
+        expect(result.text).toMatch(/within its ceiling/i);
+        expect(result.text).not.toContain(deniedPath);
+        expect(result.text).not.toContain("####");
+        expect(read).not.toHaveBeenCalled();
+        expect(getTokenCount(result.rendered)).toBeLessThanOrEqual(allowance);
+        expect(result.failed).toBe(true);
+      },
+    );
 
     it("conceals long protected and missing names while retaining a sibling", async () => {
       const protectedName = `${"p".repeat(220)}.txt`;
