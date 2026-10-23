@@ -12,6 +12,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleHelp } from "../cli/help";
 import {
+  findExecutable,
+  findHook,
+  verifyCodexSessionCwdContract,
+} from "./codex-setup-status.js";
+import {
   applyCodexSetup,
   readCodexStatus,
   runCodexStatus,
@@ -26,6 +31,10 @@ async function fixture(): Promise<string> {
 
 const fixtures: string[] = [];
 
+function stubUserHome(home: string): void {
+  vi.stubEnv(process.platform === "win32" ? "USERPROFILE" : "HOME", home);
+}
+
 afterEach(async () => {
   await Promise.all(
     fixtures
@@ -35,6 +44,34 @@ afterEach(async () => {
 });
 
 describe("readCodexStatus", () => {
+  it("finds Windows npm command shims from PATH entries containing spaces", async () => {
+    const root = await fixture();
+    const bin = join(root, "Program Files", "Spekta npm bin");
+    await mkdir(bin, { recursive: true });
+    const extension = process.platform === "win32" ? ".cmd" : "";
+    const hook = join(bin, `spekta-codex-hook${extension}`);
+    const codex = join(bin, `codex${extension}`);
+    const script =
+      process.platform === "win32"
+        ? '@echo off\r\nif "%~1"=="--version" if "%~2"=="" echo codex-cli 0.161.0\r\n'
+        : '#!/bin/sh\n[ "$#" -eq 1 ] && [ "$1" = "--version" ] && echo "codex-cli 0.161.0"\n';
+    await writeFile(hook, script);
+    await writeFile(codex, script);
+    if (process.platform !== "win32") {
+      await chmod(hook, 0o755);
+      await chmod(codex, 0o755);
+    }
+
+    expect(await findHook(bin)).toBe(hook);
+    expect(await findExecutable("codex", bin)).toBe(codex);
+    expect(await verifyCodexSessionCwdContract(bin)).toBeUndefined();
+
+    const setup = await applyCodexSetup({ home: root, path: bin, cwd: root });
+    expect(setup.status).toBe("configured");
+    const status = await readCodexStatus({ home: root, path: bin, cwd: root });
+    expect(status.components.hooks.state).toBe("configured");
+  });
+
   it("keeps routing unknown when global hook configuration cannot be read", async () => {
     const root = await fixture();
     await mkdir(join(root, ".codex", "hooks.json"), { recursive: true });
@@ -124,7 +161,7 @@ describe("readCodexStatus", () => {
     await writeFile(join(root, "spekta"), "other installation\n");
     const previousArgv = process.argv;
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
-    vi.stubEnv("HOME", root);
+    stubUserHome(root);
     vi.stubEnv("PATH", root);
     process.argv = [process.execPath, invoked];
     try {
@@ -181,7 +218,7 @@ describe("readCodexStatus", () => {
         git: { defaultTokens: 1000, ceilingTokens: 8000 },
       });
       expect(warning.mock.calls.flat().join(" ")).not.toContain("secret");
-      vi.stubEnv("HOME", root);
+      stubUserHome(root);
       vi.stubEnv("PATH", "");
       const log = vi.spyOn(console, "log").mockImplementation(() => {});
       await runCodexStatus(["--global", "--codex"]);
@@ -202,12 +239,31 @@ describe("readCodexStatus", () => {
   });
   it("keeps setup configuration unverified and reports a missing hook executable as broken", async () => {
     const root = await fixture();
-    const bin = join(root, "bin");
-    await mkdir(bin);
-    await writeFile(join(bin, "spekta-codex-hook"), "#!/bin/sh\n");
-    await chmod(join(bin, "spekta-codex-hook"), 0o755);
-    await applyCodexSetup({ home: root, path: bin, cwd: root });
-    await rm(join(bin, "spekta-codex-hook"));
+    const bin = join(root, "Program Files", "Spekta npm bin");
+    await mkdir(bin, { recursive: true });
+    const hook = join(
+      bin,
+      `spekta-codex-hook${process.platform === "win32" ? ".cmd" : ""}`,
+    );
+    await writeFile(
+      hook,
+      process.platform === "win32"
+        ? "@echo off\r\nexit /b 0\r\n"
+        : "#!/bin/sh\n",
+    );
+    if (process.platform !== "win32") await chmod(hook, 0o755);
+    const setup = await applyCodexSetup({ home: root, path: bin, cwd: root });
+    expect(setup).toMatchObject({
+      status: "configured",
+      activation: "unverified",
+    });
+    const hooks = JSON.parse(
+      await readFile(join(root, ".codex", "hooks.json"), "utf8"),
+    ) as {
+      hooks: { PreToolUse: { hooks: { command: string }[] }[] };
+    };
+    expect(JSON.parse(hooks.hooks.PreToolUse[0].hooks[0].command)).toBe(hook);
+    await rm(hook);
     const status = await readCodexStatus({ home: root, path: bin, cwd: root });
     expect(status.components).toMatchObject({
       hooks: { state: "broken" },

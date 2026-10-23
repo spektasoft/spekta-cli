@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execFileSync } from "node:child_process";
 import { generateId } from "../../fs/fs-manager";
 import { Logger } from "../../utils/logger";
 
@@ -13,7 +13,7 @@ export interface GlobalPromptContext {
 export const getSafeGitDiff = (): string => {
   try {
     // Run a tightly controlled, safe read-only git command
-    const diff = execSync("git diff --no-ext-diff", {
+    const diff = execFileSync("git", ["diff", "--no-ext-diff"], {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "ignore"],
     });

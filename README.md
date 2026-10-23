@@ -15,6 +15,12 @@ npm run deploy
 
 The install command installs dependencies declared by this checkout without creating or updating a package lockfile. The deploy command builds Spekta and globally links both executables: `spekta` and `spekta-codex-hook`. This repository checkout is the supported installation route described here; there is no published-package installation command in this guide.
 
+### Windows x64 support status
+
+**Current:** Native Windows startup is blocked by the installed Tree-sitter parser artifact. The production build and local npm link have succeeded, but invoking `spekta` still fails while loading that native module.
+
+**Planned:** Windows-specific isolation of parser-backed features has not been implemented. The planned behavior is to report structural read overview as unavailable on Windows and retain diagnostic raw token counts while clearly reporting that compaction analysis is unavailable. Ordinary reads, batching, and search are expected to work on Windows only after parser loading is isolated and those commands are verified. Linux/WSL parser-backed behavior is intended to remain available. Windows overview support will be reconsidered after a specific package version and artifact pass native loading, real parsing, and relevant regression checks.
+
 ## First use
 
 Check that the CLI is available without starting a workflow:

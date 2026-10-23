@@ -1,5 +1,6 @@
 import { unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { getUserHomeDirectory } from "../utils/user-home.js";
 import {
   CodexSetupFile,
   CodexSetupOptions,
@@ -128,7 +129,7 @@ export async function runCodexUninstall(args: string[] = []): Promise<void> {
       "Usage: spekta uninstall --global --codex --dry-run|--apply",
     );
   }
-  const options = { home: process.env.HOME ?? "" };
+  const options = { home: getUserHomeDirectory() };
   if (isApply) {
     const result = await applyCodexUninstall(options);
     if (result.status !== "uninstalled") {

@@ -8,6 +8,7 @@ import {
   resolveWorkspace,
   resolveWorkspaceMutationTarget,
   resolveWorkspaceTarget,
+  normalizeWorkspacePath,
   type ResolvedWorkspace,
 } from "./workspace";
 
@@ -155,9 +156,12 @@ export const validatePathAccessForWrite = async (
   targetPath: string,
   workspace?: ResolvedWorkspace,
 ): Promise<string> => {
+  if (path.isAbsolute(targetPath) || path.win32.isAbsolute(targetPath)) {
+    throw new Error("Access Denied: write paths must be workspace-relative.");
+  }
   const resolvedWorkspace = workspace ?? (await resolveWorkspace());
   const { absolutePath, canonicalPath } = await resolveWorkspaceMutationTarget(
-    targetPath,
+    normalizeWorkspacePath(targetPath),
     resolvedWorkspace,
     true,
   );
@@ -205,9 +209,12 @@ export const validateEditAccess = async (
   targetPath: string,
   workspace?: ResolvedWorkspace,
 ): Promise<string> => {
+  if (path.isAbsolute(targetPath) || path.win32.isAbsolute(targetPath)) {
+    throw new Error("Access Denied: replace paths must be workspace-relative.");
+  }
   const resolvedWorkspace = workspace ?? (await resolveWorkspace());
   const { absolutePath, canonicalPath } = await resolveWorkspaceMutationTarget(
-    targetPath,
+    normalizeWorkspacePath(targetPath),
     resolvedWorkspace,
     false,
   );

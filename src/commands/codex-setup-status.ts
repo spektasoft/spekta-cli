@@ -1,11 +1,12 @@
-import { access } from "node:fs/promises";
 import { constants } from "node:fs";
+import { access } from "node:fs/promises";
 import { delimiter, join, resolve } from "node:path";
-import { execFile as execFileCallback } from "node:child_process";
-import { promisify } from "node:util";
+import { execa } from "execa";
 import { buildMetadata, runningIdentity } from "../build-identity";
 import { resolveAllowanceSettings } from "../core/config/allowance";
 import { getEnv } from "../core/config/env";
+import { findExecutableOnPath } from "../utils/executable-lookup.js";
+import { getUserHomeDirectory } from "../utils/user-home.js";
 import {
   CODEX_USAGE_START,
   CODEX_USAGE_END,
@@ -24,35 +25,15 @@ import {
   buildInstructions,
 } from "./codex-setup-ownership.js";
 
-export const execFile = promisify(execFileCallback);
-
 export async function findHook(pathValue: string): Promise<string | undefined> {
-  for (const directory of pathValue.split(delimiter).filter(Boolean)) {
-    const candidate = resolve(directory, "spekta-codex-hook");
-    try {
-      await access(candidate, constants.X_OK);
-      return candidate;
-    } catch {
-      // Continue until a usable executable is found.
-    }
-  }
-  return undefined;
+  return findExecutableOnPath("spekta-codex-hook", pathValue);
 }
 
 export async function findExecutable(
   name: string,
   pathValue: string,
 ): Promise<string | undefined> {
-  for (const directory of pathValue.split(delimiter).filter(Boolean)) {
-    const candidate = resolve(directory, name);
-    try {
-      await access(candidate, constants.X_OK);
-      return candidate;
-    } catch {
-      // Continue until a usable executable is found.
-    }
-  }
-  return undefined;
+  return findExecutableOnPath(name, pathValue);
 }
 
 export async function verifyCodexSessionCwdContract(
@@ -62,7 +43,7 @@ export async function verifyCodexSessionCwdContract(
   if (!codex)
     return "Codex MCP opt-in is incompatible: Codex CLI 0.160.1 or newer is required to select the session workspace for stdio servers.";
   try {
-    const { stdout } = await execFile(codex, ["--version"], { timeout: 3000 });
+    const { stdout } = await execa(codex, ["--version"], { timeout: 3000 });
     const match = stdout.match(/codex-cli\s+(\d+)\.(\d+)\.(\d+)/i);
     if (!match) throw new Error("unrecognized version output");
     const version = match.slice(1).map(Number);
@@ -383,7 +364,7 @@ export async function runCodexStatus(args: string[] = []): Promise<void> {
     throw new Error("Usage: spekta status --global --codex");
   }
   const status = await readCodexStatus({
-    home: process.env.HOME ?? "",
+    home: getUserHomeDirectory(),
     path: process.env.PATH ?? "",
     cwd: process.cwd(),
   });

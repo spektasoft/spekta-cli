@@ -373,7 +373,11 @@ describe("MCP server workspace binding", () => {
     ).toContain("EXTERNAL");
   });
 
-  it.each(["missing-launch-directory", "real.txt", "dangling.txt", "cycle-a"])(
+  it.each([
+    "missing-launch-directory",
+    "real.txt",
+    ...(process.platform === "win32" ? [] : ["dangling.txt", "cycle-a"]),
+  ])(
     "rejects invalid launch %s before initializing or registering tools",
     async (target) => {
       const invalidCwd = path.join(fixture.root, target);

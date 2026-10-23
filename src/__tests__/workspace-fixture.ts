@@ -57,25 +57,52 @@ export async function createWorkspaceFixture() {
   await fs.writeFile(path.join(ambient, "real.txt"), "needle WRONG_CWD\n");
   await fs.writeFile(path.join(ambient, ".gitignore"), "real.txt\n");
   await fs.writeFile(path.join(ambient, ".spektaignore"), "real.txt\n");
-  await fs.symlink(root, alias, "dir");
-  for (const [name, target, type] of [
-    ["internal-file.txt", path.join(root, "real.txt"), "file"],
-    ["internal-dir", path.join(root, "safe"), "dir"],
-    ["external-file.txt", path.join(outside, "secret.txt"), "file"],
-    ["external-dir", outside, "dir"],
-    ["hop", path.join(root, "external-dir"), "dir"],
-    ["ignored-alias.txt", path.join(root, "ignored.txt"), "file"],
-    ["dangling.txt", path.join(outside, "missing.txt"), "file"],
-    ["cycle-a", path.join(root, "cycle-b"), "file"],
-    ["cycle-b", path.join(root, "cycle-a"), "file"],
-  ] as const)
-    await fs.symlink(target, path.join(root, name), type);
-  for (const name of [".env", ".gitignore", ".spektaignore"])
-    await fs.symlink(
-      path.join(root, name),
-      path.join(root, `alias${name}.txt`),
-      "file",
+  await fs.symlink(
+    root,
+    alias,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  if (process.platform === "win32") {
+    // File symlinks need Developer Mode or an elevated token. A copied
+    // internal file plus junctions cover the path acceptance and escape
+    // behavior exercised by Windows public-operation tests.
+    await fs.copyFile(
+      path.join(root, "real.txt"),
+      path.join(root, "internal-file.txt"),
     );
+    await fs.symlink(outside, path.join(root, "external-file.txt"), "junction");
+    await fs.symlink(
+      path.join(root, "safe"),
+      path.join(root, "internal-dir"),
+      "junction",
+    );
+    await fs.symlink(outside, path.join(root, "external-dir"), "junction");
+    await fs.symlink(
+      path.join(root, "external-dir"),
+      path.join(root, "hop"),
+      "junction",
+    );
+  } else {
+    for (const [name, target, type] of [
+      ["internal-file.txt", path.join(root, "real.txt"), "file"],
+      ["internal-dir", path.join(root, "safe"), "dir"],
+      ["external-file.txt", path.join(outside, "secret.txt"), "file"],
+      ["external-dir", outside, "dir"],
+      ["hop", path.join(root, "external-dir"), "dir"],
+      ["ignored-alias.txt", path.join(root, "ignored.txt"), "file"],
+      ["dangling.txt", path.join(outside, "missing.txt"), "file"],
+      ["cycle-a", path.join(root, "cycle-b"), "file"],
+      ["cycle-b", path.join(root, "cycle-a"), "file"],
+    ] as const)
+      await fs.symlink(target, path.join(root, name), type);
+  }
+  if (process.platform !== "win32")
+    for (const name of [".env", ".gitignore", ".spektaignore"])
+      await fs.symlink(
+        path.join(root, name),
+        path.join(root, `alias${name}.txt`),
+        "file",
+      );
   process.env.SPEKTA_HOME_OVERRIDE = home;
   process.env.SPEKTA_ASSET_ROOT_OVERRIDE = assets;
   process.env.SPEKTA_READ_TOKEN_LIMIT = "1000";

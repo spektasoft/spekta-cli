@@ -44,6 +44,20 @@ describe("workspace containment", () => {
       (await resolveWorkspaceTarget(target, workspace)).canonicalPath,
     ).toBe(await fs.realpath(path.join(fixture.root, target)));
   });
+  it.each(["nested dir/real.txt", String.raw`nested dir\real.txt`])(
+    "accepts either separator style in a spaced relative path: %s",
+    async (target) => {
+      await fs.ensureDir(path.join(fixture.root, "nested dir"));
+      await fs.writeFile(
+        path.join(fixture.root, "nested dir", "real.txt"),
+        "ok",
+      );
+      const workspace = await resolveWorkspace({ root: fixture.root });
+      expect(
+        (await resolveWorkspaceTarget(target, workspace)).canonicalPath,
+      ).toBe(path.join(fixture.root, "nested dir", "real.txt"));
+    },
+  );
   it.each([
     "../sibling.txt",
     "external-file.txt",
@@ -70,6 +84,23 @@ describe("workspace containment", () => {
       );
     expect(lookup).not.toHaveBeenCalled();
   });
+  it.skipIf(process.platform === "win32")(
+    "rejects Windows drive and UNC spellings under POSIX path semantics",
+    async () => {
+      const workspace = await resolveWorkspace({ root: fixture.root });
+      for (const target of [
+        String.raw`C:\outside\file.txt`,
+        String.raw`\\server\share\file.txt`,
+      ]) {
+        await expect(resolveWorkspaceTarget(target, workspace)).rejects.toThrow(
+          "outside the project directory",
+        );
+        await expect(
+          resolveWorkspaceMutationTarget(target, workspace, true),
+        ).rejects.toThrow("outside the project directory");
+      }
+    },
+  );
   it("canonicalizes symlinked workspaces and accepts either absolute spelling", async () => {
     const workspace = await resolveWorkspace({ root: fixture.alias });
     expect(workspace.canonicalRoot).toBe(await fs.realpath(fixture.root));
@@ -82,17 +113,18 @@ describe("workspace containment", () => {
         (await resolveWorkspaceTarget(target, workspace)).canonicalPath,
       ).toBe(path.join(fixture.root, "real.txt"));
   });
-  it.each(["missing/deep.txt", "dangling.txt", "cycle-a", "real.txt/child"])(
-    "fails closed for unresolved target %s",
-    async (target) => {
-      await expect(
-        resolveWorkspaceTarget(
-          target,
-          await resolveWorkspace({ root: fixture.root }),
-        ),
-      ).rejects.toThrow();
-    },
-  );
+  it.each([
+    "missing/deep.txt",
+    ...(process.platform === "win32" ? [] : ["dangling.txt", "cycle-a"]),
+    "real.txt/child",
+  ])("fails closed for unresolved target %s", async (target) => {
+    await expect(
+      resolveWorkspaceTarget(
+        target,
+        await resolveWorkspace({ root: fixture.root }),
+      ),
+    ).rejects.toThrow();
+  });
   it.each(["missing-root", "real.txt"])(
     "rejects invalid root %s",
     async (root) => {
@@ -133,15 +165,29 @@ describe("workspace containment", () => {
 });
 
 describe("workspace mutation containment", () => {
-  it.each(["real.txt", "internal-file.txt", "internal-dir/child.txt", "."])(
-    "accepts existing internal target %s",
+  it.each([
+    "real.txt",
+    ...(process.platform === "win32" ? [] : ["internal-file.txt"]),
+    "internal-dir/child.txt",
+    ".",
+  ])("accepts existing internal target %s", async (target) => {
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    const resolved = await resolveWorkspaceMutationTarget(target, workspace);
+    expect(resolved.absolutePath).toBe(path.resolve(fixture.root, target));
+    expect(resolved.canonicalPath).toBe(
+      await fs.realpath(path.resolve(fixture.root, target)),
+    );
+  });
+
+  it.each(["nested dir/new.txt", String.raw`nested dir\new.txt`])(
+    "accepts either separator style for mutation paths: %s",
     async (target) => {
+      await fs.ensureDir(path.join(fixture.root, "nested dir"));
       const workspace = await resolveWorkspace({ root: fixture.root });
-      const resolved = await resolveWorkspaceMutationTarget(target, workspace);
-      expect(resolved.absolutePath).toBe(path.resolve(fixture.root, target));
-      expect(resolved.canonicalPath).toBe(
-        await fs.realpath(path.resolve(fixture.root, target)),
-      );
+      expect(
+        (await resolveWorkspaceMutationTarget(target, workspace, true))
+          .canonicalPath,
+      ).toBe(path.join(fixture.root, "nested dir", "new.txt"));
     },
   );
 
@@ -187,7 +233,7 @@ describe("workspace mutation containment", () => {
     await fs.symlink(
       fixture.root,
       path.join(fixture.outside, "reenter"),
-      "dir",
+      process.platform === "win32" ? "junction" : "dir",
     );
     const workspace = await resolveWorkspace({ root: fixture.root });
     await expect(
@@ -207,9 +253,9 @@ describe("workspace mutation containment", () => {
   });
 
   it.each([
-    "dangling.txt",
-    "cycle-a",
-    "cycle-b",
+    ...(process.platform === "win32"
+      ? []
+      : ["dangling.txt", "cycle-a", "cycle-b"]),
     "real.txt/child",
     "external-file.txt/child",
   ])(

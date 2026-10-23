@@ -2,7 +2,10 @@ import fs from "fs-extra";
 import path from "path";
 
 import { RESTRICTED_FILES } from "../../utils/security";
-import type { WorkspaceContext } from "../../utils/workspace";
+import {
+  normalizeWorkspacePath,
+  type WorkspaceContext,
+} from "../../utils/workspace";
 
 export type { WorkspaceContext } from "../../utils/workspace";
 
@@ -143,12 +146,13 @@ export function validateProxyPathOperand(
       "Access Denied: Git path resolves outside the project directory.",
     );
   }
-  if (/[\\:*?[\]]/.test(operand) || operand.startsWith("~/")) {
+  if (/[:*?[\]]/.test(operand) || operand.startsWith("~/")) {
     throw new Error("Execution refused: unsupported Git path syntax.");
   }
 
-  validateCommandArguments([`./${operand}`], context);
-  let ancestor = path.resolve(root, operand);
+  const normalizedOperand = normalizeWorkspacePath(operand);
+  validateCommandArguments([`./${normalizedOperand}`], context);
+  let ancestor = path.resolve(root, normalizedOperand);
   while (true) {
     try {
       fs.lstatSync(ancestor);
@@ -180,7 +184,10 @@ export function validateCommandArguments(
   const pathArguments = getPathArguments(args);
 
   for (const argument of args) {
-    if (targetsRestrictedFile(argument, root)) {
+    const normalizedArgument = isWindowsAbsolutePath(argument)
+      ? argument
+      : normalizeWorkspacePath(argument);
+    if (targetsRestrictedFile(normalizedArgument, root)) {
       throw new Error(
         `Access Denied: command argument '${argument}' targets a restricted file or path.`,
       );
@@ -194,19 +201,20 @@ export function validateCommandArguments(
       );
     }
 
-    if (!isInsideProjectLexically(argument, root)) {
+    const normalizedArgument = normalizeWorkspacePath(argument);
+    if (!isInsideProjectLexically(normalizedArgument, root)) {
       throw new Error(
         `Access Denied: command argument '${argument}' resolves outside the project directory.`,
       );
     }
 
-    if (!isInsideProjectCanonical(argument, root)) {
+    if (!isInsideProjectCanonical(normalizedArgument, root)) {
       throw new Error(
         `Access Denied: command argument '${argument}' resolves outside the project directory.`,
       );
     }
 
-    const absolutePath = path.resolve(root, argument);
+    const absolutePath = path.resolve(root, normalizedArgument);
     if (
       fs.existsSync(absolutePath) &&
       targetsRestrictedFile(fs.realpathSync(absolutePath), root)

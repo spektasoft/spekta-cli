@@ -35,7 +35,12 @@ describe("workspace reads", () => {
     expect(output).not.toContain("WRONG_CWD");
     expect(streams).toHaveBeenCalledTimes(1);
     for (const [file] of streams.mock.calls)
-      expect(file).toBe(path.join(fixture.root, "real.txt"));
+      expect(file).toBe(
+        path.join(
+          fixture.root,
+          process.platform === "win32" ? "internal-file.txt" : "real.txt",
+        ),
+      );
   });
   for (const mode of modes)
     it.each([
@@ -43,8 +48,7 @@ describe("workspace reads", () => {
       "external-file.txt",
       "external-dir/secret.txt",
       "hop/missing/deep.txt",
-      "dangling.txt",
-      "cycle-a",
+      ...(process.platform === "win32" ? [] : ["dangling.txt", "cycle-a"]),
       "missing.txt",
     ])(`denies %s in ${mode} mode before streaming`, async (target) => {
       const streams = vi.spyOn(readUtils, "getVersionedFileLines");

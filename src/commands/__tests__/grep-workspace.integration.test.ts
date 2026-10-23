@@ -25,7 +25,11 @@ afterEach(async () => {
 
 describe("workspace searches with real ripgrep", () => {
   it("keeps alias ignores and oversized descendants out of CLI and MCP results", async () => {
-    await fs.symlink(fixture.root, path.join(fixture.root, "alias"), "dir");
+    await fs.symlink(
+      fixture.root,
+      path.join(fixture.root, "alias"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
     await fs.writeFile(
       path.join(fixture.root, ".spektaignore"),
       "alias/secret.txt\n!allowed.txt\n",
@@ -75,11 +79,11 @@ describe("workspace searches with real ripgrep", () => {
     "external-file.txt",
     "external-dir",
     "hop/missing/deep.txt",
-    "dangling.txt",
-    "cycle-a",
+    ...(process.platform === "win32" ? [] : ["dangling.txt", "cycle-a"]),
     "missing.txt",
-    "alias.env.txt",
-    "ignored-alias.txt",
+    ...(process.platform === "win32"
+      ? []
+      : ["alias.env.txt", "ignored-alias.txt"]),
   ])("rejects invalid root %s before spawning", async (target) => {
     const result = await getGrepContent(
       { pattern: "needle", path: target },

@@ -130,6 +130,26 @@ describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
     expect(explicit.failed).toBe(false);
   });
 
+  it("accepts either separator style for relative paths containing spaces", async () => {
+    await fs.ensureDir(path.join(workspace, "nested dir"));
+    await fs.writeFile(path.join(workspace, "nested dir", "entry.txt"), "x");
+    for (const operand of ["nested dir", "nested dir\\"]) {
+      const result = await invoke(transport, [operand]);
+      expect(result.text).toContain(
+        `Operand 1: returned; ${JSON.stringify(operand)}`,
+      );
+      expect(result.text).toContain('"entry.txt"');
+      expect(result.failed).toBe(false);
+    }
+  });
+
+  it("continues to reject contained absolute paths", async () => {
+    await fs.ensureDir(path.join(workspace, "contained"));
+    const result = await invoke(transport, [path.join(workspace, "contained")]);
+    expect(result.text).toContain("Operand 1: unavailable; unavailable_access");
+    expect(result.failed).toBe(true);
+  });
+
   it("keeps several valid directories in supplied order with independent entries", async () => {
     for (const name of ["first dir", ".second"]) {
       await fs.ensureDir(path.join(workspace, name));
@@ -160,7 +180,11 @@ describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
     await fs.ensureDir(path.join(workspace, "ignored"));
     await fs.writeFile(path.join(workspace, ".spektaignore"), "ignored\n");
     await fs.ensureDir(outside);
-    await fs.symlink(outside, path.join(workspace, "escape"));
+    await fs.symlink(
+      outside,
+      path.join(workspace, "escape"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
     const denied = [".env", "ignored", outside, "escape", "missing-private"];
     const outputs = [];
     for (const item of denied) outputs.push(await invoke(transport, [item]));

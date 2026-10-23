@@ -11,7 +11,7 @@
   },
   "scripts": {
     "build": "vite build",
-    "deploy": "npm run build && chmod +x dist/index.js dist/codex-hook.js && npm link .",
+    "deploy": "npm run build && node scripts/deploy.mjs",
     "test": "vitest",
     "test:repl-color": "node scripts/verify-repl-color-policy.mjs",
     "test:codex-hook": "vitest run src/codex-hook*.test.ts",

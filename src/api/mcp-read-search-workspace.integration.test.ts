@@ -56,6 +56,27 @@ describe("CLI and existing MCP workspace boundaries", () => {
       expect(output.join("")).not.toContain("sibling.txt");
     },
   );
+  it("reads and searches relative paths with either separator and spaces", async () => {
+    await fs.ensureDir(path.join(fixture.root, "nested dir"));
+    await fs.writeFile(
+      path.join(fixture.root, "nested dir", "entry file.txt"),
+      "needle WINDOWS_PATH_INPUT\n",
+    );
+
+    for (const target of [
+      "nested dir/entry file.txt",
+      String.raw`nested dir\entry file.txt`,
+      path.join(fixture.root, "nested dir", "entry file.txt"),
+    ]) {
+      const read = await TOOL_REGISTRY.spekta_read.handler({ paths: [target] });
+      expect(read.content[0].text).toContain("WINDOWS_PATH_INPUT");
+      const search = await TOOL_REGISTRY.spekta_rg.handler({
+        patterns: ["WINDOWS_PATH_INPUT"],
+        paths: [target],
+      });
+      expect(search.content[0].text).toContain("WINDOWS_PATH_INPUT");
+    }
+  });
   it("CLI commands deny symlink escapes", async () => {
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {

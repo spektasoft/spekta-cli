@@ -16,23 +16,24 @@ beforeEach(() => {
   fs.symlinkSync(
     path.join(fixture, "outside"),
     path.join(workspace, "escape"),
-    "dir",
+    process.platform === "win32" ? "junction" : "dir",
   );
   fs.symlinkSync(
     path.join(workspace, ".env"),
     path.join(workspace, "restricted-alias"),
-    "dir",
+    process.platform === "win32" ? "junction" : "dir",
   );
   fs.symlinkSync(
     path.join(workspace, "src"),
     path.join(workspace, "alias"),
-    "dir",
+    process.platform === "win32" ? "junction" : "dir",
   );
-  fs.symlinkSync(
-    path.join(workspace, "absent"),
-    path.join(workspace, "dangling"),
-    "dir",
-  );
+  if (process.platform !== "win32")
+    fs.symlinkSync(
+      path.join(workspace, "absent"),
+      path.join(workspace, "dangling"),
+      "dir",
+    );
   vi.spyOn(process, "cwd").mockReturnValue(workspace);
 });
 afterEach(() => {
@@ -47,6 +48,8 @@ describe("explicit proxy paths", () => {
     "src/deleted.txt",
     "-file",
     "space name",
+    String.raw`src\file`,
+    String.raw`nested dir\space file.txt`,
     "alias/deleted.txt",
     "..internal",
   ])("accepts ordinary path %s", (operand) => {
@@ -83,20 +86,15 @@ describe("explicit proxy paths", () => {
       );
     },
   );
-  it.each([
-    ":(top)file",
-    "*.ts",
-    "file?",
-    "[abc]",
-    String.raw`src\file`,
-    "~/file",
-    "file:part",
-  ])("rejects unsupported syntax %s", (operand) => {
-    expect(() => validateProxyPathOperand(operand)).toThrow(
-      /unsupported Git path/i,
-    );
-  });
-  it.each(["dangling", "dangling/missing"])(
+  it.each([":(top)file", "*.ts", "file?", "[abc]", "~/file", "file:part"])(
+    "rejects unsupported syntax %s",
+    (operand) => {
+      expect(() => validateProxyPathOperand(operand)).toThrow(
+        /unsupported Git path/i,
+      );
+    },
+  );
+  it.each(process.platform === "win32" ? [] : ["dangling", "dangling/missing"])(
     "fails closed for %s",
     (operand) => {
       expect(() => validateProxyPathOperand(operand)).toThrow();

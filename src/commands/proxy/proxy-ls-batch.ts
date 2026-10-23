@@ -15,6 +15,7 @@ import {
 import type { FailureOutcome } from "../../core/operation-outcome";
 import { getTokenCount } from "../../utils/read-utils";
 import {
+  normalizeWorkspacePath,
   resolveWorkspace,
   type ResolvedWorkspace,
   type WorkspaceContext,
@@ -157,8 +158,9 @@ async function resolveListDirectory(
   context: WorkspaceContext | undefined,
 ): Promise<boolean> {
   try {
-    validateCommandArguments([operand], context);
-    const target = path.resolve(workspace.root, operand);
+    const normalizedOperand = normalizeWorkspacePath(operand);
+    validateCommandArguments([normalizedOperand], context);
+    const target = path.resolve(workspace.root, normalizedOperand);
     const canonical = await fs.realpath(target);
     const relative = path.relative(workspace.canonicalRoot, canonical);
     if (
@@ -271,14 +273,15 @@ export async function getListBatchOutcome(
       if (!slot.available) continue;
       attempted++;
       try {
-        const result = await options.runLs(slot.operand);
+        const normalizedOperand = normalizeWorkspacePath(slot.operand);
+        const result = await options.runLs(normalizedOperand);
         if (result.exitCode !== 0) {
           slot.status = "internal_failure";
           continue;
         }
         const filtered = await filterEligibleLsEntries(
           result.stdout,
-          slot.operand,
+          normalizedOperand,
           resolved,
         );
         if (filtered.status !== "success") {
