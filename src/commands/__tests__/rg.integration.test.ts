@@ -626,6 +626,36 @@ describe("spekta rg public boundaries", () => {
     );
   });
 
+  it("searches a contained absolute root through CLI and MCP", async ({
+    skip,
+  }) => {
+    if (!rtkAvailable) skip();
+    const absoluteRoot = path.resolve(fixture.root);
+    await fs.writeFile(
+      path.join(absoluteRoot, "absolute.txt"),
+      "needle absolute root\n",
+    );
+    process.chdir(fixture.root);
+
+    const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    await runRg(["-e", "needle", absoluteRoot]);
+    const cliText = normalizeReportedPaths(
+      write.mock.calls.map(([chunk]) => String(chunk)).join(""),
+    );
+    write.mockRestore();
+    expect(cliText).toContain("absolute.txt");
+    expect(cliText).toContain("needle absolute root");
+
+    const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+      { patterns: ["needle"], paths: [absoluteRoot] },
+      { root: fixture.root },
+    );
+    const mcpText = normalizeReportedPaths(mcp.content[0]?.text ?? "");
+    expect(mcp.isError).toBeUndefined();
+    expect(mcpText).toContain("absolute.txt");
+    expect(mcpText).toContain("needle absolute root");
+  });
+
   it("reports missing RTK without exposing process diagnostics", async () => {
     const emptyPath = await fs.mkdtemp(path.join(os.tmpdir(), "no-rtk-"));
     process.env.PATH = emptyPath;
