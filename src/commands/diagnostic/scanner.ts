@@ -135,6 +135,18 @@ export function classifyAnalysis(
   compactThreshold: number,
   readTokenLimit: number,
 ): DiagnosticFinding | undefined {
+  if (analysis.finalTokens === undefined) {
+    return {
+      path: "",
+      status: "Analysis incomplete",
+      rawTokens: analysis.rawTokens,
+      isCompacted: false,
+      compactionWarning:
+        analysis.compactionWarning ??
+        "Compaction analysis is unavailable; only raw token counts are reported.",
+    };
+  }
+
   if (analysis.rawTokens <= compactThreshold) {
     if (analysis.finalTokens > readTokenLimit) {
       return {

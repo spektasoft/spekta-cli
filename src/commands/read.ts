@@ -28,6 +28,10 @@ import {
 import { formatReadOutput } from "./read-formatter";
 import { getReadBatchOutcome } from "./read-batch";
 import { compactFile } from "../utils/compactor";
+import {
+  isStructuralOverviewUnavailable,
+  WINDOWS_OVERVIEW_UNAVAILABLE,
+} from "../utils/parser-capabilities";
 
 function measureReadResponse(
   text: string,
@@ -260,6 +264,16 @@ export async function getReadOutcome(
         )
       : readUsageFailure(requestId);
 
+  if (overview && isStructuralOverviewUnavailable()) {
+    return boundedReadFailure(
+      "policy_rejection",
+      WINDOWS_OVERVIEW_UNAVAILABLE,
+      requestId,
+      suffix,
+      allowance ?? getReadTokenLimit(),
+    );
+  }
+
   if (requests.length > 1) {
     const limit = allowance ?? getReadTokenLimit();
     const budget =
@@ -270,10 +284,6 @@ export async function getReadOutcome(
       budget,
       measure: (text, isError) =>
         responseTokens(text, requestId, isError, suffix),
-      metadataBytes: (text) =>
-        measureReadResponse(text, requestId, true, suffix, (value) =>
-          Buffer.byteLength(value, "utf8"),
-        ),
       failure: (message) =>
         boundedReadFailure(
           "output_limit_exceeded",

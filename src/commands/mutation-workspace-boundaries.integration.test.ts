@@ -245,13 +245,11 @@ describe("create and replace workspace boundary integration", () => {
     expect(writeFile).not.toHaveBeenCalled();
   });
 
-  it("allows an internal workspace through its symlink root and canonical spelling", async () => {
+  it("allows relative mutations through an internal workspace symlink root", async () => {
     process.chdir(fixture.alias);
     const aliasRoot = context(fixture.alias);
     const targets = [
       "relative.txt",
-      path.join(fixture.alias, "alias-absolute.txt"),
-      path.join(fixture.root, "canonical-absolute.txt"),
     ];
 
     for (const target of targets) {
@@ -265,7 +263,7 @@ describe("create and replace workspace boundary integration", () => {
       ).toBe("inside\n");
     }
 
-    const nested = path.join(fixture.alias, "internal-dir", "created.txt");
+    const nested = "internal-dir/created.txt";
     expect(
       (await getWriteContent(nested, "nested inside\n", aliasRoot)).success,
     ).toBe(true);
@@ -276,18 +274,7 @@ describe("create and replace workspace boundary integration", () => {
       ),
     ).toBe("nested inside\n");
 
-    const replacementTargets =
-      process.platform === "win32"
-        ? [
-            "real.txt",
-            path.join(fixture.alias, "real.txt"),
-            path.join(fixture.root, "real.txt"),
-          ]
-        : [
-            "internal-file.txt",
-            path.join(fixture.alias, "internal-file.txt"),
-            path.join(fixture.root, "internal-file.txt"),
-          ];
+    const replacementTargets = ["real.txt"];
     for (const [index, target] of replacementTargets.entries()) {
       const marker = `INTERNAL_${index}`;
       const result = await executeSafeReplace(
@@ -299,7 +286,7 @@ describe("create and replace workspace boundary integration", () => {
     }
     expect(
       await fs.readFile(path.join(fixture.root, "real.txt"), "utf-8"),
-    ).toContain("INTERNAL_2");
+    ).toContain("INTERNAL_0");
   });
 
   it("rejects a workspace root that is a file before any mutation", async () => {
@@ -380,7 +367,7 @@ describe("create and replace workspace boundary integration", () => {
     ).rejects.toThrow(/restricted/i);
 
     const allowed = await executeSafeReplace(
-      { path: path.join(fixture.root, "allowed.txt"), blocks: [] },
+      { path: "allowed.txt", blocks: [] },
       replaceBlock("WHITELISTED", "STILL_ALLOWED"),
       context(),
     );

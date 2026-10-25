@@ -74,21 +74,6 @@ function measureFindMcpResponse(
   return getTokenCount(`${response}\n`);
 }
 
-function measureFindMcpBytes(
-  text: string,
-  isError: boolean,
-  requestId?: string | number,
-): number {
-  // See measureFindMcpResponse: no-ID direct calls have no JSON-RPC envelope.
-  if (requestId === undefined) return Buffer.byteLength(text, "utf8");
-  const response = JSON.stringify({
-    jsonrpc: "2.0",
-    id: requestId,
-    result: { isError, content: [{ type: "text", text }] },
-  });
-  return Buffer.byteLength(`${response}\n`, "utf8");
-}
-
 export interface McpToolResponse {
   content: Array<{
     type: "text";
@@ -568,8 +553,6 @@ const registry: Record<string, ToolRegistryEntry> = {
               : "",
           measure: (text, isError) =>
             measureFindMcpResponse(text, isError, requestId),
-          metadataBytes: (text, isError) =>
-            measureFindMcpBytes(text, isError, requestId),
           hasRtk: await isRtkAvailable(),
           backend: async (operand, predicates) => {
             const result = await executeRtkCommand(

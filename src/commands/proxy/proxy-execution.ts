@@ -1,6 +1,34 @@
 import { execa } from "execa";
+import { statSync } from "node:fs";
 import path from "path";
 import type { WorkspaceContext } from "../../utils/workspace";
+
+function isRtkExecutableOnWindowsPath(): boolean {
+  if (process.platform !== "win32") return true;
+  const pathEntries = (process.env.PATH ?? process.env.Path ?? "").split(
+    path.delimiter,
+  );
+  const extensions = [
+    "",
+    ...new Set(
+      (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
+        .split(";")
+        .filter(Boolean),
+    ),
+  ];
+  for (const entry of pathEntries) {
+    const directory = entry.replace(/^"(.*)"$/, "$1") || process.cwd();
+    for (const extension of extensions) {
+      try {
+        if (statSync(path.resolve(directory, `rtk${extension}`)).isFile())
+          return true;
+      } catch {
+        // Missing PATH candidates are expected while searching.
+      }
+    }
+  }
+  return false;
+}
 
 export type RtkExecutionResult =
   | {
@@ -205,6 +233,10 @@ export async function executeRtkCommand(
   args: string[],
   context?: WorkspaceContext,
 ): Promise<RtkExecutionResult> {
+  // On Windows, Execa may successfully start cmd.exe for a missing .cmd shim
+  // and report its nonzero shell exit as an RTK failure. Resolve the executable
+  // first so callers can distinguish an absent RTK from a failing RTK command.
+  if (!isRtkExecutableOnWindowsPath()) return { available: false };
   const invocation = prepareRtkInvocation(command, args, context);
   try {
     const result = await execa("rtk", invocation.args, {

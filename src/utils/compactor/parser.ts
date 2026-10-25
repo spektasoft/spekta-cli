@@ -1,23 +1,32 @@
 import path from "path";
-import treeSitterPack from "@xberg-io/tree-sitter-language-pack";
+import { createRequire } from "node:module";
 
 type TreeSitterPackModule =
   typeof import("@xberg-io/tree-sitter-language-pack");
-const pack = treeSitterPack as unknown as TreeSitterPackModule & {
-  default?: TreeSitterPackModule;
-};
-const getParser: TreeSitterPackModule["getParser"] =
-  typeof pack.getParser === "function"
-    ? pack.getParser
-    : pack.default!.getParser;
-const detectLanguage: TreeSitterPackModule["detectLanguage"] =
-  typeof pack.detectLanguage === "function"
-    ? pack.detectLanguage
-    : pack.default!.detectLanguage;
-const hasLanguage: TreeSitterPackModule["hasLanguage"] =
-  typeof pack.hasLanguage === "function"
-    ? pack.hasLanguage
-    : pack.default!.hasLanguage;
+const require = createRequire(import.meta.url);
+let pack: TreeSitterPackModule | undefined;
+type Parser = ReturnType<TreeSitterPackModule["getParser"]>;
+
+function getTreeSitterPack(): TreeSitterPackModule {
+  if (process.platform === "win32") {
+    throw new Error("Structural overview is unavailable on Windows.");
+  }
+  if (!pack) {
+    const loaded = require(
+      "@xberg-io/tree-sitter-language-pack",
+    ) as Partial<TreeSitterPackModule> & {
+      default?: TreeSitterPackModule;
+    };
+    pack =
+      typeof loaded.getParser === "function"
+        ? (loaded as TreeSitterPackModule)
+        : loaded.default;
+    if (!pack) {
+      throw new Error("Tree-sitter language pack has no parser exports.");
+    }
+  }
+  return pack;
+}
 
 // Languages verified to have node-kind coverage in ast.ts (FUNCTION_NODE_KINDS /
 // CONTAINER_NODE_KINDS). The pack supports 371 languages total; anything outside
@@ -36,16 +45,14 @@ export const KNOWN_COMPACTABLE_LANGUAGES = new Set([
   "python",
 ]);
 
-const parserCache = new Map<string, ReturnType<typeof getParser>>();
+const parserCache = new Map<string, Parser>();
 
-export function getOrCreateParser(
-  language: string,
-): ReturnType<typeof getParser> {
+export function getOrCreateParser(language: string): Parser {
   const cached = parserCache.get(language);
   if (cached) {
     return cached;
   }
-  const parser = getParser(language);
+  const parser = getTreeSitterPack().getParser(language);
   parserCache.set(language, parser);
   return parser;
 }
@@ -55,8 +62,9 @@ export function resolveLanguage(filePath: string): string {
   if (baseName.endsWith(".blade.php")) {
     return "php";
   }
-  const detected = detectLanguage(filePath);
-  if (!detected || !hasLanguage(detected)) {
+  const parserPack = getTreeSitterPack();
+  const detected = parserPack.detectLanguage(filePath);
+  if (!detected || !parserPack.hasLanguage(detected)) {
     throw new Error(
       `Tree-sitter compaction failed: unsupported file extension for "${filePath}"`,
     );

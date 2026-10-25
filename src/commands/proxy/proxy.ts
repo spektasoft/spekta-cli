@@ -241,8 +241,6 @@ export async function runRtkProxy(
         validationAllowance: settings.defaultTokens,
         maximumAllowance: settings.ceilingTokens,
         measure: findCliMeasure,
-        metadataBytes: (text, isError) =>
-          Buffer.byteLength(findCliResponse(text, isError), "utf8"),
         backend: () =>
           Promise.reject(new Error("unreachable after parser rejection")),
         hasRtk: true,
@@ -342,8 +340,6 @@ export async function runRtkProxy(
                   ? ` A larger allowance up to ${settings.ceilingTokens} tokens is supported.`
                   : "",
               measure: findCliMeasure,
-              metadataBytes: (text, isError) =>
-                Buffer.byteLength(findCliResponse(text, isError), "utf8"),
               hasRtk: await isRtkAvailable(),
               backend: async (operand, predicates) => {
                 const result = await executeRtkCommand(

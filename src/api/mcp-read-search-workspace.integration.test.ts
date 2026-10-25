@@ -14,6 +14,10 @@ import { getTokenCount } from "../utils/read-utils";
 import * as readUtils from "../utils/read-utils";
 import { serializeMcpToolReply } from "../__tests__/mcp-response-test-utils";
 
+vi.setConfig({
+  testTimeout: process.platform === "win32" ? 30_000 : 5_000,
+});
+
 let fixture: WorkspaceFixture;
 let originalExitCode: typeof process.exitCode;
 beforeEach(async () => {
@@ -76,7 +80,7 @@ describe("CLI and existing MCP workspace boundaries", () => {
       });
       expect(search.content[0].text).toContain("WINDOWS_PATH_INPUT");
     }
-  });
+  }, process.platform === "win32" ? 30_000 : undefined);
   it("CLI commands deny symlink escapes", async () => {
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
@@ -123,7 +127,7 @@ describe("CLI and existing MCP workspace boundaries", () => {
         expect(fields).not.toContain("EXTERNAL");
       }
     }
-  });
+  }, process.platform === "win32" ? 30_000 : undefined);
 
   it("bounds a formatted read delivered through the MCP handler", async () => {
     const previousLimit = process.env.SPEKTA_READ_TOKEN_LIMIT;
@@ -202,7 +206,7 @@ describe("CLI and existing MCP workspace boundaries", () => {
     expect(firstSearch.content[0].text).toContain("INTERNAL");
     expect(firstSearch.content[0].text).not.toContain("WRONG_CWD");
     expect(secondSearch.content[0].text).toContain("SECOND_IGNORED");
-  });
+  }, process.platform === "win32" ? 30_000 : undefined);
 
   it("bound MCP mutations reject traversal and symlink escapes", async () => {
     const tools = createToolRegistry({ root: fixture.root });

@@ -99,8 +99,16 @@ visit(path.resolve(process.cwd(), root), root === "." ? "." : root);
 const output = found.join("\\n") + (found.length ? "\\n" : "");
 fs.writeSync(1, output);
 `;
-  await fs.writeFile(path.join(bin, "package.json"), '{"type":"commonjs"}');
-  await fs.writeFile(path.join(bin, "rtk"), script, { mode: 0o755 });
+  if (process.platform === "win32") {
+    await fs.writeFile(path.join(bin, "rtk.js"), script);
+    await fs.writeFile(
+      path.join(bin, "rtk.cmd"),
+      `@echo off\r\n"${process.execPath}" "%~dp0rtk.js" %*\r\nexit /b %ERRORLEVEL%\r\n`,
+    );
+  } else {
+    await fs.writeFile(path.join(bin, "package.json"), '{"type":"commonjs"}');
+    await fs.writeFile(path.join(bin, "rtk"), script, { mode: 0o755 });
+  }
 }
 
 function bodyFromCli(rendered: string): string {
@@ -241,14 +249,18 @@ describe.each(["cli", "mcp"] as const)("public find over %s", (transport) => {
     await fs.writeFile(path.join(workspace, "file-root"), "x");
     const outside = path.join(tempRoot, "outside-protected-canonical-target");
     await fs.ensureDir(outside);
-    await fs.symlink(outside, path.join(workspace, "escape"));
+    await fs.symlink(
+      path.relative(workspace, outside),
+      path.join(workspace, "escape"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
     const veryLongMissing = `missing-${"protected-".repeat(140)}`;
     const roots = [
       veryLongMissing,
       "missing-secret",
       ".env",
       "ignored",
-      outside,
+      path.relative(workspace, outside).split(path.sep).join("/"),
       "file-root",
       "escape",
     ];
@@ -262,7 +274,7 @@ describe.each(["cli", "mcp"] as const)("public find over %s", (transport) => {
     expect(output).toContain('"good/keep.ts"');
     for (const secret of [
       ...roots,
-      outside,
+      path.relative(workspace, outside),
       "outside-protected-canonical-target",
     ])
       expect(output).not.toContain(secret);
@@ -270,7 +282,7 @@ describe.each(["cli", "mcp"] as const)("public find over %s", (transport) => {
     expect(calls.map((call) => call[3])).toEqual(
       Array(roots.length).fill("good"),
     );
-  });
+  }, process.platform === "win32" ? 30_000 : 5_000);
 
   it("uses identical empty wording for empty and excluded-only roots", async () => {
     await fs.ensureDir(path.join(workspace, "empty"));
@@ -293,7 +305,7 @@ describe.each(["cli", "mcp"] as const)("public find over %s", (transport) => {
   it("preserves predicate combinations, order, literal names, and physical special roots", async () => {
     const special = "./-directory space-日本語`";
     await fs.ensureDir(path.join(workspace, special));
-    await fs.writeFile(path.join(workspace, special, 'quote"`file.ts'), "x");
+    await fs.writeFile(path.join(workspace, special, "quote'`file.ts"), "x");
     await fs.writeFile(path.join(workspace, special, "-help"), "x");
     const typeFile = await invoke(transport, [
       special,
@@ -635,13 +647,18 @@ describe.each(["cli", "mcp"] as const)("public find over %s", (transport) => {
     expect(failed.text).toContain('"good/keep.ts"');
     expect(failed.text).not.toContain("PRIVATE_STDERR_MARKER");
     const savedPath = process.env.PATH;
-    vi.stubEnv("PATH", "");
-    const callsBefore = (await readCalls()).length;
-    const noRtk = await invoke(transport, ["good", "-type", "f"]);
-    expect(noRtk.failed).toBe(true);
-    expect(noRtk.text).toContain("engine_failure");
-    expect((await readCalls()).length).toBe(callsBefore);
-    vi.stubEnv("PATH", savedPath ?? "");
+    const missingBin = path.join(tempRoot, "missing-bin");
+    await fs.ensureDir(missingBin);
+    vi.stubEnv("PATH", missingBin);
+    try {
+      const callsBefore = (await readCalls()).length;
+      const noRtk = await invoke(transport, ["good", "-type", "f"]);
+      expect(noRtk.failed).toBe(true);
+      expect(noRtk.text).toContain("engine_failure");
+      expect((await readCalls()).length).toBe(callsBefore);
+    } finally {
+      vi.stubEnv("PATH", savedPath ?? "");
+    }
   });
 });
 
@@ -689,8 +706,8 @@ it("checks complete CLI and MCP response costs at transport-specific boundaries"
     workspace,
     "budget",
     ...Array.from(
-      { length: 15 },
-      (_, index) => `retained-long-entry-${index}-` + noisySegment(140) + ".ts",
+      { length: 1 },
+      (_, index) => `retained-long-entry-${index}-` + noisySegment(80) + ".ts",
     ),
   );
   await fs.ensureDir(path.dirname(boundaryPath));

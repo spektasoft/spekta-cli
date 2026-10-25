@@ -14,15 +14,14 @@ export interface BatchOperandOutcome {
 }
 
 /**
- * Admission must happen before content retrieval.
- * maximumMetadataBytes includes the complete transport envelope and notices.
- * UTF-8 byte length conservatively bounds the byte-based tokenizer's tokens.
+ * Admission must happen before content retrieval. The count and budget must
+ * use the same transport-specific token measure.
  */
 export function admitBatchMetadata(
-  maximumMetadataBytes: number,
+  maximumMetadataTokens: number,
   responseBudget: number,
 ): boolean {
-  return maximumMetadataBytes <= responseBudget;
+  return maximumMetadataTokens <= responseBudget;
 }
 
 /**

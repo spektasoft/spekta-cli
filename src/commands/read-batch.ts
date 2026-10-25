@@ -36,7 +36,6 @@ interface BatchSlot {
 interface ReadBatchOptions {
   budget: number;
   measure: (text: string, isError: boolean) => number;
-  metadataBytes: (text: string) => number;
   failure: (message: string) => FailureOutcome;
   increaseHint: string;
   overview: boolean;
@@ -71,28 +70,39 @@ function renderOutcomeRow(
   return `Operand ${position}: ${status}${details[status]}\n`;
 }
 
-function renderSlot(slot: BatchSlot, count: number, reserve = false): string {
+function mostExpensiveResponse(
+  candidates: string[],
+  measure: ReadBatchOptions["measure"],
+): string {
+  const responseTokens = (text: string) =>
+    Math.max(measure(text, true), measure(text, false));
+  return candidates.reduce((largest, candidate) =>
+    responseTokens(candidate) > responseTokens(largest) ? candidate : largest,
+  );
+}
+
+function renderSlot(
+  slot: BatchSlot,
+  count: number,
+  measure: ReadBatchOptions["measure"],
+  reserve = false,
+): string {
   const request = slot.request;
   const start = request.range?.start ?? 1;
 
   if (!slot.data && !(reserve && slot.readPath)) {
     if (!reserve) return renderOutcomeRow(slot.position, slot.status, start);
-    return [
-      "unavailable",
-      "unattempted",
-      "version_mismatch",
-      "internal_failure",
-    ]
-      .map((status) =>
-        renderOutcomeRow(
-          slot.position,
-          status as BatchOperandStatus,
-          MAX_NUMBER,
-        ),
-      )
-      .sort(
-        (left, right) => Buffer.byteLength(right) - Buffer.byteLength(left),
-      )[0];
+    return mostExpensiveResponse(
+      ["unavailable", "unattempted", "version_mismatch", "internal_failure"].map(
+        (status) =>
+          renderOutcomeRow(
+            slot.position,
+            status as BatchOperandStatus,
+            MAX_NUMBER,
+          ),
+      ),
+      measure,
+    );
   }
 
   if (reserve && slot.overview && slot.readPath) {
@@ -111,9 +121,7 @@ function renderSlot(slot: BatchSlot, count: number, reserve = false): string {
       `\`\`\`${extension}\n\n\`\`\`\n` +
       originalRange +
       `Next range: ${request.path}[${MAX_NUMBER},${MAX_NUMBER}]; use Version as expected version\n`;
-    return Buffer.byteLength(structural) >= Buffer.byteLength(fallback)
-      ? structural
-      : fallback;
+    return mostExpensiveResponse([structural, fallback], measure);
   }
 
   const status = reserve ? "budget_limited" : statusFor(slot, count);
@@ -168,6 +176,7 @@ function renderBatch(
   slots: readonly BatchSlot[],
   counts: readonly number[],
   increaseHint: string,
+  measure: ReadBatchOptions["measure"],
   reserve = false,
 ): string {
   const partial =
@@ -189,7 +198,9 @@ function renderBatch(
   return (
     prefix +
     slots
-      .map((slot, position) => renderSlot(slot, counts[position], reserve))
+      .map((slot, position) =>
+        renderSlot(slot, counts[position], measure, reserve),
+      )
       .join("")
   );
 }
@@ -227,7 +238,7 @@ export async function getReadBatchOutcome(
   try {
     resolvedWorkspace = await resolveWorkspace(workspace);
   } catch {
-    const text = renderBatch(slots, zeros, options.increaseHint);
+    const text = renderBatch(slots, zeros, options.increaseHint, options.measure);
     if (options.measure(text, true) > options.budget) return rejectMetadata();
     return {
       status: "partial_result",
@@ -247,8 +258,18 @@ export async function getReadBatchOutcome(
     }
   }
 
-  const reservation = renderBatch(slots, zeros, options.increaseHint, true);
-  if (!admitBatchMetadata(options.metadataBytes(reservation), options.budget))
+  const reservation = renderBatch(
+    slots,
+    zeros,
+    options.increaseHint,
+    options.measure,
+    true,
+  );
+  const reservationTokens = Math.max(
+    options.measure(reservation, true),
+    options.measure(reservation, false),
+  );
+  if (!admitBatchMetadata(reservationTokens, options.budget))
     return rejectMetadata();
 
   for (const slot of slots) {
@@ -310,7 +331,7 @@ export async function getReadBatchOutcome(
   }
 
   const render = (counts: readonly number[]) =>
-    renderBatch(slots, counts, options.increaseHint);
+    renderBatch(slots, counts, options.increaseHint, options.measure);
   if (options.measure(render(zeros), true) > options.budget)
     return rejectMetadata();
 

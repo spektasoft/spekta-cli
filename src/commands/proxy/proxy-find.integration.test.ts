@@ -319,7 +319,7 @@ describe("restricted find CLI and MCP parity", () => {
   it("reports external and escaping symlink roots as unavailable", async () => {
     const roots = [
       "../outside",
-      path.join(fixture, "outside"),
+      path.relative(workspace, path.join(fixture, "outside")),
       "escape",
       "escape/missing/child",
     ];
@@ -331,7 +331,7 @@ describe("restricted find CLI and MCP parity", () => {
     await expectRejected([String.raw`C:\outside`], /usage_error/i);
     await expectRejected([String.raw`\\server\share\outside`], /usage_error/i);
     process.exitCode = undefined;
-    await runRtkProxy("find", [workspace]);
+    await runRtkProxy("find", ["."]);
     expect(process.exitCode).toBeUndefined();
   });
 

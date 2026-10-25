@@ -6,6 +6,7 @@ import { getTokenCount } from "../utils/read-utils";
 import { isPathIgnored } from "../utils/path-ignore";
 import { validateReadPathAccess } from "../utils/security";
 import type { OperationOutcome } from "../core/operation-outcome";
+import { terminateWindowsProcessTree } from "../utils/terminate-process-tree";
 
 type GrepOutputOutcome = Exclude<
   OperationOutcome<string>,
@@ -199,6 +200,7 @@ export async function parseGrepOutput(
     );
   let exceeded = false;
   let cancellationRequested = false;
+  let terminationPromise: Promise<void> | undefined;
   const eligibilityCache = new Map<string, string | null>();
   const seenMatches = new Set<string>();
   const stopForLimit = () => {
@@ -214,7 +216,7 @@ export async function parseGrepOutput(
         // Fall through to the direct child handle if the group has exited.
       }
     }
-    child.kill?.();
+    terminationPromise ??= terminateWindowsProcessTree(child);
   };
   const stopForInterrupt = () => {
     cancellationRequested = true;
@@ -226,7 +228,7 @@ export async function parseGrepOutput(
         /* already exited */
       }
     }
-    child.kill?.();
+    terminationPromise ??= terminateWindowsProcessTree(child);
   };
   if (context?.signal?.aborted) stopForInterrupt();
   else
@@ -352,6 +354,7 @@ export async function parseGrepOutput(
     }
   }
 
+  await terminationPromise;
   const completion = await childCompletion;
   context?.signal?.removeEventListener("abort", stopForInterrupt);
   const termination = context?.getTermination?.();

@@ -15,11 +15,17 @@ npm run deploy
 
 The install command installs dependencies declared by this checkout without creating or updating a package lockfile. The deploy command builds Spekta and globally links both executables: `spekta` and `spekta-codex-hook`. This repository checkout is the supported installation route described here; there is no published-package installation command in this guide.
 
+### Windows NVM relink troubleshooting
+
+On Windows with an NVM-managed Node installation, `npm run deploy` can finish its build and then report `EEXIST` while `npm link` checks an existing `spekta` or `spekta-codex-hook` shim. Do not assume every `EEXIST` is harmless: first verify that the global `node_modules/spekta-cli` link targets this checkout. When that link is verified, the completed build has already updated the linked CLI through the checkout's `dist` directory; `npm run build` can update that output without relinking. This Windows-only build shortcut does not repair or refresh a wrong link; on Unix, use `npm run deploy` so the entrypoint executable permissions are restored. Do not delete existing shims or use `--force` based on `EEXIST` alone.
+
+If PowerShell blocks the `npm.ps1` or `spekta.ps1` launcher, invoke `npm.cmd` or `spekta.cmd` instead; no execution-policy change is needed.
+
 ### Windows x64 support status
 
-**Current:** Native Windows startup is blocked by the installed Tree-sitter parser artifact. The production build and local npm link have succeeded, but invoking `spekta` still fails while loading that native module.
+**Current:** The Windows Tree-sitter artifact cannot be loaded, so parser-backed features are isolated from normal CLI startup. Ordinary reads, batch reads, and search remain available. Structural read overview is explicitly unavailable on Windows. Diagnostics retain raw token counts and mark compaction analysis unavailable when a file exceeds the compaction threshold; they do not report fabricated compacted counts. Linux/WSL continues to use the parser-backed behavior.
 
-**Planned:** Windows-specific isolation of parser-backed features has not been implemented. The planned behavior is to report structural read overview as unavailable on Windows and retain diagnostic raw token counts while clearly reporting that compaction analysis is unavailable. Ordinary reads, batching, and search are expected to work on Windows only after parser loading is isolated and those commands are verified. Linux/WSL parser-backed behavior is intended to remain available. Windows overview support will be reconsidered after a specific package version and artifact pass native loading, real parsing, and relevant regression checks.
+Windows structural overview support will be reconsidered after a specific package version and artifact pass native loading, a real parser operation, and relevant regression checks.
 
 ## First use
 

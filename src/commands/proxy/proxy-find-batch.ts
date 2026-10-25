@@ -30,10 +30,6 @@ export type FindBatchMeasure = (text: string, isError: boolean) => number;
  * `text` exactly once in its fixed response body and escape it character by
  * character (the supported CLI formatter and MCP JSON envelope satisfy this).
  */
-export type FindBatchMetadataMeasure = (
-  text: string,
-  isError: boolean,
-) => number;
 export type FindBatchBackend = (
   root: string,
   predicateArgs: readonly string[],
@@ -171,12 +167,6 @@ export interface FindBatchOptions {
   /** Empty at the configured ceiling; otherwise bounded configured recovery text. */
   increaseHint?: string;
   measure: FindBatchMeasure;
-  /**
-   * UTF-8 bytes of the complete rendered transport response for `text`.
-   * The transport must insert `text` once into a fixed envelope and escape it
-   * with JSON serialization or the CLI's fixed formatter.
-   */
-  metadataBytes: FindBatchMetadataMeasure;
   backend: FindBatchBackend;
   hasRtk: boolean;
 }
@@ -398,34 +388,26 @@ export async function discoverFindBatch(
   // text field, while CLI formatting wraps and redacts that same field. JSON
   // string escaping is character-wise additive; CLI pieces are safe rendered
   // rows (labels are redacted before quoting and all other text is fixed), so
-  // secret redaction cannot match across a row boundary. Sum each component's
-  // measured serialized-byte delta independently. Taking the maximum per row
-  // across both error states and the larger empty envelope bounds every
-  // cross-root combination, including the error badge / isError transition.
+  // secret redaction cannot match across a row boundary. Choose each slot's
+  // largest metadata form using the transport's token measure, then measure
+  // the combined response in those same token units as its allowance.
   const states = [true, false] as const;
-  const serializedDelta = (text: string, isError: boolean) =>
-    Math.max(
-      0,
-      options.metadataBytes(text, isError) - options.metadataBytes("", isError),
-    );
-  const responseEnvelopeBytes = Math.max(
-    ...states.map((isError) => options.metadataBytes("", isError)),
+  const reservedRows = candidatesBySlot.map((candidates) =>
+    candidates.reduce((largest, candidate) => {
+      const candidateTokens = Math.max(
+        ...states.map((isError) => options.measure(candidate, isError)),
+      );
+      const largestTokens = Math.max(
+        ...states.map((isError) => options.measure(largest, isError)),
+      );
+      return candidateTokens > largestTokens ? candidate : largest;
+    }),
   );
-  const headerBytes = Math.max(
-    ...states.map((isError) => serializedDelta(reserveHeader, isError)),
+  const reservedMetadata = `${reserveHeader}${reservedRows.join("")}`;
+  const metadataTokenBound = Math.max(
+    ...states.map((isError) => options.measure(reservedMetadata, isError)),
   );
-  const rowBytes = candidatesBySlot.reduce(
-    (total, candidates) =>
-      total +
-      Math.max(
-        ...candidates.map((row) =>
-          Math.max(...states.map((isError) => serializedDelta(row, isError))),
-        ),
-      ),
-    0,
-  );
-  const metadataByteBound = responseEnvelopeBytes + headerBytes + rowBytes;
-  if (!admitBatchMetadata(metadataByteBound, options.allowance)) {
+  if (!admitBatchMetadata(metadataTokenBound, options.allowance)) {
     const fallback = `output_limit_exceeded: split discovery roots${options.increaseHint ? " or increase the allowance" : ""}.${options.increaseHint ?? ""}\n`;
     return boundedFailure(
       "output_limit_exceeded",

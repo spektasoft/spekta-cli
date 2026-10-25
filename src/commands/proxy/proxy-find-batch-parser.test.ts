@@ -27,6 +27,16 @@ describe("parseFindBatch", () => {
     ).toEqual(["-name", "x", "-type", "d"]);
   });
 
+  it("normalizes Windows relative root separators and keeps POSIX backslashes invalid", () => {
+    if (process.platform === "win32") {
+      expect(parseFindBatch([String.raw`space dir\nested`]).roots).toEqual([
+        "space dir/nested",
+      ]);
+    } else {
+      expect(() => parseFindBatch([String.raw`space dir\nested`])).toThrow();
+    }
+  });
+
   it.each(["-exec", "--help", "../outside", "$(touch nope)", "*.ts"])(
     "consumes %s literally as a name",
     (name) => {

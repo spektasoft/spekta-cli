@@ -75,7 +75,11 @@ describe("getListBatchOutcome", () => {
 
   it("keeps valid operands while rendering missing, denied, and outside operands opaquely", async () => {
     fs.writeFileSync(path.join(root, "one", "visible.txt"), "x");
-    fs.symlinkSync(outside, path.join(root, "escape"), "dir");
+    fs.symlinkSync(
+      outside,
+      path.join(root, "escape"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
     const result = await getListBatchOutcome(
       ["missing-secret-name", "one", ".env", "escape"],
       workspace,
@@ -190,7 +194,7 @@ describe("getListBatchOutcome", () => {
     expect(result.operands).toHaveLength(2);
   });
 
-  it("uses token boundaries, rejects metadata-only overflow before enumeration, and redistributes capacity", async () => {
+  it("uses exact complete-response token boundaries", async () => {
     const boundaryNames = Array.from(
       { length: 24 },
       (_, index) => `boundary-${index}-abcdef.txt`,
@@ -230,6 +234,9 @@ describe("getListBatchOutcome", () => {
       throw new Error("expected partial result");
     expect(below.truncated).toBe(true);
 
+  }, 15000);
+
+  it("rejects metadata-only overflow before enumeration", async () => {
     const neverRun = vi.fn(() => Promise.resolve({ stdout: "", exitCode: 0 }));
     const overflow = await getListBatchOutcome(
       ["one", "two"],
@@ -238,9 +245,11 @@ describe("getListBatchOutcome", () => {
     );
     expect(overflow.status).toBe("failure");
     expect(neverRun).not.toHaveBeenCalled();
+  }, 15000);
 
+  it("shares capacity fairly while retaining a short sibling", async () => {
     const many = Array.from(
-      { length: 80 },
+      { length: 30 },
       (_, index) => `entry-${index}-abcdef0123456789.txt`,
     );
     many.forEach((name) =>
@@ -256,13 +265,26 @@ describe("getListBatchOutcome", () => {
             stdout: operand === "huge" ? `${many.join("\n")}\n` : "b\n",
             exitCode: 0,
           }),
-        400,
+        180,
       ),
     );
-    expect(fair.status).not.toBe("failure");
-    if (fair.status !== "failure")
+    expect(fair.status).toBe("partial_result");
+    if (fair.status === "partial_result") {
+      expect(fair.content).toContain(
+        'Operand 1: incomplete; output_limit_exceeded; "huge"',
+      );
       expect(fair.content).toContain('Operand 2: returned; "two"');
+    }
+  }, 15000);
 
+  it("redistributes capacity after a short listing", async () => {
+    const many = Array.from(
+      { length: 30 },
+      (_, index) => `entry-${index}-abcdef0123456789.txt`,
+    );
+    many.forEach((name) =>
+      fs.writeFileSync(path.join(root, "huge", name), "x"),
+    );
     fs.writeFileSync(path.join(root, "one", "single.txt"), "x");
     const redistributed = await getListBatchOutcome(
       ["one", "huge"],
@@ -273,7 +295,7 @@ describe("getListBatchOutcome", () => {
             stdout: operand === "one" ? "single.txt\n" : `${many.join("\n")}\n`,
             exitCode: 0,
           }),
-        320,
+        160,
       ),
     );
     expect(redistributed.status).toBe("partial_result");

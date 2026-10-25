@@ -139,10 +139,15 @@ function reserveMetadata(slots: ListSlot[], increaseHint: string): string {
         "unattempted",
         "internal_failure",
       ];
-      const longest = candidates
-        .map((status) => row(slot, status))
-        .sort((a, b) => Buffer.byteLength(b) - Buffer.byteLength(a))[0];
-      return longest + (slot.available ? `${EMPTY_LISTING}\n` : "");
+      const rows = candidates.map(
+        (status) =>
+          row(slot, status) + (slot.available ? `${EMPTY_LISTING}\n` : ""),
+      );
+      return rows.reduce((largest, candidate) =>
+        getTokenCount(candidate) > getTokenCount(largest)
+          ? candidate
+          : largest,
+      );
     })
     .join("");
   return (
@@ -253,7 +258,7 @@ export async function getListBatchOutcome(
 
   if (
     !admitBatchMetadata(
-      Buffer.byteLength(reserveMetadata(slots, options.increaseHint), "utf8"),
+      getTokenCount(reserveMetadata(slots, options.increaseHint)),
       options.allowance,
     )
   ) {

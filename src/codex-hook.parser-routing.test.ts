@@ -47,7 +47,11 @@ describe("Codex inspection hook routing boundaries", () => {
     const workspace = mkdtempSync(join(tmpdir(), "spekta-hook-workspace-"));
     const external = mkdtempSync(join(tmpdir(), "spekta-hook-external-"));
     try {
-      symlinkSync(external, join(workspace, "skills"));
+      symlinkSync(
+        external,
+        join(workspace, "skills"),
+        process.platform === "win32" ? "junction" : "dir",
+      );
       const raw = rewriteEvent({
         ...event("cat 'skills/special skill/SKILL.md'"),
         cwd: workspace,
