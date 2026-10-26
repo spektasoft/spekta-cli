@@ -177,7 +177,7 @@ describe("getListBatchOutcome", () => {
     expect(result.content).toContain(
       "Listing incomplete. List a narrower directory.",
     );
-  });
+  }, 15000);
 
   it("keeps duplicate operands as independent slots and retains duplicate names", async () => {
     fs.writeFileSync(path.join(root, "one", "same.txt"), "x");

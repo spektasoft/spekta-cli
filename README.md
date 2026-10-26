@@ -23,7 +23,9 @@ If PowerShell blocks the `npm.ps1` or `spekta.ps1` launcher, invoke `npm.cmd` or
 
 ### Windows x64 support status
 
-**Current:** The Windows Tree-sitter artifact cannot be loaded, so parser-backed features are isolated from normal CLI startup. Ordinary reads, batch reads, and search remain available. Structural read overview is explicitly unavailable on Windows. Diagnostics retain raw token counts and mark compaction analysis unavailable when a file exceeds the compaction threshold; they do not report fabricated compacted counts. Linux/WSL continues to use the parser-backed behavior.
+Native Windows support targets x64 with Node.js 22 or newer and PowerShell 5.1 or CMD. In PowerShell, invoke the Windows shims as `npm.cmd` and `spekta.cmd`; for example, install from this checkout with `npm.cmd install --package-lock=false`, deploy with `npm.cmd run deploy`, then check `spekta.cmd --help`. For Codex hook setup and supported PowerShell rewrite forms, see [Codex setup and compatibility](guides/codex-setup.md). Windows ARM64 is not supported by this release scope and remains unverified.
+
+The Windows Tree-sitter artifact cannot be loaded, so parser-backed features are isolated from normal CLI startup. Ordinary reads, batch reads, and search remain available. Structural read overview is unavailable on Windows. Diagnostics retain raw token counts and mark compaction analysis unavailable when a file exceeds the compaction threshold; they do not report fabricated compacted counts. Linux/WSL continues to use parser-backed behavior.
 
 Windows structural overview support will be reconsidered after a specific package version and artifact pass native loading, a real parser operation, and relevant regression checks.
 

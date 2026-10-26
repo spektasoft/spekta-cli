@@ -29,64 +29,64 @@ describe.skipIf(process.platform !== "win32")(
     it.each([
       [
         "Get-ChildItem -LiteralPath src -Name",
-        "'spekta' 'ls' 'src'",
+        "& 'spekta.cmd' 'ls' 'src'",
       ],
       [
         "Get-ChildItem -LiteralPath 'src/folder with spaces' -Name",
-        "'spekta' 'ls' 'src/folder with spaces'",
+        "& 'spekta.cmd' 'ls' 'src/folder with spaces'",
       ],
       [
         "Get-ChildItem -LiteralPath '.\\src\\folder with spaces' -Recurse",
-        "'spekta' 'find' '.\\src\\folder with spaces'",
+        "& 'spekta.cmd' 'find' '.\\src\\folder with spaces'",
       ],
       [
         'Get-ChildItem -LiteralPath "src/folder with spaces" -Recurse -File',
-        "'spekta' 'find' 'src/folder with spaces' '-type' 'f'",
+        "& 'spekta.cmd' 'find' 'src/folder with spaces' '-type' 'f'",
       ],
       [
         "Get-ChildItem -LiteralPath src -Recurse -Directory",
-        "'spekta' 'find' 'src' '-type' 'd'",
+        "& 'spekta.cmd' 'find' 'src' '-type' 'd'",
       ],
       [
         "Get-ChildItem -LiteralPath src -File -Recurse",
-        "'spekta' 'find' 'src' '-type' 'f'",
+        "& 'spekta.cmd' 'find' 'src' '-type' 'f'",
       ],
       [
         "Get-Content -LiteralPath 'src/notes with spaces.txt'",
-        "'spekta' 'read' 'src/notes with spaces.txt'",
+        "& 'spekta.cmd' 'read' 'src/notes with spaces.txt'",
       ],
       [
         "Get-Content -LiteralPath 'src/owner''s notes.txt' -TotalCount 12",
-        "'spekta' 'read' 'src/owner''s notes.txt[1,12]'",
+        "& 'spekta.cmd' 'read' 'src/owner''s notes.txt[1,12]'",
       ],
       [
         "Get-Content -LiteralPath '.\\src\\notes.txt' -TotalCount 0003",
-        "'spekta' 'read' '.\\src\\notes.txt[1,0003]'",
+        "& 'spekta.cmd' 'read' '.\\src\\notes.txt[1,0003]'",
       ],
       [
         "Get-Content -LiteralPath src -TotalCount 9007199254740992",
-        "'spekta' 'read' 'src[1,9007199254740991]'",
+        "& 'spekta.cmd' 'read' 'src[1,9007199254740991]'",
       ],
       [
         "Get-Content -LiteralPath src -TotalCount 9223372036854775807",
-        "'spekta' 'read' 'src[1,9007199254740991]'",
+        "& 'spekta.cmd' 'read' 'src[1,9007199254740991]'",
       ],
       [
         "Get-Content -LiteralPath 'src/$literal`name.txt'",
-        "'spekta' 'read' 'src/$literal`name.txt'",
+        "& 'spekta.cmd' 'read' 'src/$literal`name.txt'",
       ],
       [
         "rg.exe -e 'needle' 'src/file with spaces.ts'",
-        "'spekta' 'rg' '-e' 'needle' 'src/file with spaces.ts'",
+        "& 'spekta.cmd' 'rg' '-e' 'needle' 'src/file with spaces.ts'",
       ],
       [
         "rg.exe -e first -e 'second pattern' 'src/path with spaces'",
-        "'spekta' 'rg' '-e' 'first' '-e' 'second pattern' 'src/path with spaces'",
+        "& 'spekta.cmd' 'rg' '-e' 'first' '-e' 'second pattern' 'src/path with spaces'",
       ],
-      ["git.exe status --short", "'spekta' 'git' 'status' '--short'"],
+      ["git.exe status --short", "& 'spekta.cmd' 'git' 'status' '--short'"],
       [
         "git.exe diff -- 'space name'",
-        "'spekta' 'git' 'diff' '--' 'space name'",
+        "& 'spekta.cmd' 'git' 'diff' '--' 'space name'",
       ],
     ])("rewrites literal supported command %s", (input, expected) => {
       expect(rewritten(input)).toBe(expected);
@@ -108,7 +108,7 @@ describe.skipIf(process.platform !== "win32")(
             permissionDecision: "allow",
             updatedInput: {
               ...toolInput,
-              command: "'spekta' 'read' 'src/notes.txt'",
+              command: "& 'spekta.cmd' 'read' 'src/notes.txt'",
             },
           },
         }),

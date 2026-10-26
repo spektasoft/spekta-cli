@@ -398,13 +398,14 @@ export function rewriteEvent(value: unknown): string | undefined {
     if (!words) return;
     const translated = translatePowerShellCommand(words, event.cwd);
     if (!translated) return;
+    translated[0] = "spekta.cmd";
     return JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
         permissionDecision: "allow",
         updatedInput: {
           ...event.tool_input,
-          command: translated.map(powershellQuote).join(" "),
+          command: `& ${translated.map(powershellQuote).join(" ")}`,
         },
       },
     });
