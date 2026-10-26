@@ -95,6 +95,157 @@ function parseLiteralCommand(
   return words;
 }
 
+function parsePowerShellLiteralCommand(command: string): string[] | undefined {
+  const words: string[] = [];
+  let index = 0;
+
+  while (index < command.length) {
+    while (command[index] === " " || command[index] === "\t") index += 1;
+    if (index === command.length) break;
+
+    let word = "";
+    const quote = command[index];
+    if (quote === "'" || quote === '"') {
+      index += 1;
+      let closed = false;
+      while (index < command.length) {
+        const char = command[index];
+        const code = char.charCodeAt(0);
+        if (
+          (code < 0x20 && char !== "\t") ||
+          (code >= 0x7f && code <= 0x9f) ||
+          (/\s/.test(char) && char !== " " && char !== "\t")
+        )
+          return;
+        if (quote === "'" && char === "'" && command[index + 1] === "'") {
+          word += "'";
+          index += 2;
+          continue;
+        }
+        if (char === quote) {
+          index += 1;
+          closed = true;
+          break;
+        }
+        // PowerShell double-quoted strings expand variables and backticks.
+        if (quote === '"' && (char === "$" || char === "`")) return;
+        word += char;
+        index += 1;
+      }
+      if (!closed || (index < command.length && !/[ \t]/.test(command[index])))
+        return;
+    } else {
+      while (index < command.length && !/[ \t]/.test(command[index])) {
+        const char = command[index];
+        const code = char.charCodeAt(0);
+        if (
+          (code < 0x20 && char !== "\t") ||
+          (code >= 0x7f && code <= 0x9f) ||
+          (/\s/.test(char) && char !== " " && char !== "\t")
+        )
+          return;
+        // Keep command text outside PowerShell's literal argument subset.
+        if ("'\"$`*?[]{}()<>|;&#!@,".includes(char)) return;
+        if (char === "=" && word.length === 0) return;
+        word += char;
+        index += 1;
+      }
+    }
+
+    words.push(word);
+  }
+
+  return words.length ? words : undefined;
+}
+
+function powershellQuote(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function translatePowerShellCommand(
+  words: string[],
+  cwd: string,
+): string[] | undefined {
+  const command = words[0].toLowerCase();
+  const args = words.slice(1);
+
+  if (command === "get-childitem") {
+    if (
+      args.length === 3 &&
+      args[0].toLowerCase() === "-literalpath" &&
+      args[2].toLowerCase() === "-name" &&
+      args[1] !== "" &&
+      !args[1].startsWith("-")
+    ) {
+      return ["spekta", "ls", args[1]];
+    }
+    if (
+      (args.length === 3 || args.length === 4) &&
+      args[0].toLowerCase() === "-literalpath" &&
+      args[1] !== "" &&
+      !args[1].startsWith("-")
+    ) {
+      const switches = args.slice(2).map((arg) => arg.toLowerCase());
+      if (switches.filter((arg) => arg === "-recurse").length !== 1) return;
+      const translated = ["spekta", "find", args[1]];
+      const kind = switches.find((arg) => arg !== "-recurse");
+      if (kind !== undefined) {
+        if (kind === "-file") translated.push("-type", "f");
+        else if (kind === "-directory") translated.push("-type", "d");
+        else return;
+      }
+      return translated;
+    }
+    return;
+  }
+
+  if (command === "get-content") {
+    if (
+      (args.length !== 2 && args.length !== 4) ||
+      args[0].toLowerCase() !== "-literalpath" ||
+      args[1] === "" ||
+      args[1].startsWith("-") ||
+      isOutsideWorkspace(cwd, args[1]) ||
+      /\[(?:\d+|\$)?(?:,(?:\d+|\$))?\]$/.test(args[1])
+    ) {
+      return;
+    }
+    if (args.length === 2) return ["spekta", "read", args[1]];
+    if (args[2].toLowerCase() !== "-totalcount" || !/^\d+$/.test(args[3]))
+      return;
+    const count = args[3].replace(/^0+/, "") || "0";
+    if (
+      count === "0" ||
+      count.length > 19 ||
+      (count.length === 19 && count > "9223372036854775807")
+    )
+      return;
+    // Spekta ranges require safe integers. Eligible reads are capped at 10 MB,
+    // so any larger valid PowerShell Int64 count covers the whole file; clamp
+    // only the encoded end to the largest range Spekta can represent.
+    const maxSafe = String(Number.MAX_SAFE_INTEGER);
+    const end =
+      count.length > maxSafe.length ||
+      (count.length === maxSafe.length && count > maxSafe)
+        ? maxSafe
+        : args[3];
+    return ["spekta", "read", `${args[1]}[1,${end}]`];
+  }
+
+  if (command === "rg.exe") {
+    const translated = translateSearch(["rg", ...args]);
+    if (!translated || translated.paths.some((path) => isOutsideWorkspace(cwd, path)))
+      return;
+    return translated.command;
+  }
+
+  if (command === "git.exe" && isSupportedGitProxyRequest(args, cwd)) {
+    return ["spekta", "git", ...args];
+  }
+
+  return;
+}
+
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
@@ -242,6 +393,23 @@ export function rewriteEvent(value: unknown): string | undefined {
     throw new Error("invalid event");
   const command = event.tool_input.command;
   if (typeof command !== "string") throw new Error("invalid event");
+  if (process.platform === "win32") {
+    const words = parsePowerShellLiteralCommand(command);
+    if (!words) return;
+    const translated = translatePowerShellCommand(words, event.cwd);
+    if (!translated) return;
+    return JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: "PreToolUse",
+        permissionDecision: "allow",
+        updatedInput: {
+          ...event.tool_input,
+          command: translated.map(powershellQuote).join(" "),
+        },
+      },
+    });
+  }
+
   const words = parseLiteralCommand(command, event.cwd);
   if (!words) return;
   // Explicit RTK invocations retain their host-command behavior. In particular,
