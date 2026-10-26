@@ -57,6 +57,8 @@ beforeEach(() => {
     { mode: 0o755 },
   );
   vi.stubEnv("PATH", bin);
+  // The fake RTK launcher cases pin the RTK backend contract on every host.
+  vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
   vi.spyOn(process, "cwd").mockReturnValue(workspace);
 });
 

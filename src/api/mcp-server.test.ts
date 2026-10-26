@@ -43,6 +43,8 @@ vi.mock("../core/config", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The registry seam tests simulate the RTK backend contract explicitly.
+  vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
 });
 
 afterEach(() => {

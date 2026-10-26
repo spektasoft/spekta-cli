@@ -34,6 +34,11 @@ import {
 } from "../../commands/proxy/proxy-policy";
 import { executeRtkCommand } from "../../commands/proxy/proxy-execution";
 import {
+  resolveListingBackend,
+  runNativeFindDiscovery,
+  runNativeLsListing,
+} from "../../commands/proxy/proxy-listing-backend";
+import {
   getListBatchOutcome,
   listContentAllowance,
   listAllowanceIncreaseHint,
@@ -488,10 +493,13 @@ const registry: Record<string, ToolRegistryEntry> = {
           };
         }
         const tokenAllowance = resolvedAllowance.allowance ?? 1000;
+        const listingBackend = resolveListingBackend();
         const outcome = await getListBatchOutcome(cleanArgs, context, {
           allowance: listContentAllowance(tokenAllowance),
           increaseHint: listAllowanceIncreaseHint(tokenAllowance),
           runLs: async (operand) => {
+            if (listingBackend === "native")
+              return await runNativeLsListing(operand, context);
             const listed = await executeRtkCommand("ls", [operand], context);
             if (!listed.available) throw new RtkListingUnavailableError();
             return { stdout: listed.stdout, exitCode: listed.exitCode };
@@ -542,6 +550,7 @@ const registry: Record<string, ToolRegistryEntry> = {
             content: [{ type: "text", text: getFindValidationText(minimum) }],
           };
         }
+        const findBackend = resolveListingBackend();
         const outcome = await discoverFindBatch(cleanArgs, context, {
           allowance: tokenAllowance,
           validationAllowance: settings.defaultTokens,
@@ -553,16 +562,21 @@ const registry: Record<string, ToolRegistryEntry> = {
               : "",
           measure: (text, isError) =>
             measureFindMcpResponse(text, isError, requestId),
-          hasRtk: await isRtkAvailable(),
-          backend: async (operand, predicates) => {
-            const result = await executeRtkCommand(
-              "find",
-              [operand, ...predicates],
-              context,
-            );
-            if (!result.available) throw new Error("RTK unavailable");
-            return { stdout: result.stdout, exitCode: result.exitCode };
-          },
+          hasRtk:
+            findBackend === "native" || (await isRtkAvailable()),
+          backend:
+            findBackend === "native"
+              ? (operand, predicates) =>
+                  runNativeFindDiscovery(operand, predicates, context)
+              : async (operand, predicates) => {
+                  const result = await executeRtkCommand(
+                    "find",
+                    [operand, ...predicates],
+                    context,
+                  );
+                  if (!result.available) throw new Error("RTK unavailable");
+                  return { stdout: result.stdout, exitCode: result.exitCode };
+                },
         });
         return {
           isError: outcome.isError,

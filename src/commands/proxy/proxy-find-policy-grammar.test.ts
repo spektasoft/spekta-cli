@@ -67,7 +67,11 @@ describe("restricted find through validateProxyRequest", () => {
     "internal-alias/.",
     "~/directory",
     "directory:name",
-    String.raw`directory\nested`,
+    // On Windows the parser normalizes relative backslash separators before
+    // root classification; POSIX keeps the literal-backslash rejection.
+    ...(process.platform === "win32"
+      ? []
+      : [String.raw`directory\nested`]),
   ])("rejects unsupported root syntax %s", (root) => {
     expect(() => validateProxyRequest("find", [root])).toThrow(/usage_error/i);
   });

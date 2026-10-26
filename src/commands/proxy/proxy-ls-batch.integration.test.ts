@@ -33,6 +33,8 @@ beforeEach(async () => {
   await installFakeRtk();
   process.chdir(workspace);
   vi.stubEnv("PATH", bin);
+  // The fake RTK launcher cases pin the RTK backend contract on every host.
+  vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
   vi.stubEnv("SPEKTA_HOME_OVERRIDE", path.join(root, "home"));
   vi.stubEnv("SPEKTA_ASSET_ROOT_OVERRIDE", repository);
   vi.stubEnv("SPEKTA_LIST_TOKEN_LIMIT", "1000");

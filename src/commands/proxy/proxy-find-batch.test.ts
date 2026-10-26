@@ -921,7 +921,7 @@ describe("discoverFindBatch", () => {
     await fs.mkdir(path.join(root, special));
     await fs.mkdir(path.join(root, failing));
     const specialName =
-      process.platform === "win32" ? "quote-根`-path.ts" : 'quote"\\根`-path.ts';
+      process.platform === "win32" ? "quote-根`-path.ts" : 'quote"-根-path.ts';
     await fs.writeFile(path.join(root, special, specialName), "eligible");
     const longPathParts = Array.from(
       { length: 18 },

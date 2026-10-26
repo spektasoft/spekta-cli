@@ -28,6 +28,9 @@ const proxyFixture = createProxyFixture({
 
 beforeEach(() => {
   ({ fixture, workspace } = proxyFixture.setup());
+  // Rendered through the public adapters, these cases exercise the RTK/GNU
+  // backend's invocation and failure contract on every host.
+  vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
   fs.ensureDirSync(path.join(workspace, "space name"));
   fs.ensureDirSync(path.join(workspace, "-directory"));
   fs.writeFileSync(path.join(workspace, "one.ts"), "one");
