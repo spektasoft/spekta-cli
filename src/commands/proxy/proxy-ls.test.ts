@@ -52,28 +52,43 @@ describe("filterEligibleLsEntries", () => {
     ]) {
       fs.writeFileSync(path.join(root, file), "x");
     }
-    for (const name of [
-      "with space.txt",
-      "tab\tname.txt",
-      "back\\slash.txt",
-      "new\nline.txt",
-      "日.txt",
-    ]) {
+    const names =
+      process.platform === "win32"
+        ? ["with space.txt", "日.txt"]
+        : [
+            "with space.txt",
+            "tab\tname.txt",
+            "back\\slash.txt",
+            "new\nline.txt",
+            "日.txt",
+          ];
+    for (const name of names) {
       fs.writeFileSync(path.join(root, "names", name), "x");
     }
-    fs.symlinkSync(outside, path.join(root, "escape"), "dir");
     fs.symlinkSync(
-      path.join(root, ".env"),
-      path.join(root, "restricted-alias"),
+      outside,
+      path.join(root, "escape"),
+      process.platform === "win32" ? "junction" : "dir",
     );
-    fs.symlinkSync(path.join(root, "visible.txt"), path.join(root, "alias-ok"));
-    fs.symlinkSync(path.join(root, "missing"), path.join(root, "dangling"));
+    if (process.platform !== "win32") {
+      fs.symlinkSync(
+        path.join(root, ".env"),
+        path.join(root, "restricted-alias"),
+      );
+      fs.symlinkSync(
+        path.join(root, "visible.txt"),
+        path.join(root, "alias-ok"),
+      );
+      fs.symlinkSync(path.join(root, "missing"), path.join(root, "dangling"));
+    }
     fs.ensureDirSync(path.join(root, ".gitignore"));
     fs.writeFileSync(path.join(root, ".gitignore", "inner.txt"), "x");
-    fs.symlinkSync(
-      path.join(root, ".gitignore", "inner.txt"),
-      path.join(root, "via-dir"),
-    );
+    if (process.platform !== "win32") {
+      fs.symlinkSync(
+        path.join(root, ".gitignore", "inner.txt"),
+        path.join(root, "via-dir"),
+      );
+    }
     workspace = await resolveWorkspace({ root });
   });
 
@@ -85,14 +100,11 @@ describe("filterEligibleLsEntries", () => {
     const stdout =
       [
         ".env",
-        "alias-ok",
-        "dangling",
         "empty",
         "escape",
         "ignored-dir",
         "keep.log",
         "names",
-        "restricted-alias",
         "secret.log",
         "src",
         "sub",
@@ -104,7 +116,6 @@ describe("filterEligibleLsEntries", () => {
     expect(result).toEqual({
       status: "success",
       names: [
-        "alias-ok",
         "empty",
         "keep.log",
         "names",
@@ -134,39 +145,48 @@ describe("filterEligibleLsEntries", () => {
     expect(result).toEqual({ status: "success", names: ["inner.txt"] });
   });
 
-  it("drops aliases whose canonical path passes through a restricted segment", async () => {
-    const result = await filterEligibleLsEntries(
-      "via-dir\nvisible.txt\n",
-      ".",
-      workspace,
-    );
+  it.skipIf(process.platform === "win32")(
+    "drops aliases whose canonical path passes through a restricted segment",
+    async () => {
+      const result = await filterEligibleLsEntries(
+        "via-dir\nvisible.txt\n",
+        ".",
+        workspace,
+      );
 
-    expect(result).toEqual({ status: "success", names: ["visible.txt"] });
-  });
+      expect(result).toEqual({ status: "success", names: ["visible.txt"] });
+    },
+  );
 
-  it("decodes ls -b escapes for spaces, tabs, backslashes, newlines, and octal bytes", async () => {
+  it("decodes ls -b escapes for spaces and octal bytes", async () => {
     const stdout =
-      [
-        "with\\ space.txt",
-        "tab\\tname.txt",
-        "back\\\\slash.txt",
-        "new\\nline.txt",
-        "\\346\\227\\245.txt",
-      ].join("\n") + "\n";
+      ["with\\ space.txt", "\\346\\227\\245.txt"].join("\n") + "\n";
 
     const result = await filterEligibleLsEntries(stdout, "names", workspace);
 
     expect(result).toEqual({
       status: "success",
-      names: [
-        "with space.txt",
-        "tab\tname.txt",
-        "back\\slash.txt",
-        "new\nline.txt",
-        "日.txt",
-      ],
+      names: ["with space.txt", "日.txt"],
     });
   });
+
+  // Windows filenames cannot contain control characters or literal backslashes.
+  it.skipIf(process.platform === "win32")(
+    "decodes POSIX tab, backslash, and newline filenames literally",
+    async () => {
+      const stdout =
+        ["tab\\tname.txt", "back\\\\slash.txt", "new\\nline.txt"].join(
+          "\n",
+        ) + "\n";
+
+      const result = await filterEligibleLsEntries(stdout, "names", workspace);
+
+      expect(result).toEqual({
+        status: "success",
+        names: ["tab\tname.txt", "back\\slash.txt", "new\nline.txt"],
+      });
+    },
+  );
 
   it("drops files that Git ignores but keeps their eligible siblings", async () => {
     fs.writeFileSync(path.join(root, "git-ignored.txt"), "x");
