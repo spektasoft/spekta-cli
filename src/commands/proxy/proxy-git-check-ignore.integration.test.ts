@@ -22,21 +22,34 @@ describe.skipIf(missing.length > 0)("Git check-ignore through CLI/MCP", () => {
     expect(allowed.mcp.content[0].text).toBe("not_git_ignored");
   });
 
-  it("uses --no-index and checks the supplied and canonical symlink paths", async () => {
+  it("uses --no-index and checks the supplied and canonical symlink paths", async ({
+    skip,
+  }) => {
     fs.writeFileSync(
       path.join(context.workspace, ".gitignore"),
       "file.txt\ntarget.txt\ntarget-link.txt\nalias-only.txt\n",
     );
     fs.writeFileSync(path.join(context.workspace, "target.txt"), "safe\n");
     fs.writeFileSync(path.join(context.workspace, "target-two.txt"), "safe\n");
-    fs.symlinkSync(
-      path.join(context.workspace, "target.txt"),
-      path.join(context.workspace, "target-link.txt"),
-    );
-    fs.symlinkSync(
-      path.join(context.workspace, "target-two.txt"),
-      path.join(context.workspace, "alias-only.txt"),
-    );
+    try {
+      fs.symlinkSync(
+        path.join(context.workspace, "target.txt"),
+        path.join(context.workspace, "target-link.txt"),
+      );
+      fs.symlinkSync(
+        path.join(context.workspace, "target-two.txt"),
+        path.join(context.workspace, "alias-only.txt"),
+      );
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (
+        process.platform === "win32" &&
+        ["EPERM", "EACCES"].includes(code ?? "")
+      ) {
+        skip(`Windows denied file symlink creation (${code})`);
+      }
+      throw error;
+    }
 
     for (const target of ["file.txt", "target-link.txt", "alias-only.txt"]) {
       const result = await context.both(["check-ignore", target]);
@@ -63,24 +76,11 @@ describe.skipIf(missing.length > 0)("Git check-ignore through CLI/MCP", () => {
     ]) {
       fs.writeFileSync(path.join(context.workspace, name), "safe\n");
     }
-    fs.symlinkSync(
-      path.join(context.workspace, "private-target.txt"),
-      path.join(context.workspace, "private-alias.txt"),
-    );
-
     const spektaDenied = await context.both(["check-ignore", "private.log"]);
     expect(spektaDenied.mcp.content[0].text).toBe(
       "unavailable_access: Path is unavailable.",
     );
     expect(spektaDenied.mcp.isError).toBe(true);
-    const canonicalDenied = await context.both([
-      "check-ignore",
-      "private-alias.txt",
-    ]);
-    expect(canonicalDenied.mcp.content[0].text).toBe(
-      "unavailable_access: Path is unavailable.",
-    );
-
     const spektaAllowed = await context.both(["check-ignore", "allowed.log"]);
     expect(spektaAllowed.mcp.content[0].text).toBe("git_ignored");
     const gitNegated = await context.both(["check-ignore", "keep.log"]);
@@ -88,6 +88,41 @@ describe.skipIf(missing.length > 0)("Git check-ignore through CLI/MCP", () => {
 
     const dashPath = await context.both(["check-ignore", "--", "-file"]);
     expect(dashPath.mcp.content[0].text).toBe("not_git_ignored");
+  });
+
+  it("keeps canonical file symlinks unavailable when Spekta ignores their target", async ({
+    skip,
+  }) => {
+    fs.writeFileSync(
+      path.join(context.workspace, ".spektaignore"),
+      "private-target.txt\n",
+    );
+    fs.writeFileSync(
+      path.join(context.workspace, "private-target.txt"),
+      "safe\n",
+    );
+    try {
+      fs.symlinkSync(
+        path.join(context.workspace, "private-target.txt"),
+        path.join(context.workspace, "private-alias.txt"),
+      );
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (
+        process.platform === "win32" &&
+        ["EPERM", "EACCES"].includes(code ?? "")
+      ) {
+        skip(`Windows denied file symlink creation (${code})`);
+      }
+      throw error;
+    }
+
+    const result = await context.both(["check-ignore", "private-alias.txt"]);
+    expect(result.mcp.content[0].text).toBe(
+      "unavailable_access: Path is unavailable.",
+    );
+    expect(result.mcp.isError).toBe(true);
+    expect(result.cli).toContain("unavailable_access: Path is unavailable.");
   });
 
   it("checks directories themselves without enumerating ignored descendants", async () => {
@@ -124,23 +159,12 @@ describe.skipIf(missing.length > 0)("Git check-ignore through CLI/MCP", () => {
     fs.writeFileSync(path.join(context.workspace, "private.txt"), "secret\n");
     fs.writeFileSync(path.join(context.workspace, ".env"), "secret\n");
     fs.writeFileSync(path.join(context.fixture, "outside.txt"), "outside\n");
-    fs.symlinkSync(
-      path.join(context.fixture, "outside.txt"),
-      path.join(context.workspace, "escaping-link.txt"),
-    );
-    fs.symlinkSync(
-      path.join(context.workspace, "missing-target.txt"),
-      path.join(context.workspace, "dangling-link.txt"),
-    );
-
     const cases = [
       "private.txt",
       ".env",
       "missing-match.txt",
       "missing-plain.txt",
       "../outside.txt",
-      "escaping-link.txt",
-      "dangling-link.txt",
     ];
     const results = [];
     for (const target of cases) {
@@ -159,15 +183,52 @@ describe.skipIf(missing.length > 0)("Git check-ignore through CLI/MCP", () => {
       ".env",
       "missing-match.txt",
       "../outside.txt",
-      "escaping-link.txt",
-      "dangling-link.txt",
     ]) {
       const denied = results[cases.indexOf(target)];
       expect(denied.cli).toBe(baseline.cli);
       expect(denied.mcp).toEqual(baseline.mcp);
     }
     expect(JSON.stringify(results)).not.toMatch(
-      /private\.txt|\.env|missing-match|missing-plain|outside\.txt|escaping-link|dangling-link|secret|outside/,
+      /private\.txt|\.env|missing-match|missing-plain|outside\.txt|secret|outside/,
+    );
+  });
+
+  it("conceals escaping and dangling file symlinks like nonexistent paths", async ({
+    skip,
+  }) => {
+    fs.writeFileSync(path.join(context.fixture, "outside.txt"), "outside\n");
+    try {
+      fs.symlinkSync(
+        path.join(context.fixture, "outside.txt"),
+        path.join(context.workspace, "escaping-link.txt"),
+      );
+      fs.symlinkSync(
+        path.join(context.workspace, "missing-target.txt"),
+        path.join(context.workspace, "dangling-link.txt"),
+      );
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (
+        process.platform === "win32" &&
+        ["EPERM", "EACCES"].includes(code ?? "")
+      ) {
+        skip(`Windows denied file symlink creation (${code})`);
+      }
+      throw error;
+    }
+
+    const baseline = await context.both(["check-ignore", "missing-plain.txt"]);
+    for (const target of ["escaping-link.txt", "dangling-link.txt"]) {
+      const result = await context.both(["check-ignore", target]);
+      expect(result.mcp.content[0].text).toBe(
+        "unavailable_access: Path is unavailable.",
+      );
+      expect(result.mcp.isError).toBe(true);
+      expect(result.cli).toBe(baseline.cli);
+      expect(result.mcp).toEqual(baseline.mcp);
+    }
+    expect(JSON.stringify(baseline)).not.toMatch(
+      /missing-plain|outside|escaping-link|dangling-link/,
     );
   });
 

@@ -50,41 +50,47 @@ describe.skipIf(missing.length > 0)(
       expect(result.mcp.content[0].text).toContain("spaces-blob");
     });
 
-    it("filters name-only, name-status, and stat summaries by eligible paths", async () => {
-      fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
-        "denied.txt\n",
-      );
-      fs.writeFileSync(path.join(context.workspace, "denied.txt"), "hidden\n");
-      fs.writeFileSync(
-        path.join(context.workspace, "visible.txt"),
-        "visible\n",
-      );
-      await fixtureGit(["add", "--", ".gitignore", "visible.txt"]);
-      await fixtureGit(["add", "-f", "--", "denied.txt"]);
-      await fixtureGit(["commit", "-m", "SUMMARY_FIXTURE"]);
-      fs.writeFileSync(
-        path.join(context.workspace, "denied.txt"),
-        "hidden changed\n",
-      );
-      fs.writeFileSync(
-        path.join(context.workspace, "visible.txt"),
-        "visible changed\n",
-      );
+    const summaryCases = [
+      { label: "name-only", args: ["diff", "--name-only"] },
+      { label: "name-status", args: ["diff", "--name-status"] },
+      { label: "stat", args: ["diff", "--stat"] },
+    ];
 
-      for (const args of [
-        ["diff", "--name-only"],
-        ["diff", "--name-status"],
-        ["diff", "--stat"],
-      ]) {
+    it.each(summaryCases)(
+      "filters $label summaries by eligible paths",
+      async ({ args }) => {
+        fs.writeFileSync(
+          path.join(context.workspace, ".gitignore"),
+          "denied.txt\n",
+        );
+        fs.writeFileSync(
+          path.join(context.workspace, "denied.txt"),
+          "hidden\n",
+        );
+        fs.writeFileSync(
+          path.join(context.workspace, "visible.txt"),
+          "visible\n",
+        );
+        await fixtureGit(["add", "--", ".gitignore", "visible.txt"]);
+        await fixtureGit(["add", "-f", "--", "denied.txt"]);
+        await fixtureGit(["commit", "-m", "SUMMARY_FIXTURE"]);
+        fs.writeFileSync(
+          path.join(context.workspace, "denied.txt"),
+          "hidden changed\n",
+        );
+        fs.writeFileSync(
+          path.join(context.workspace, "visible.txt"),
+          "visible changed\n",
+        );
+
         const result = await both(args);
         expect(result.mcp.isError).toBe(false);
         expect(result.cli).toContain("visible.txt");
         expect(result.mcp.content[0].text).toContain("visible.txt");
         expect(result.cli).not.toContain("denied.txt");
         expect(result.mcp.content[0].text).not.toContain("denied.txt");
-      }
-    });
+      },
+    );
 
     it("filters ordinary patch sections by eligible paths", async () => {
       fs.writeFileSync(
@@ -162,7 +168,11 @@ describe.skipIf(missing.length > 0)(
       expect(visible.mcp.isError).toBe(false);
       expect(visible.cli).toContain("Binary file changed");
       expect(visible.cli).toContain("image.bin");
+      expect(visible.mcp.content[0].text).toContain("Binary file changed");
+      expect(visible.mcp.content[0].text).toContain("image.bin");
+    });
 
+    it("withholds denied binary notices and payloads", async () => {
       fs.writeFileSync(
         path.join(context.workspace, ".gitignore"),
         "secret.bin\n",
@@ -179,8 +189,10 @@ describe.skipIf(missing.length > 0)(
       );
       const denied = await both(["diff"]);
       expect(denied.mcp.isError).toBe(false);
-      expect(denied.cli).not.toContain("secret.bin");
-      expect(denied.mcp.content[0].text).not.toContain("secret.bin");
+      for (const text of [denied.cli, denied.mcp.content[0].text]) {
+        expect(text).not.toContain("secret.bin");
+        expect(text).not.toContain("DENIED_BINARY");
+      }
     });
 
     it("reports a failed patch child without forwarding its diagnostics", async () => {
