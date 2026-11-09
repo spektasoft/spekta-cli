@@ -126,6 +126,7 @@ describe("registered spekta_shell callTool allowance validation", () => {
   });
 
   it("routes wrong-type find allowance through budgeted handler and accepts a valid allowance", async () => {
+    vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
     vi.stubEnv("SPEKTA_LIST_TOKEN_LIMIT", "1000");
     vi.stubEnv("SPEKTA_LIST_TOKEN_CEILING", "2000");
     const workspace = await fs.mkdtemp(
@@ -228,6 +229,7 @@ describe("registered spekta_shell callTool allowance validation", () => {
       expect(accepted.isError).toBe(false);
       expect(accepted.content[0].type).toBe("text");
       expect(accepted.content[0].text).toContain("Batch: success");
+      expect(accepted.content[0].text).toContain("kept.ts");
       expect(execution.isRtkAvailable).toHaveBeenCalledOnce();
       expect(execution.executeRtkCommand).toHaveBeenCalledOnce();
       expect(execution.executeRtkCommand).toHaveBeenCalledWith("find", ["."], {
