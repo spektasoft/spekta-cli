@@ -234,7 +234,10 @@ function translatePowerShellCommand(
 
   if (command === "rg.exe") {
     const translated = translateSearch(["rg", ...args]);
-    if (!translated || translated.paths.some((path) => isOutsideWorkspace(cwd, path)))
+    if (
+      !translated ||
+      translated.paths.some((path) => isOutsideWorkspace(cwd, path))
+    )
       return;
     return translated.command;
   }
@@ -378,7 +381,10 @@ function hasExternalReadPath(words: string[], cwd: string): boolean {
   return Boolean(search?.paths.some((path) => isOutsideWorkspace(cwd, path)));
 }
 
-export function rewriteEvent(value: unknown): string | undefined {
+export function rewriteEvent(
+  value: unknown,
+  platform: NodeJS.Platform = process.platform,
+): string | undefined {
   if (!isRecord(value)) throw new Error("invalid event");
   const event = value;
   if (
@@ -393,7 +399,7 @@ export function rewriteEvent(value: unknown): string | undefined {
     throw new Error("invalid event");
   const command = event.tool_input.command;
   if (typeof command !== "string") throw new Error("invalid event");
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     const words = parsePowerShellLiteralCommand(command);
     if (!words) return;
     const translated = translatePowerShellCommand(words, event.cwd);

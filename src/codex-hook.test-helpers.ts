@@ -15,7 +15,7 @@ export function shellQuoteForTest(value: string): string {
 }
 
 export function rewritten(command: string): string | undefined {
-  const output = rewriteEvent(event(command));
+  const output = rewriteEvent(event(command), "linux");
   if (!output) return;
   const parsed: unknown = JSON.parse(output);
   if (!parsed || typeof parsed !== "object")
