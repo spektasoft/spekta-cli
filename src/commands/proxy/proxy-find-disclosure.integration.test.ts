@@ -113,7 +113,9 @@ it("bounds the complete response using only eligible results", async () => {
   expect(cli).toContain("incomplete; output_limit_exceeded");
 });
 
-it("filters ignored ancestors and ineligible aliases under nested roots", async () => {
+it("filters ignored ancestors and ineligible aliases under nested roots", async ({
+  skip,
+}) => {
   fs.ensureDirSync(path.join(workspace, "directory", "ignored"));
   fs.writeFileSync(
     path.join(workspace, ".spektaignore"),
@@ -122,10 +124,21 @@ it("filters ignored ancestors and ineligible aliases under nested roots", async 
   for (const name of ["ok.ts", "secret.log", "keep.log", "ignored/hidden.ts"]) {
     fs.writeFileSync(path.join(workspace, "directory", name), "ok");
   }
-  fs.symlinkSync(
-    path.join(workspace, "directory", "secret.log"),
-    path.join(workspace, "directory", "alias"),
-  );
+  try {
+    fs.symlinkSync(
+      path.join(workspace, "directory", "secret.log"),
+      path.join(workspace, "directory", "alias"),
+    );
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (
+      process.platform === "win32" &&
+      ["EPERM", "EACCES"].includes(code ?? "")
+    ) {
+      skip(`Windows denied file symlink creation (${code})`);
+    }
+    throw error;
+  }
   const { cli, mcp } = await discover(
     "directory/ok.ts\ndirectory/secret.log\ndirectory/keep.log\ndirectory/ignored\ndirectory/ignored/hidden.ts\ndirectory/alias",
     ["directory", "-type", "f", "-name", "*.ts", "-print"],
@@ -142,12 +155,25 @@ it("filters ignored ancestors and ineligible aliases under nested roots", async 
   expect(cli).not.toMatch(/secret|ignored|hidden|alias/);
 });
 
-it("does not disclose targets reached through directory symlink descendants", async () => {
-  fs.symlinkSync(
-    path.join(workspace, "directory"),
-    path.join(workspace, "internal-alias"),
-    "dir",
-  );
+it("does not disclose targets reached through directory symlink descendants", async ({
+  skip,
+}) => {
+  try {
+    fs.symlinkSync(
+      path.join(workspace, "directory"),
+      path.join(workspace, "internal-alias"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (
+      process.platform === "win32" &&
+      ["EPERM", "EACCES"].includes(code ?? "")
+    ) {
+      skip(`Windows denied directory link creation (${code})`);
+    }
+    throw error;
+  }
   fs.writeFileSync(path.join(workspace, "directory", "child.ts"), "ok");
   const { mcp } = await discover(
     "./internal-alias\n./internal-alias/child.ts\n./visible.ts",
