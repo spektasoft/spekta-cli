@@ -329,5 +329,14 @@ export function validateGitProxyRequest(
     else validateRevision(revision);
   }
   validateProxyPathOperand(".", context);
-  for (const operand of paths) validateProxyPathOperand(operand, context);
+  for (const operand of paths) {
+    if (
+      subcommand === "diff" &&
+      operand.includes("\\") &&
+      !path.win32.isAbsolute(operand)
+    ) {
+      fail("unsupported Git path syntax.");
+    }
+    validateProxyPathOperand(operand, context);
+  }
 }

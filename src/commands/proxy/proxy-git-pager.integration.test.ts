@@ -7,14 +7,52 @@ import { useRealGitFixture, missing } from "./proxy-git.integration-harness";
 describe.skipIf(missing.length > 0)(
   `real Git/RTK terminal pager suppression${missing.length ? ` (missing: ${missing.join(", ")})` : ""}`,
   () => {
-    const context = useRealGitFixture();
+    const context = useRealGitFixture({ pagerFixture: true });
     const { fixtureGit, shellQuote, sentinel, snapshotRepository, both } =
       context;
 
-    it("suppresses branch pagers in a terminal for environment and configuration controls", async () => {
+    const branchCases = [
+      { label: "branch", args: ["branch"] },
+      { label: "branch --list", args: ["branch", "--list"] },
+      { label: "branch -l pattern", args: ["branch", "-l", "feature/*"] },
+      { label: "branch --all", args: ["branch", "--all"] },
+      { label: "branch --remotes", args: ["branch", "--remotes"] },
+      { label: "branch --verbose", args: ["branch", "--verbose"] },
+      { label: "branch -vv", args: ["branch", "-v", "-v"] },
+      {
+        label: "branch --list -- pattern",
+        args: ["branch", "--list", "--", "feature/*"],
+      },
+    ];
+    const commandCases = [
+      { label: "status", args: ["status", "--short"] },
+      { label: "log", args: ["log", "--stat", "-n", "1"] },
+      { label: "show stat", args: ["show", "--stat"] },
+      { label: "show blob", args: ["show", "HEAD:file.txt"] },
+      { label: "diff", args: ["diff"] },
+      { label: "cached diff", args: ["diff", "--cached"] },
+      { label: "staged HEAD diff", args: ["diff", "--staged", "HEAD"] },
+      { label: "two-endpoint diff", args: ["diff", "HEAD~1", "HEAD"] },
+      { label: "three-dot diff", args: ["diff", "HEAD~1...HEAD"] },
+    ];
+    const branchPagerKeys = ["core.pager", "pager.branch"];
+    const commandPagerKeys = [
+      "core.pager",
+      "pager.status",
+      "pager.log",
+      "pager.show",
+      "pager.diff",
+    ];
+
+    async function configurePager(keys: string[], program: string) {
+      for (const key of keys) {
+        await fixtureGit(["config", key, shellQuote(program)]);
+      }
+    }
+
+    it("confirms the branch pager positive control in a terminal", async () => {
       const pager = sentinel("branch-pager");
-      await fixtureGit(["config", "core.pager", shellQuote(pager.program)]);
-      await fixtureGit(["config", "pager.branch", shellQuote(pager.program)]);
+      await configurePager(branchPagerKeys, pager.program);
       process.env.GIT_PAGER = shellQuote(pager.program);
       process.env.PAGER = shellQuote(pager.program);
       const controlEnv: NodeJS.ProcessEnv = { ...process.env, TERM: "xterm" };
@@ -27,18 +65,17 @@ describe.skipIf(missing.length > 0)(
       );
       expect(control.exitCode).toBe(0);
       expect(fs.existsSync(pager.marker)).toBe(true);
-      fs.removeSync(pager.marker);
-      const before = snapshotRepository();
-      for (const args of [
-        ["branch"],
-        ["branch", "--list"],
-        ["branch", "-l", "feature/*"],
-        ["branch", "--all"],
-        ["branch", "--remotes"],
-        ["branch", "--verbose"],
-        ["branch", "-v", "-v"],
-        ["branch", "--list", "--", "feature/*"],
-      ]) {
+    }, 30000);
+
+    it.each(branchCases)(
+      "suppresses branch pager for $label in terminals and CLI/MCP",
+      async ({ args }) => {
+        const pager = sentinel("branch-pager");
+        await configurePager(branchPagerKeys, pager.program);
+        process.env.GIT_PAGER = shellQuote(pager.program);
+        process.env.PAGER = shellQuote(pager.program);
+        const before = snapshotRepository();
+
         const prepared = prepareRtkInvocation("git", args);
         const command = ["rtk", ...prepared.args].map(shellQuote).join(" ");
         for (const stripPagerEnv of [false, true]) {
@@ -56,29 +93,23 @@ describe.skipIf(missing.length > 0)(
           expect(terminal.stdout).not.toContain("SENTINEL OUTPUT");
           expect(fs.existsSync(pager.marker)).toBe(false);
         }
+
         const result = await both(args);
         expect(result.mcp.isError).toBe(false);
         expect(result.cli).not.toContain("SENTINEL OUTPUT");
         expect(result.mcp.content[0].text).not.toContain("SENTINEL OUTPUT");
         expect(fs.existsSync(pager.marker)).toBe(false);
         expect(snapshotRepository()).toEqual(before);
-      }
-    }, 30000);
+      },
+      30000,
+    );
 
-    it("suppresses configured pagers even with a terminal", async () => {
+    it("confirms configured log and diff pagers and the --no-pager override", async () => {
       const pager = sentinel("pager");
-      for (const key of [
-        "core.pager",
-        "pager.status",
-        "pager.log",
-        "pager.show",
-        "pager.diff",
-      ]) {
-        await fixtureGit(["config", key, shellQuote(pager.program)]);
-      }
+      await configurePager(commandPagerKeys, pager.program);
       process.env.GIT_PAGER = shellQuote(pager.program);
       process.env.PAGER = shellQuote(pager.program);
-      const control = await execa(
+      const logControl = await execa(
         "script",
         ["-q", "-e", "-c", "git --paginate log -1 --stat", "/dev/null"],
         {
@@ -87,38 +118,10 @@ describe.skipIf(missing.length > 0)(
           env: { ...process.env, TERM: "xterm" },
         },
       );
-      expect(control.exitCode).toBe(0);
+      expect(logControl.exitCode).toBe(0);
       expect(fs.existsSync(pager.marker)).toBe(true);
       fs.removeSync(pager.marker);
-      for (const args of [
-        ["status", "--short"],
-        ["log", "--stat", "-n", "1"],
-        ["show", "--stat"],
-        ["show", "HEAD:file.txt"],
-        ["diff"],
-        ["diff", "--cached"],
-        ["diff", "--staged", "HEAD"],
-        ["diff", "HEAD~1", "HEAD"],
-        ["diff", "HEAD~1...HEAD"],
-      ]) {
-        const prepared = prepareRtkInvocation("git", args);
-        // Exercise the exact argv/env used by the common executor with a PTY.
-        const command = ["rtk", ...prepared.args].map(shellQuote).join(" ");
-        const result = await execa(
-          "script",
-          ["-q", "-e", "-c", command, "/dev/null"],
-          {
-            cwd: prepared.cwd,
-            reject: false,
-            env: { ...prepared.env, TERM: "xterm" },
-          },
-        );
-        expect(result.exitCode).toBe(0);
-        expect(fs.existsSync(pager.marker)).toBe(false);
-        const adapters = await both(args);
-        expect(adapters.mcp.isError).toBe(false);
-        expect(fs.existsSync(pager.marker)).toBe(false);
-      }
+
       const diffPagerEnv: NodeJS.ProcessEnv = { ...process.env, TERM: "xterm" };
       delete diffPagerEnv.GIT_PAGER;
       delete diffPagerEnv.PAGER;
@@ -159,5 +162,35 @@ describe.skipIf(missing.length > 0)(
       expect(configured.exitCode).toBe(0);
       expect(fs.existsSync(pager.marker)).toBe(false);
     }, 30000);
+
+    it.each(commandCases)(
+      "suppresses configured pager for $label in a terminal and CLI/MCP",
+      async ({ args }) => {
+        const pager = sentinel("pager");
+        await configurePager(commandPagerKeys, pager.program);
+        process.env.GIT_PAGER = shellQuote(pager.program);
+        process.env.PAGER = shellQuote(pager.program);
+
+        const prepared = prepareRtkInvocation("git", args);
+        // Exercise the exact argv/env used by the common executor with a PTY.
+        const command = ["rtk", ...prepared.args].map(shellQuote).join(" ");
+        const terminal = await execa(
+          "script",
+          ["-q", "-e", "-c", command, "/dev/null"],
+          {
+            cwd: prepared.cwd,
+            reject: false,
+            env: { ...prepared.env, TERM: "xterm" },
+          },
+        );
+        expect(terminal.exitCode).toBe(0);
+        expect(fs.existsSync(pager.marker)).toBe(false);
+
+        const adapters = await both(args);
+        expect(adapters.mcp.isError).toBe(false);
+        expect(fs.existsSync(pager.marker)).toBe(false);
+      },
+      30000,
+    );
   },
 );

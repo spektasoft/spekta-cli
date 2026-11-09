@@ -18,7 +18,7 @@ if (missing.length && process.env.SPEKTA_REQUIRE_GIT_INTEGRATION === "1") {
 }
 export const secret = "ghp_abcdefghijklmnopqrstuvwxyz";
 
-function createRealGitContext() {
+function createRealGitContext({ pagerFixture = false } = {}) {
   let fixture: string;
   let workspace: string;
   let savedExit: typeof process.exitCode;
@@ -51,7 +51,17 @@ function createRealGitContext() {
     });
   }
   async function fixtureGit(args: string[]) {
-    const result = await git(args);
+    const configArgs = pagerFixture
+      ? [
+          "-c",
+          "user.name=Proxy Fixture",
+          "-c",
+          "user.email=fixture@example.invalid",
+          "-c",
+          "commit.gpgsign=false",
+        ]
+      : [];
+    const result = await git([...configArgs, ...args]);
     if (result.exitCode !== 0)
       throw new Error(`Fixture git failed: ${result.stderr}`);
     return result.stdout;
@@ -137,26 +147,39 @@ function createRealGitContext() {
     vi.spyOn(process, "cwd").mockReturnValue(workspace);
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await fixtureGit(["init", "--template=", "-b", "main"]);
-    await fixtureGit(["config", "user.name", "Proxy Fixture"]);
-    await fixtureGit(["config", "user.email", "fixture@example.invalid"]);
-    await fixtureGit(["config", "commit.gpgsign", "false"]);
+    await fixtureGit([
+      "init",
+      "--template=",
+      "-b",
+      pagerFixture ? "feature/topic" : "main",
+    ]);
+    if (!pagerFixture) {
+      await fixtureGit(["config", "user.name", "Proxy Fixture"]);
+      await fixtureGit(["config", "user.email", "fixture@example.invalid"]);
+      await fixtureGit(["config", "commit.gpgsign", "false"]);
+    }
     fs.ensureDirSync(path.join(workspace, "nested"));
-    for (const [name, text] of Object.entries({
-      "file.txt": "safe-v1\n",
-      "other.txt": "other-v1\n",
-      "gone.txt": "historical-only\n",
-      "space name": "spaces-blob\n",
-      "-file": "dash-blob\n",
-      "filename-only": "ambiguous-filename\n",
-      "nested/file.txt": "nested-blob\n",
-      ".env": "restricted-secret\n",
-      "big.txt": `${secret}\n${"large allowed line\n".repeat(3000)}`,
-    }))
+    const files: Record<string, string> = pagerFixture
+      ? {
+          "file.txt": "safe-v1\n",
+          "other.txt": "other-v1\n",
+        }
+      : {
+          "file.txt": "safe-v1\n",
+          "other.txt": "other-v1\n",
+          "gone.txt": "historical-only\n",
+          "space name": "spaces-blob\n",
+          "-file": "dash-blob\n",
+          "filename-only": "ambiguous-filename\n",
+          "nested/file.txt": "nested-blob\n",
+          ".env": "restricted-secret\n",
+          "big.txt": `${secret}\n${"large allowed line\n".repeat(3000)}`,
+        };
+    for (const [name, text] of Object.entries(files))
       fs.writeFileSync(path.join(workspace, name), text);
     await fixtureGit(["add", "-f", "--", "."]);
     await fixtureGit(["commit", "-m", "INITIAL_COMMIT"]);
-    await fixtureGit(["branch", "feature/topic"]);
+    if (!pagerFixture) await fixtureGit(["branch", "feature/topic"]);
     fs.writeFileSync(path.join(workspace, "file.txt"), `safe-v2\n${secret}\n`);
     fs.writeFileSync(path.join(workspace, "other.txt"), "other-v2\n");
     fs.removeSync(path.join(workspace, "gone.txt"));
@@ -203,8 +226,8 @@ function createRealGitContext() {
   };
 }
 
-export function useRealGitFixture() {
-  const context = createRealGitContext();
+export function useRealGitFixture(options?: { pagerFixture?: boolean }) {
+  const context = createRealGitContext(options);
   beforeEach(context.setup, 30000);
   afterEach(context.teardown);
   return context;
