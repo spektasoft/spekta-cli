@@ -132,16 +132,9 @@ describe("discoverFindBatch", () => {
   it("renders success, mixed unavailable, empty, incomplete, and overflow samples", async () => {
     const root = await workspace();
     await createEligibleSibling(root);
-    const longParts = [
-      "l".repeat(200),
-      "m".repeat(200),
-      "n".repeat(200),
-      "o".repeat(200),
-      "p".repeat(200),
-      "q".repeat(100),
-    ];
-    await fs.ensureDir(path.join(root, "ok", ...longParts.slice(0, -1)));
-    await fs.writeFile(path.join(root, "ok", ...longParts), "eligible");
+    const longName = randomBytes(50).toString("hex");
+    await fs.ensureDir(path.join(root, "ok"));
+    await fs.writeFile(path.join(root, "ok", longName), "eligible");
     const success = await discoverFindBatch(
       ["ok"],
       { root },
@@ -173,51 +166,36 @@ describe("discoverFindBatch", () => {
       },
     );
 
-    let incomplete: Awaited<ReturnType<typeof discoverFindBatch>> | undefined;
-    let incompleteAllowance = 0;
-    for (let allowance = 40; allowance <= 800; allowance++) {
-      const candidate = await discoverFindBatch(
-        ["ok"],
-        { root },
-        {
-          allowance,
-          measure: cliMeasure,
-          backend: () =>
-            Promise.resolve({
-              stdout: `ok/${longParts.join("/")}\n`,
-              exitCode: 0,
-            }),
-          hasRtk: true,
-        },
-      );
-      if (candidate.operands[0]?.status === "incomplete") {
-        incomplete = candidate;
-        incompleteAllowance = allowance;
-        break;
-      }
-    }
-    expect(incomplete).toBeDefined();
+    const incompleteAllowance = 39;
+    const incomplete = await discoverFindBatch(
+      ["ok"],
+      { root },
+      {
+        allowance: incompleteAllowance,
+        measure: cliMeasure,
+        backend: () =>
+          Promise.resolve({
+            stdout: `ok/${longName}\n`,
+            exitCode: 0,
+          }),
+        hasRtk: true,
+      },
+    );
+    expect(incomplete.operands[0]?.status).toBe("incomplete");
 
-    let overflow: Awaited<ReturnType<typeof discoverFindBatch>> | undefined;
-    let overflowAllowance = 0;
-    for (let allowance = 34; allowance <= 180; allowance++) {
-      const candidate = await discoverFindBatch(
-        [".", "."],
-        { root },
-        {
-          allowance,
-          measure: cliMeasure,
-          backend: () => Promise.resolve({ stdout: "", exitCode: 0 }),
-          hasRtk: true,
-        },
-      );
-      if (candidate.status === "output_limit_exceeded" && candidate.content) {
-        overflow = candidate;
-        overflowAllowance = allowance;
-        break;
-      }
-    }
-    expect(overflow).toBeDefined();
+    const overflowAllowance = 34;
+    const overflow = await discoverFindBatch(
+      [".", "."],
+      { root },
+      {
+        allowance: overflowAllowance,
+        measure: cliMeasure,
+        backend: () => Promise.resolve({ stdout: "", exitCode: 0 }),
+        hasRtk: true,
+      },
+    );
+    expect(overflow.status).toBe("output_limit_exceeded");
+    expect(overflow.content).toBeTruthy();
 
     expect(success.content).toBe(
       'Batch: success\nOperand 1: returned; "ok"\n"ok/keep.ts"\n',
@@ -228,17 +206,17 @@ describe("discoverFindBatch", () => {
     expect(empty.content).toBe(
       'Batch: success\nOperand 1: returned; "ok"\nNo eligible paths in this discovery.\n',
     );
-    expect(incomplete!.content).toBe(
+    expect(incomplete.content).toBe(
       'Batch: partial_result\nOperand 1: incomplete; output_limit_exceeded; "ok"\n  Narrow this root.\n',
     );
-    expect(overflow!.content).toBe(
+    expect(overflow.content).toBe(
       "output_limit_exceeded: split discovery roots.\n",
     );
     const completeLongEntryResponse =
       `Batch: success\nOperand 1: returned; "ok"\n` +
-      `${JSON.stringify(`ok/${longParts.join("/")}`)}\n`;
+      `${JSON.stringify(`ok/${longName}`)}\n`;
     expect(incompleteAllowance).toBeGreaterThanOrEqual(
-      cliMeasure(incomplete!.content, incomplete!.isError),
+      cliMeasure(incomplete.content, incomplete.isError),
     );
     expect(incompleteAllowance).toBeLessThan(
       cliMeasure(completeLongEntryResponse, false),
@@ -247,8 +225,8 @@ describe("discoverFindBatch", () => {
     expect(cliMeasure(success.content, success.isError)).toBe(28);
     expect(cliMeasure(mixed.content, mixed.isError)).toBe(44);
     expect(cliMeasure(empty.content, empty.isError)).toBe(29);
-    expect(cliMeasure(incomplete!.content, incomplete!.isError)).toBe(39);
-    expect(cliMeasure(overflow!.content, overflow!.isError)).toBe(24);
+    expect(cliMeasure(incomplete.content, incomplete.isError)).toBe(39);
+    expect(cliMeasure(overflow.content, overflow.isError)).toBe(24);
     console.log("CLI rendered samples / complete-response token measures", {
       allowance: 1000,
       success: {
@@ -265,13 +243,13 @@ describe("discoverFindBatch", () => {
       },
       incomplete: {
         allowance: incompleteAllowance,
-        text: cliResponse(incomplete!.content, incomplete!.isError),
-        cost: cliMeasure(incomplete!.content, incomplete!.isError),
+        text: cliResponse(incomplete.content, incomplete.isError),
+        cost: cliMeasure(incomplete.content, incomplete.isError),
       },
       overflow: {
         allowance: overflowAllowance,
-        text: cliResponse(overflow!.content, true),
-        cost: cliMeasure(overflow!.content, true),
+        text: cliResponse(overflow.content, true),
+        cost: cliMeasure(overflow.content, true),
       },
     });
   });
@@ -362,9 +340,7 @@ describe("discoverFindBatch", () => {
     "rejects drive and UNC discovery roots before filesystem and backend work",
     async () => {
       const root = await workspace();
-      const backend = vi.fn(() =>
-        Promise.resolve({ stdout: "", exitCode: 0 }),
-      );
+      const backend = vi.fn(() => Promise.resolve({ stdout: "", exitCode: 0 }));
       for (const operand of [
         "C:/outside",
         String.raw`C:\outside`,
@@ -557,26 +533,26 @@ describe("discoverFindBatch", () => {
   it.skipIf(process.platform === "win32")(
     "attributes physical absolute paths from an eligible POSIX root",
     async () => {
-    const root = await workspace();
-    await createEligibleSibling(root);
-    const absoluteRoot = path.join(root, "ok");
-    const result = await discoverFindBatch(
-      [absoluteRoot],
-      { root },
-      {
-        allowance: 1000,
-        measure: textMeasure,
-        backend: () =>
-          Promise.resolve({
-            stdout: `${path.join(absoluteRoot, "keep.ts")}\n`,
-            exitCode: 0,
-          }),
-        hasRtk: true,
-      },
-    );
-    expect(result.status).toBe("success");
-    expect(result.content).toContain('"ok/keep.ts"');
-    expect(result.content).toContain(JSON.stringify(absoluteRoot));
+      const root = await workspace();
+      await createEligibleSibling(root);
+      const absoluteRoot = path.join(root, "ok");
+      const result = await discoverFindBatch(
+        [absoluteRoot],
+        { root },
+        {
+          allowance: 1000,
+          measure: textMeasure,
+          backend: () =>
+            Promise.resolve({
+              stdout: `${path.join(absoluteRoot, "keep.ts")}\n`,
+              exitCode: 0,
+            }),
+          hasRtk: true,
+        },
+      );
+      expect(result.status).toBe("success");
+      expect(result.content).toContain('"ok/keep.ts"');
+      expect(result.content).toContain(JSON.stringify(absoluteRoot));
     },
   );
 
@@ -835,8 +811,7 @@ describe("discoverFindBatch", () => {
 
   it("reserves every reachable single-root outcome at the conservative MCP boundary", async () => {
     const root = await workspace();
-    const label =
-      process.platform === "win32" ? "quoted-根`" : 'quoted"-根`';
+    const label = process.platform === "win32" ? "quoted-根`" : 'quoted"-根`';
     await fs.mkdir(path.join(root, label));
     const mcpId: string | number = 'find/"metadata"-17';
     const candidates = [
@@ -847,11 +822,11 @@ describe("discoverFindBatch", () => {
     ];
     const measure = mcpMeasure(mcpId);
     const reservedRow = candidates.reduce((largest, candidate) =>
-        Math.max(measure(candidate, true), measure(candidate, false)) >
-        Math.max(measure(largest, true), measure(largest, false))
-          ? candidate
-          : largest,
-      );
+      Math.max(measure(candidate, true), measure(candidate, false)) >
+      Math.max(measure(largest, true), measure(largest, false))
+        ? candidate
+        : largest,
+    );
     const reservedMetadata = `Batch: partial_result\n${reservedRow}`;
     const conservativeBoundary = Math.max(
       measure(reservedMetadata, true),
