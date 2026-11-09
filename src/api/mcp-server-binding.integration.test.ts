@@ -162,14 +162,14 @@ describe("MCP server workspace binding", () => {
     const search = await tools.spekta_rg.handler({
       patterns: ["updated launch"],
     });
+    const listing = await tools.spekta_shell.handler({
+      command: "ls",
+      args: ["."],
+    });
     expect(JSON.stringify(read)).toContain("updated launch");
     expect(JSON.stringify(search)).toContain("updated launch");
-    expect(
-      await tools.spekta_shell.handler({ command: "ls", args: ["."] }),
-    ).toMatchObject({ isError: false });
-    expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["."], {
-      root: fixture.root,
-    });
+    expect(listing).toMatchObject({ isError: false });
+    expect(JSON.stringify(listing)).toContain("created.txt");
     expect(await fs.pathExists(path.join(fixture.ambient, "created.txt"))).toBe(
       false,
     );
@@ -179,7 +179,14 @@ describe("MCP server workspace binding", () => {
         args: ["../sibling.txt"],
       }),
     ).toMatchObject({ isError: true });
-    expect(executeRtkCommand).toHaveBeenCalledOnce();
+    if (process.platform === "win32") {
+      expect(executeRtkCommand).not.toHaveBeenCalled();
+    } else {
+      expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["."], {
+        root: fixture.root,
+      });
+      expect(executeRtkCommand).toHaveBeenCalledOnce();
+    }
   });
 
   it("binds a nested launch workspace and denies identically named parent and outside files", async () => {
@@ -225,6 +232,8 @@ describe("MCP server workspace binding", () => {
     await fs.ensureDir(secondRoot);
     await execa("git", ["init", "--quiet"], { cwd: secondRoot });
     await fs.writeFile(path.join(secondRoot, "real.txt"), "needle SECOND\n");
+    await fs.writeFile(path.join(fixture.root, "first-only.txt"), "FIRST\n");
+    await fs.writeFile(path.join(secondRoot, "second-only.txt"), "SECOND\n");
     await fs.writeFile(path.join(secondRoot, ".spektaignore"), "\n");
 
     process.chdir(fixture.root);
@@ -305,14 +314,27 @@ describe("MCP server workspace binding", () => {
     expect(JSON.stringify(secondSearch)).not.toContain("updated FIRST");
     expect(firstShell).toMatchObject({ isError: false });
     expect(secondShell).toMatchObject({ isError: false });
+    expect(JSON.stringify(firstShell)).toContain("first-only.txt");
+    expect(JSON.stringify(firstShell)).not.toContain("second-only.txt");
+    expect(JSON.stringify(secondShell)).toContain("second-only.txt");
+    expect(JSON.stringify(secondShell)).not.toContain("first-only.txt");
     expect(firstGit).not.toHaveProperty("isError", true);
     expect(secondGit).not.toHaveProperty("isError", true);
-    expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["."], {
-      root: fixture.root,
-    });
-    expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["."], {
-      root: secondRoot,
-    });
+    if (process.platform === "win32") {
+      expect(executeRtkCommand).not.toHaveBeenCalledWith("ls", ["."], {
+        root: fixture.root,
+      });
+      expect(executeRtkCommand).not.toHaveBeenCalledWith("ls", ["."], {
+        root: secondRoot,
+      });
+    } else {
+      expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["."], {
+        root: fixture.root,
+      });
+      expect(executeRtkCommand).toHaveBeenCalledWith("ls", ["."], {
+        root: secondRoot,
+      });
+    }
     expect(executeRtkCommand).toHaveBeenCalledWith(
       "git",
       ["status", "--short"],
@@ -327,12 +349,45 @@ describe("MCP server workspace binding", () => {
   });
 
   it("canonicalizes a symlink launch workspace and keeps the binding immutable", async () => {
+    await fs.writeFile(
+      path.join(fixture.root, "canonical-root-only.txt"),
+      "canonical root\n",
+    );
+    await fs.writeFile(
+      path.join(fixture.ambient, "ambient-only.txt"),
+      "ambient root\n",
+    );
     vi.spyOn(process, "cwd").mockReturnValue(fixture.alias);
     await runMcpServer();
-    await registeredServers[0].get("spekta_shell")!({ command: "ls" });
-    const context = executeRtkCommand.mock.calls[0][2] as { root: string };
-    expect(context.root).toBe(fixture.root);
-    expect(Object.isFrozen(context)).toBe(true);
+    await fs.remove(fixture.alias);
+    await fs.symlink(
+      fixture.ambient,
+      fixture.alias,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+
+    const tools = registeredServers[0];
+    const listing = await tools.get("spekta_shell")!({
+      command: "ls",
+      args: ["."],
+    });
+    const read = await tools.get("spekta_read")!({ paths: ["real.txt"] });
+    expect(listing).toMatchObject({ isError: false });
+    expect(JSON.stringify(listing)).toContain("canonical-root-only.txt");
+    expect(JSON.stringify(listing)).not.toContain("ambient-only.txt");
+    expect(JSON.stringify(read)).toContain("needle INTERNAL");
+    expect(JSON.stringify(read)).not.toContain("WRONG_CWD");
+
+    if (process.platform === "win32") {
+      expect(executeRtkCommand).not.toHaveBeenCalledWith("ls", ["."], {
+        root: fixture.root,
+      });
+    } else {
+      const context = executeRtkCommand.mock.calls[0]?.[2] as
+        { root: string } | undefined;
+      expect(context?.root).toBe(fixture.root);
+      expect(Object.isFrozen(context)).toBe(true);
+    }
   });
 
   it("rejects escaping paths through registered handlers before shell execution", async () => {
