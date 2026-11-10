@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, type TestContext, vi } from "vitest";
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
@@ -13,6 +13,37 @@ import {
 vi.mock("execa", () => ({ execa: vi.fn() }));
 
 const temporaryRoots: string[] = [];
+
+function gradleWrapperName(): string {
+  return os.platform() === "win32" ? "gradlew.bat" : "gradlew";
+}
+
+function expectedGradleInvocation(
+  root: string,
+  args: string[],
+): [string, string[], { cwd: string; reject: false }] {
+  const wrapper = path.join(root, gradleWrapperName());
+  return os.platform() === "win32"
+    ? [wrapper, args, { cwd: root, reject: false }]
+    : ["bash", [wrapper, ...args], { cwd: root, reject: false }];
+}
+
+async function createSymlinkOrSkip(
+  target: string,
+  link: string,
+  type: "file" | "dir",
+  skip: TestContext["skip"],
+): Promise<void> {
+  try {
+    await fs.symlink(target, link, type);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (os.platform() === "win32" && (code === "EPERM" || code === "EACCES")) {
+      skip(`Windows denied symlink creation (${code})`);
+    }
+    throw error;
+  }
+}
 
 async function createRoot(): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "spekta-format-"));
@@ -63,16 +94,18 @@ describe("workspace-bound formatters", () => {
     expect(execa).toHaveBeenCalledWith(pint, [file], { cwd: root });
   });
 
-  it("ignores a Pint symlink that escapes the workspace", async () => {
+  it("ignores a Pint symlink that escapes the workspace", async ({ skip }) => {
     const root = await createRoot();
     const outsideRoot = await createRoot();
     const file = path.join(root, "Example.php");
     await fs.writeFile(file, "<?php\n");
     await fs.ensureDir(path.join(root, "vendor", "bin"));
     await fs.writeFile(path.join(outsideRoot, "pint"), "");
-    await fs.symlink(
+    await createSymlinkOrSkip(
       path.join(outsideRoot, "pint"),
       path.join(root, "vendor", "bin", "pint"),
+      "file",
+      skip,
     );
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
@@ -94,7 +127,7 @@ describe("workspace-bound formatters", () => {
     const file = path.join(workspaceRoot, "src", "Main.kt");
     await fs.ensureDir(path.join(outerRoot, "gradle", "wrapper"));
     await fs.ensureDir(path.dirname(file));
-    await fs.writeFile(path.join(outerRoot, "gradlew"), "");
+    await fs.writeFile(path.join(outerRoot, gradleWrapperName()), "");
     await fs.writeFile(file, "class Main\n");
 
     const result = await formatKotlinFileInPlace(file, {
@@ -110,7 +143,7 @@ describe("workspace-bound formatters", () => {
     const file = path.join(root, "app", "src", "Main.kt");
     await fs.ensureDir(path.join(root, "app", "src"));
     await fs.ensureDir(path.join(root, "gradle", "wrapper"));
-    await fs.writeFile(path.join(root, "gradlew"), "");
+    await fs.writeFile(path.join(root, gradleWrapperName()), "");
     await fs.writeFile(file, "class Main\n");
     vi.mocked(execa)
       .mockResolvedValueOnce({
@@ -125,15 +158,11 @@ describe("workspace-bound formatters", () => {
 
     expect(execa).toHaveBeenNthCalledWith(
       1,
-      "bash",
-      [path.join(root, "gradlew"), "tasks", "--all"],
-      { cwd: root, reject: false },
+      ...expectedGradleInvocation(root, ["tasks", "--all"]),
     );
     expect(execa).toHaveBeenNthCalledWith(
       2,
-      "bash",
-      [path.join(root, "gradlew"), "spotlessApply"],
-      { cwd: root, reject: false },
+      ...expectedGradleInvocation(root, ["spotlessApply"]),
     );
   });
 
@@ -142,7 +171,7 @@ describe("workspace-bound formatters", () => {
     const file = path.join(root, "src", "Main.kt");
     await fs.ensureDir(path.join(root, "gradle", "wrapper"));
     await fs.ensureDir(path.dirname(file));
-    await fs.writeFile(path.join(root, "gradlew"), "");
+    await fs.writeFile(path.join(root, gradleWrapperName()), "");
     await fs.writeFile(file, "class Main\n");
     vi.mocked(execa).mockResolvedValue({
       exitCode: 0,
@@ -168,7 +197,7 @@ describe("workspace-bound formatters", () => {
     const file = path.join(root, "src", "Main.kt");
     await fs.ensureDir(path.join(root, "gradle", "wrapper"));
     await fs.ensureDir(path.dirname(file));
-    await fs.writeFile(path.join(root, "gradlew"), "");
+    await fs.writeFile(path.join(root, gradleWrapperName()), "");
     await fs.writeFile(file, "class Main\n");
     vi.mocked(execa)
       .mockResolvedValueOnce({
@@ -182,17 +211,21 @@ describe("workspace-bound formatters", () => {
     );
   });
 
-  it("rejects a Gradle wrapper symlink that escapes the workspace", async () => {
+  it("rejects a Gradle wrapper symlink that escapes the workspace", async ({
+    skip,
+  }) => {
     const root = await createRoot();
     const outsideRoot = await createRoot();
     const file = path.join(root, "src", "Main.kt");
     await fs.ensureDir(path.join(root, "gradle", "wrapper"));
     await fs.ensureDir(path.dirname(file));
     await fs.writeFile(file, "class Main\n");
-    await fs.writeFile(path.join(outsideRoot, "gradlew"), "");
-    await fs.symlink(
-      path.join(outsideRoot, "gradlew"),
-      path.join(root, "gradlew"),
+    await fs.writeFile(path.join(outsideRoot, gradleWrapperName()), "");
+    await createSymlinkOrSkip(
+      path.join(outsideRoot, gradleWrapperName()),
+      path.join(root, gradleWrapperName()),
+      "file",
+      skip,
     );
 
     await expect(formatKotlinFileInPlace(file, { root })).rejects.toThrow(
@@ -201,16 +234,20 @@ describe("workspace-bound formatters", () => {
     expect(execa).not.toHaveBeenCalled();
   });
 
-  it("rejects a Gradle wrapper directory symlink that escapes the workspace", async () => {
+  it("rejects a Gradle wrapper directory symlink that escapes the workspace", async ({
+    skip,
+  }) => {
     const root = await createRoot();
     const outsideRoot = await createRoot();
     const file = path.join(root, "src", "Main.kt");
     await fs.ensureDir(path.join(outsideRoot, "gradle", "wrapper"));
     await fs.ensureDir(path.dirname(file));
-    await fs.writeFile(path.join(root, "gradlew"), "");
-    await fs.symlink(
+    await fs.writeFile(path.join(root, gradleWrapperName()), "");
+    await createSymlinkOrSkip(
       path.join(outsideRoot, "gradle"),
       path.join(root, "gradle"),
+      "dir",
+      skip,
     );
     await fs.writeFile(file, "class Main\n");
 
