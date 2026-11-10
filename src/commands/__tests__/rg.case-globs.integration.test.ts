@@ -16,7 +16,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await fixture.cleanup();
+  await fixture?.cleanup();
 });
 
 describe("spekta rg case and glob behavior", () => {
@@ -72,7 +72,7 @@ describe("spekta rg case and glob behavior", () => {
             },
         )
         .filter((event) => event.type === "match")
-        .map((event) => event.data.path?.text),
+        .map((event) => event.data.path?.text.replaceAll("\\", "/")),
     );
 
     const outcome = await getRgOutcome(
