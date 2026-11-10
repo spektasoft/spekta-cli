@@ -14,10 +14,29 @@ let fixture: string;
 let workspace: string;
 let otherCwd: string;
 let originalExitCode: typeof process.exitCode;
+let originalListingBackendOverride: string | undefined;
 const context = () => ({ root: workspace });
+
+function createDirectorySymlinkOrSkip(
+  target: string,
+  link: string,
+  skip: (reason: string) => never,
+): void {
+  try {
+    fs.symlinkSync(target, link, "dir");
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (["EPERM", "EACCES", "ENOTSUP", "EOPNOTSUPP"].includes(code ?? "")) {
+      skip(`Directory symlink creation is unavailable (${code}).`);
+    }
+    throw error;
+  }
+}
 
 beforeEach(() => {
   originalExitCode = process.exitCode;
+  originalListingBackendOverride = process.env.SPEKTA_LISTING_BACKEND_OVERRIDE;
+  process.env.SPEKTA_LISTING_BACKEND_OVERRIDE = "native";
   fixture = fs.mkdtempSync(path.join(os.tmpdir(), "spekta-proxy-context-"));
   workspace = path.join(fixture, "workspace");
   otherCwd = path.join(fixture, "other-cwd");
@@ -39,6 +58,12 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   process.exitCode = originalExitCode;
+  if (originalListingBackendOverride === undefined) {
+    delete process.env.SPEKTA_LISTING_BACKEND_OVERRIDE;
+  } else {
+    process.env.SPEKTA_LISTING_BACKEND_OVERRIDE =
+      originalListingBackendOverride;
+  }
   fs.removeSync(fixture);
 });
 
@@ -82,18 +107,22 @@ describe("explicit proxy workspace context", () => {
     expect(() =>
       validateProxyRequest("git", ["show", "HEAD:folder/file.txt"], context()),
     ).not.toThrow();
+  });
+
+  it("rejects Git blob paths that escape through a symlink", (testContext) => {
     const outside = path.join(fixture, "outside");
     fs.ensureDirSync(outside);
-    fs.symlinkSync(outside, path.join(workspace, "escape"), "dir");
+    createDirectorySymlinkOrSkip(
+      outside,
+      path.join(workspace, "escape"),
+      (reason) => testContext.skip(reason),
+    );
     expect(() =>
       validateProxyRequest("git", ["show", "HEAD:escape/secret"], context()),
     ).toThrow(/outside the project directory/i);
   });
 
-  it("classifies traversal and symlink escapes per operand relative to context root", async () => {
-    const outside = path.join(fixture, "outside");
-    fs.ensureDirSync(outside);
-    fs.symlinkSync(outside, path.join(workspace, "escape"), "dir");
+  it("classifies traversal per operand relative to context root", async () => {
     expect(() =>
       validateProxyRequest("ls", ["../other-cwd"], context()),
     ).not.toThrow();
@@ -103,6 +132,16 @@ describe("explicit proxy workspace context", () => {
       "Operand 1: unavailable; unavailable_access",
     );
     expect(execa).not.toHaveBeenCalled();
+  });
+
+  it("classifies symlink escapes per operand relative to context root", (testContext) => {
+    const outside = path.join(fixture, "outside");
+    fs.ensureDirSync(outside);
+    createDirectorySymlinkOrSkip(
+      outside,
+      path.join(workspace, "escape"),
+      (reason) => testContext.skip(reason),
+    );
     expect(() =>
       validateProxyRequest("git", ["status", "--", "escape/secret"], context()),
     ).toThrow(/outside the project directory/i);
@@ -122,6 +161,7 @@ describe("explicit proxy workspace context", () => {
   });
 
   it("passes the same context from run validation through child execution", async () => {
+    process.env.SPEKTA_LISTING_BACKEND_OVERRIDE = "rtk";
     await runRtkProxy("ls", ["folder"], context());
     expect(execa).toHaveBeenCalledWith(
       "rtk",
@@ -131,6 +171,7 @@ describe("explicit proxy workspace context", () => {
   });
 
   it("keeps context cwd on unavailable, nonzero, and launch-failure paths", async () => {
+    process.env.SPEKTA_LISTING_BACKEND_OVERRIDE = "rtk";
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
     const logs = vi.spyOn(console, "log").mockImplementation(() => {});
     vi.mocked(execa).mockImplementation(((file: string) => {
