@@ -34,7 +34,13 @@ beforeEach(() => {
   ({ fixture, workspace } = proxyFixture.setup());
 });
 
-afterEach(() => proxyFixture.teardown());
+afterEach(() => {
+  try {
+    proxyFixture.teardown();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
 
 function mockRtkListing(stdout: string): void {
   vi.mocked(execa).mockImplementation(((file: string) => {
@@ -371,6 +377,7 @@ describe("CLI and MCP proxy parity", () => {
   });
 
   it("preserves MCP nonzero RTK result and missing RTK error responses", async () => {
+    vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
     vi.mocked(execa).mockResolvedValueOnce({
       stdout: "",
       stderr: secret,
@@ -381,6 +388,12 @@ describe("CLI and MCP proxy parity", () => {
     expect(failed.content[0].text).toContain(
       "Operand 1: internal_failure; listing failed",
     );
+    expect(failed.content[0].text).not.toContain(secret);
+    expect(execa).toHaveBeenCalledWith(
+      "rtk",
+      ["proxy", "ls", "-1Ab", "--", "."],
+      expect.any(Object),
+    );
     vi.mocked(execa).mockRejectedValueOnce(
       Object.assign(new Error("missing"), { code: "ENOENT" }),
     );
@@ -389,5 +402,8 @@ describe("CLI and MCP proxy parity", () => {
     expect(missing.content[0].text).toBe(
       "RTK listing failed before output could be checked.",
     );
+    expect(
+      vi.mocked(execa).mock.calls.filter(([file]) => file === "rtk"),
+    ).toHaveLength(2);
   });
 });
