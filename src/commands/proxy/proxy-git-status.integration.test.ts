@@ -2,6 +2,7 @@ import fs from "fs-extra";
 import path from "path";
 import { execa } from "execa";
 import { describe, expect, it, vi } from "vitest";
+import * as proxyExecution from "./proxy-execution";
 import { getTokenCount } from "../../utils/read-utils";
 import { resolveAllowanceSettings } from "../../core/config/allowance";
 import { formatProxyOutput } from "./proxy-output";
@@ -205,15 +206,36 @@ describe.skipIf(missing.length > 0)(
       }
     });
     it("rejects unsafe names instead of interpreting record-shaped filenames", async () => {
-      fs.writeFileSync(
-        path.join(context.workspace, "unsafe\nname.txt"),
-        "safe",
-      );
-      const result = await context.both(["status"]);
-      expect(result.mcp.isError).toBe(true);
-      expect(result.mcp.content[0].text).toContain("could not be attributed");
-      expect(JSON.stringify(result)).not.toContain("unsafe");
-      expect(process.exitCode).toBe(1);
+      const expectRejected = async () => {
+        const result = await context.both(["status"]);
+        expect(result.cli).toContain("could not be attributed");
+        expect(result.mcp.isError).toBe(true);
+        expect(result.mcp.content[0].text).toContain("could not be attributed");
+        expect(JSON.stringify(result)).not.toContain("unsafe");
+        expect(process.exitCode).toBe(1);
+      };
+      if (process.platform === "win32") {
+        // Windows cannot create this name; inject Git's NUL-delimited status record.
+        const execute = vi
+          .spyOn(proxyExecution, "executeRtkCommand")
+          .mockResolvedValue({
+            available: true,
+            stdout: "?? unsafe\nname.txt\0",
+            stderr: "",
+            exitCode: 0,
+          });
+        try {
+          await expectRejected();
+        } finally {
+          execute.mockRestore();
+        }
+      } else {
+        fs.writeFileSync(
+          path.join(context.workspace, "unsafe\nname.txt"),
+          "safe",
+        );
+        await expectRejected();
+      }
     });
     it("preserves child failures without forwarding path-bearing diagnostics", async () => {
       const directory = path.join(context.fixture, "not-a-repository");
