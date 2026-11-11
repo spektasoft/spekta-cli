@@ -63,8 +63,9 @@ export async function renderGitStatusOutcome(
         .some((part) => part === ".." || part === "." || part === "") &&
       !unsafeText(name) &&
       !name.includes("\\");
+    // Git paths use forward slashes regardless of the host platform.
     const quote = (name: string): string =>
-      JSON.stringify(name).replace(/`/g, "\\u0060");
+      JSON.stringify(name.split(path.sep).join("/")).replace(/`/g, "\\u0060");
     for (let index = 0; index < records.length; index++) {
       const record = records[index];
       if (
