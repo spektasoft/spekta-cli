@@ -43,7 +43,11 @@ export async function expectProxyRejected(
     command,
     args,
   });
-  expect(cli).toMatch(reason);
+  const redact = (value: string) => value.replaceAll(proxySecret, "[redacted]");
+  expect(
+    cli,
+    `command=${redact(JSON.stringify(command))} args=${redact(JSON.stringify(args))} isTTY=${process.stdin.isTTY}\nCLI diagnostic:\n${redact(cli)}`,
+  ).toMatch(reason);
   expect(cli).not.toContain(proxySecret);
   expect(process.exitCode).toBe(1);
   expect(mcp.isError).toBe(true);
