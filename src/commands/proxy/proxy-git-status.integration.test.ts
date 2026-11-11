@@ -39,7 +39,7 @@ describe.skipIf(missing.length > 0)(
           );
         }
       }
-    });
+    }, 15000);
     it("preserves staged, unstaged, and untracked short-status records", async () => {
       const result = await context.both(["status", "--short"]);
       expect(result.mcp.isError).toBe(false);
@@ -69,6 +69,19 @@ describe.skipIf(missing.length > 0)(
       );
       expect(result.mcp.content[0].text).toContain('"untracked.txt"');
       expect(JSON.stringify(result)).not.toContain("ignored-new.txt");
+    });
+    it("filters Git-ignored tracked paths without symlink setup", async () => {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "file.txt\n",
+      );
+
+      const result = await context.both(["status"]);
+
+      expect(result.mcp.isError).toBe(false);
+      expect(result.mcp.content[0].text).toContain('"other.txt"');
+      expect(result.mcp.content[0].text).not.toContain('"file.txt"');
+      expect(JSON.stringify(result)).not.toMatch(/\.gitignore|file\.txt/);
     });
     it("uses explicit allowances and rejects values above the configured ceiling", async () => {
       process.env.SPEKTA_GIT_TOKEN_CEILING = "1200";

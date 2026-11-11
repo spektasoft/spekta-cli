@@ -9,7 +9,7 @@ import { isPathWithin, normalizeWorkspacePath } from "./workspace";
  * Evaluates whether a relative or absolute target path is ignored
  * by spekta ignore configuration or gitignore rules.
  */
-type IgnoreRuleMatch = "spekta" | "git" | null;
+export type IgnoreRuleMatch = "spekta" | "git" | null;
 
 interface IgnoreCheckResult {
   match: IgnoreRuleMatch;
@@ -36,38 +36,100 @@ async function checkIgnoreRule(
       ? getIgnorePatterns()
       : getIgnorePatterns(workspaceRoot)));
 
-  if (spektaIgnores.length > 0) {
-    const ig = ignore().add(spektaIgnores);
-    if (ig.ignores(matcherPath)) {
-      return { match: "spekta", spektaIgnores };
-    }
-  }
+  const matches = await checkIgnoreRules(
+    [matcherPath],
+    spektaIgnores,
+    gitNoIndex,
+    workspaceRoot,
+    skipGitIgnoreCheck,
+  );
+  return { match: matches.get(matcherPath) ?? null, spektaIgnores };
+}
 
-  let isGitIgnored = false;
+async function checkIgnoreRules(
+  relativePaths: readonly string[],
+  spektaIgnores: string[],
+  gitNoIndex: boolean,
+  workspaceRoot?: string,
+  skipGitIgnoreCheck = false,
+): Promise<Map<string, IgnoreRuleMatch>> {
+  const matcherPaths = [
+    ...new Set(
+      relativePaths.map((relativePath) =>
+        relativePath.split(path.sep).join("/"),
+      ),
+    ),
+  ];
+  const matches = new Map<string, IgnoreRuleMatch>(
+    matcherPaths.map((matcherPath) => [matcherPath, null]),
+  );
+  const gitPaths: string[] = [];
+  const spektaMatcher =
+    spektaIgnores.length > 0 ? ignore().add(spektaIgnores) : undefined;
+
+  for (const matcherPath of matcherPaths) {
+    if (spektaMatcher?.ignores(matcherPath)) matches.set(matcherPath, "spekta");
+    else if (!skipGitIgnoreCheck) gitPaths.push(matcherPath);
+  }
+  if (gitPaths.length === 0) return matches;
+
+  let gitIgnored = new Set<string>();
   try {
-    if (skipGitIgnoreCheck) return { match: null, spektaIgnores };
-    const args = [
-      "check-ignore",
-      "-q",
-      ...(gitNoIndex ? ["--no-index"] : []),
-      "--",
-      matcherPath,
-    ];
-    if (workspaceRoot === undefined) {
-      await execa("git", args);
+    if (gitPaths.length === 1) {
+      const args = [
+        "check-ignore",
+        "-q",
+        ...(gitNoIndex ? ["--no-index"] : []),
+        "--",
+        gitPaths[0],
+      ];
+      if (workspaceRoot === undefined) await execa("git", args);
+      else await execa("git", args, { cwd: workspaceRoot });
+      gitIgnored = new Set(gitPaths);
     } else {
-      await execa("git", args, { cwd: workspaceRoot });
+      const result = await execa(
+        "git",
+        [
+          "check-ignore",
+          "-z",
+          ...(gitNoIndex ? ["--no-index"] : []),
+          "--stdin",
+        ],
+        {
+          ...(workspaceRoot === undefined ? {} : { cwd: workspaceRoot }),
+          input: `${gitPaths.join("\0")}\0`,
+          reject: false,
+        },
+      );
+      if (result.exitCode === 0)
+        gitIgnored = new Set(
+          result.stdout.split("\0").filter((matcherPath) => matcherPath),
+        );
     }
-    isGitIgnored = true;
   } catch {
-    // Non-zero exit code indicates the path is not ignored by git, or git is not initialized.
+    // A failed Git check preserves the existing fail-open ignore-check behavior.
   }
 
-  if (isGitIgnored && !isWhitelisted(matcherPath, spektaIgnores)) {
-    return { match: "git", spektaIgnores };
+  for (const matcherPath of gitIgnored) {
+    if (!isWhitelisted(matcherPath, spektaIgnores))
+      matches.set(matcherPath, "git");
   }
+  return matches;
+}
 
-  return { match: null, spektaIgnores };
+/** Resolve ignore matches for multiple relative paths with one Git check. */
+export async function getIgnoreRuleMatches(
+  relativePaths: readonly string[],
+  gitNoIndex = false,
+  workspaceRoot?: string,
+): Promise<ReadonlyMap<string, IgnoreRuleMatch>> {
+  const spektaIgnores = await getIgnorePatterns(workspaceRoot);
+  return checkIgnoreRules(
+    relativePaths,
+    spektaIgnores,
+    gitNoIndex,
+    workspaceRoot,
+  );
 }
 
 export async function isPathIgnored(
