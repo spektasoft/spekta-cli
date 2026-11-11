@@ -9,6 +9,7 @@ import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 
 import { createGitPolicyFixture } from "./proxy-policy.integration-fixture";
 import { rejectedPolicyRequests } from "./proxy-policy.integration-cases";
+import { danglingLinkGitRequests } from "./proxy-git.test-fixtures";
 import {
   expectProxyRejected as expectRejected,
   proxySecret as secret,
@@ -314,6 +315,16 @@ describe("CLI and MCP proxy parity", () => {
       const requests = rejectedPolicyRequests();
       for (const [command, args, reason] of requests)
         await expectRejected(command, args, reason);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "rejects dangling-link requests without prompting when the fixture can create the link",
+    async () => {
+      for (const [args, reason] of danglingLinkGitRequests) {
+        const command = "git";
+        await expectRejected(command, args, reason);
+      }
     },
   );
 

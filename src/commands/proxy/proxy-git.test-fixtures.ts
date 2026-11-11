@@ -121,6 +121,8 @@ export const rejectedGitRequests: Array<[string[], RegExp]> = [
   [["log", "--", ":(top)file"], /unsupported Git path/i],
   [["show", "--", "*.ts"], /unsupported Git path/i],
 ];
+
+export const danglingLinkGitRequests: Array<[string[], RegExp]> = [];
 for (const override of [
   ["-c", "core.pager=sentinel"],
   ["-ccore.pager=sentinel"],
@@ -183,11 +185,11 @@ for (const subcommand of ["status", "log", "show", "diff"]) {
     [subcommand, "--", "--spekta-force=true"],
     /unsupported option/i,
   ]);
-  rejectedGitRequests.push([
+  danglingLinkGitRequests.push([
     [subcommand, "--", "dangling"],
     /ENOENT|no such file/i,
   ]);
-  rejectedGitRequests.push([
+  danglingLinkGitRequests.push([
     [subcommand, "--", "dangling/missing"],
     /ENOENT|no such file/i,
   ]);
@@ -196,9 +198,16 @@ rejectedGitRequests.push([
   ["show", "HEAD:escape/missing/file"],
   /outside the project directory/i,
 ]);
-rejectedGitRequests.push([["show", "HEAD:dangling"], /ENOENT|no such file/i]);
+danglingLinkGitRequests.push([
+  ["show", "HEAD:dangling"],
+  /ENOENT|no such file/i,
+]);
 
 acceptedGitRequests.push(
+  ["status", "--", "missing"],
+  ["log", "--", "missing"],
+  ["show", "--", "missing"],
+  ["diff", "--", "missing"],
   ["diff"],
   ["diff", "--"],
   ["diff", "-p"],

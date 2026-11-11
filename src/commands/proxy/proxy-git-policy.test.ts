@@ -13,6 +13,7 @@ import {
 import { validateProxyRequest } from "./proxy-policy";
 import {
   acceptedGitRequests,
+  danglingLinkGitRequests,
   rejectedGitRequests,
 } from "./proxy-git.test-fixtures";
 
@@ -120,6 +121,14 @@ describe("shared Git classification", () => {
       expect(() => validateProxyRequest("git", args)).toThrow(reason);
     },
   );
+  it("rejects dangling-link paths when the fixture can create the link", ({
+    skip,
+  }) => {
+    createLinksRequiredByRequest(["dangling"], skip);
+    for (const [args, reason] of danglingLinkGitRequests) {
+      expect(() => validateProxyRequest("git", args)).toThrow(reason);
+    }
+  });
   it("does not apply filesystem checks to a slash-containing revision", ({
     skip,
   }) => {
