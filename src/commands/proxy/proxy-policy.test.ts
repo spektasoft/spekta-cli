@@ -66,15 +66,32 @@ describe("validateProxyRequest", () => {
     }
   });
 
-  it("leaves existence and directory checks to per-operand outcomes", () => {
-    fs.symlinkSync(
-      path.join(workspace, "missing"),
-      path.join(workspace, "dangling"),
-      "dir",
-    );
-    for (const operand of ["file.txt", "missing", "dangling"]) {
+  it("leaves ordinary existence and directory checks to per-operand outcomes", () => {
+    for (const operand of ["file.txt", "missing"]) {
       expect(() => validateProxyRequest("ls", [operand])).not.toThrow();
     }
+  });
+
+  it("leaves dangling symlink checks to per-operand outcomes", (context) => {
+    try {
+      fs.symlinkSync(
+        path.join(workspace, "missing"),
+        path.join(workspace, "dangling"),
+        "dir",
+      );
+    } catch (error) {
+      if (
+        error !== null &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "EPERM"
+      ) {
+        context.skip("Windows denied dangling symlink creation (EPERM)");
+      }
+      throw error;
+    }
+
+    expect(() => validateProxyRequest("ls", ["dangling"])).not.toThrow();
   });
 
   it("accepts an internal symlink and a directory beginning with two dots", () => {
