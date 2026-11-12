@@ -107,6 +107,7 @@ describe("CLI and MCP proxy parity", () => {
       fs.writeFileSync(path.join(workspace, "directory-two", "inner.txt"), "x");
       const inDirectory = args[0]?.endsWith("directory") === true;
       mockRtkListing(inDirectory ? "inner.txt\n" : "directory\nfile.txt\n");
+      vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
       await runRtkProxy("ls", args);
       const mcp = await TOOL_REGISTRY.spekta_shell.handler({
         command: "ls",
@@ -116,14 +117,17 @@ describe("CLI and MCP proxy parity", () => {
         .mocked(execa)
         .mock.calls.filter(([file]) => file === "rtk");
       expect(rtkCalls).toHaveLength(Math.max(args.length, 1) * 2);
-      const expectedOperands = args.length === 0 ? ["."] : args;
+      const displayOperands = args.length === 0 ? ["."] : args;
+      const expectedRtkOperands = displayOperands.map((operand) =>
+        process.platform === "win32" ? operand.replaceAll("/", "\\") : operand,
+      );
       for (const [index, call] of rtkCalls.entries()) {
         expect(call[1]).toEqual([
           "proxy",
           "ls",
           "-1Ab",
           "--",
-          expectedOperands[index % expectedOperands.length],
+          expectedRtkOperands[index % expectedRtkOperands.length],
         ]);
       }
       expect(console.log).toHaveBeenCalledWith(
@@ -131,7 +135,7 @@ describe("CLI and MCP proxy parity", () => {
       );
       expect(console.error).not.toHaveBeenCalled();
       expect(process.exitCode).toBeUndefined();
-      const listing = expectedOperands
+      const listing = displayOperands
         .map(
           (operand, index) =>
             `Operand ${index + 1}: returned; ${JSON.stringify(operand)}\n` +
