@@ -156,6 +156,7 @@ describe("CLI and MCP proxy parity", () => {
   it("retains a valid directory beside an unavailable operand through CLI and MCP", async () => {
     fs.writeFileSync(path.join(workspace, "directory", "inner.txt"), "x");
     mockRtkListing("inner.txt\n");
+    vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
     await runRtkProxy("ls", ["missing", "directory"]);
     const mcp = await TOOL_REGISTRY.spekta_shell.handler({
       command: "ls",
