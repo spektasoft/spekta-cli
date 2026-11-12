@@ -94,15 +94,31 @@ describe("validateProxyRequest", () => {
     expect(() => validateProxyRequest("ls", ["dangling"])).not.toThrow();
   });
 
-  it("accepts an internal symlink and a directory beginning with two dots", () => {
-    fs.symlinkSync(
-      path.join(workspace, "directory"),
-      path.join(workspace, "alias"),
-      "dir",
-    );
+  it("accepts a directory beginning with two dots", () => {
     fs.ensureDirSync(path.join(workspace, "..internal"));
-    expect(() => validateProxyRequest("ls", ["alias"])).not.toThrow();
     expect(() => validateProxyRequest("ls", ["..internal"])).not.toThrow();
+  });
+
+  it("accepts an internal symlink", (context) => {
+    try {
+      fs.symlinkSync(
+        path.join(workspace, "directory"),
+        path.join(workspace, "alias"),
+        "dir",
+      );
+    } catch (error) {
+      if (
+        error !== null &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "EPERM"
+      ) {
+        context.skip("Windows denied internal symlink creation (EPERM)");
+      }
+      throw error;
+    }
+
+    expect(() => validateProxyRequest("ls", ["alias"])).not.toThrow();
   });
 
   it("leaves workspace containment to the per-operand outcome", () => {
