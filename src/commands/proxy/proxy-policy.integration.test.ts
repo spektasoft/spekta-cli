@@ -302,6 +302,7 @@ describe("CLI and MCP proxy parity", () => {
   });
 
   it("treats omitted MCP args as ls without an operand", async () => {
+    vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
     mockRtkListing("file.txt\n");
     const result = await TOOL_REGISTRY.spekta_shell.handler({ command: "ls" });
     expect(result.isError).toBe(false);
