@@ -151,9 +151,24 @@ describe("shared Git classification", () => {
       expect(() => validateProxyRequest("git", [name])).toThrow(/restricted/i);
     }
   });
-  it("treats branch patterns as name filters while still validating cwd", ({
-    skip,
-  }) => {
+  it("treats branch patterns as name filters while still validating cwd", () => {
+    for (const pattern of [
+      "feature/*",
+      "feature/[t]opic",
+      ".env",
+      "../outside",
+    ]) {
+      expect(() =>
+        validateProxyRequest("git", ["branch", "--list", pattern]),
+      ).not.toThrow();
+    }
+
+    cwd.mockReturnValue(path.join(workspace, ".env"));
+    expect(() =>
+      validateProxyRequest("git", ["branch", "--list", "feature/*"]),
+    ).toThrow(/restricted/i);
+  });
+  it("treats real symlink branch patterns as name filters", ({ skip }) => {
     for (const [target, link] of [
       [path.join(fixture, "outside"), path.join(workspace, "escape")],
       [path.join(workspace, ".env"), path.join(workspace, "restricted-alias")],
@@ -161,23 +176,11 @@ describe("shared Git classification", () => {
     ]) {
       createDirectorySymlink(target, link, skip);
     }
-    for (const pattern of [
-      "feature/*",
-      "feature/[t]opic",
-      ".env",
-      "../outside",
-      "escape",
-      "dangling",
-      "restricted-alias",
-    ]) {
+    for (const pattern of ["escape", "dangling", "restricted-alias"]) {
       expect(() =>
         validateProxyRequest("git", ["branch", "--list", pattern]),
       ).not.toThrow();
     }
-    cwd.mockReturnValue(path.join(workspace, ".env"));
-    expect(() =>
-      validateProxyRequest("git", ["branch", "--list", "feature/*"]),
-    ).toThrow(/restricted/i);
   });
   it("resolves blob paths from repository root in a nested cwd", () => {
     const nested = path.join(workspace, "nested");
