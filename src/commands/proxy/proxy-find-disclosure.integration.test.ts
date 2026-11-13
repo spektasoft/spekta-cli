@@ -113,9 +113,7 @@ it("bounds the complete response using only eligible results", async () => {
   expect(cli).toContain("incomplete; output_limit_exceeded");
 });
 
-it("filters ignored ancestors and ineligible aliases under nested roots", async ({
-  skip,
-}) => {
+it("filters ignored ancestors and honors negations under nested roots", async () => {
   fs.ensureDirSync(path.join(workspace, "directory", "ignored"));
   fs.writeFileSync(
     path.join(workspace, ".spektaignore"),
@@ -124,6 +122,28 @@ it("filters ignored ancestors and ineligible aliases under nested roots", async 
   for (const name of ["ok.ts", "secret.log", "keep.log", "ignored/hidden.ts"]) {
     fs.writeFileSync(path.join(workspace, "directory", name), "ok");
   }
+  const { cli, mcp } = await discover(
+    "directory/ok.ts\ndirectory/secret.log\ndirectory/keep.log\ndirectory/ignored\ndirectory/ignored/hidden.ts",
+    ["directory", "-type", "f", "-name", "*.ts", "-print"],
+  );
+  expect(mcp).toEqual({
+    isError: false,
+    content: [
+      {
+        type: "text",
+        text: 'Batch: success\nOperand 1: returned; "directory"\n"directory/ok.ts"\n"directory/keep.log"\n',
+      },
+    ],
+  });
+  expect(cli).not.toMatch(/secret|ignored|hidden|alias/);
+});
+
+it("filters ineligible file-symlink aliases under nested roots", async ({
+  skip,
+}) => {
+  fs.ensureDirSync(path.join(workspace, "directory"));
+  fs.writeFileSync(path.join(workspace, ".spektaignore"), "*.log\n");
+  fs.writeFileSync(path.join(workspace, "directory", "secret.log"), "ok");
   try {
     fs.symlinkSync(
       path.join(workspace, "directory", "secret.log"),
@@ -139,20 +159,24 @@ it("filters ignored ancestors and ineligible aliases under nested roots", async 
     }
     throw error;
   }
-  const { cli, mcp } = await discover(
-    "directory/ok.ts\ndirectory/secret.log\ndirectory/keep.log\ndirectory/ignored\ndirectory/ignored/hidden.ts\ndirectory/alias",
-    ["directory", "-type", "f", "-name", "*.ts", "-print"],
-  );
+  const { cli, mcp } = await discover("directory/secret.log\ndirectory/alias", [
+    "directory",
+    "-type",
+    "f",
+    "-name",
+    "*.ts",
+    "-print",
+  ]);
   expect(mcp).toEqual({
     isError: false,
     content: [
       {
         type: "text",
-        text: 'Batch: success\nOperand 1: returned; "directory"\n"directory/ok.ts"\n"directory/keep.log"\n',
+        text: 'Batch: success\nOperand 1: returned; "directory"\n',
       },
     ],
   });
-  expect(cli).not.toMatch(/secret|ignored|hidden|alias/);
+  expect(cli).not.toMatch(/secret|alias/);
 });
 
 it("does not disclose targets reached through directory symlink descendants", async ({
