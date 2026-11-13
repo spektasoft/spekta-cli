@@ -27,10 +27,7 @@ describe.skipIf(process.platform !== "win32")(
   "Codex inspection hook PowerShell routes",
   () => {
     it.each([
-      [
-        "Get-ChildItem -LiteralPath src -Name",
-        "& 'spekta.cmd' 'ls' 'src'",
-      ],
+      ["Get-ChildItem -LiteralPath src -Name", "& 'spekta.cmd' 'ls' 'src'"],
       [
         "Get-ChildItem -LiteralPath 'src/folder with spaces' -Name",
         "& 'spekta.cmd' 'ls' 'src/folder with spaces'",
@@ -89,7 +86,7 @@ describe.skipIf(process.platform !== "win32")(
         "& 'spekta.cmd' 'git' 'diff' '--' 'space name'",
       ],
     ])("rewrites literal supported command %s", (input, expected) => {
-      expect(rewritten(input)).toBe(expected);
+      expect(rewritten(input, "win32")).toBe(expected);
     });
 
     it("returns the hook response while preserving execution settings", () => {
@@ -100,7 +97,7 @@ describe.skipIf(process.platform !== "win32")(
         run_in_background: false,
       };
       expect(
-        rewriteEvent({ ...event(command), tool_input: toolInput }),
+        rewriteEvent({ ...event(command), tool_input: toolInput }, "win32"),
       ).toBe(
         JSON.stringify({
           hookSpecificOutput: {
@@ -144,7 +141,7 @@ describe.skipIf(process.platform !== "win32")(
       "git.exe log --oneline -n 1",
       "git.exe status --ignored",
     ])("leaves unsupported PowerShell command unchanged: %s", (input) => {
-      expect(rewritten(input)).toBeUndefined();
+      expect(rewritten(input, "win32")).toBeUndefined();
     });
   },
 );

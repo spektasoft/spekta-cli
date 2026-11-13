@@ -14,8 +14,11 @@ export function shellQuoteForTest(value: string): string {
   return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
-export function rewritten(command: string): string | undefined {
-  const output = rewriteEvent(event(command), "linux");
+export function rewritten(
+  command: string,
+  platform: NodeJS.Platform = "linux",
+): string | undefined {
+  const output = rewriteEvent(event(command), platform);
   if (!output) return;
   const parsed: unknown = JSON.parse(output);
   if (!parsed || typeof parsed !== "object")
