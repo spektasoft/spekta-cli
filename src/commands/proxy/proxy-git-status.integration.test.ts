@@ -263,23 +263,46 @@ describe.skipIf(missing.length > 0)(
       );
     }, 20000);
 
-    it("enforces Git ignore rules on tracked files and omits escaping symlinks", async () => {
+    it("enforces Git ignore rules on tracked files", async () => {
       fs.writeFileSync(
         path.join(context.workspace, ".gitignore"),
         "file.txt\n",
       );
-      fs.writeFileSync(path.join(context.fixture, "outside.txt"), "outside");
-      fs.symlinkSync(
-        path.join(context.fixture, "outside.txt"),
-        path.join(context.workspace, "escape.txt"),
-      );
+
       const result = await context.both(["status"]);
+
       expect(result.mcp.isError).toBe(false);
       expect(result.mcp.content[0].text).toContain("other.txt");
       expect(result.mcp.content[0].text).not.toContain('"file.txt"');
-      expect(JSON.stringify(result)).not.toMatch(
-        /escape.txt|outside.txt|gitignore/,
-      );
+      expect(JSON.stringify(result)).not.toMatch(/gitignore|file\.txt/);
+    });
+
+    it("omits escaping symlinks when file symlink creation is available", async (testContext) => {
+      fs.writeFileSync(path.join(context.fixture, "outside.txt"), "outside");
+      try {
+        fs.symlinkSync(
+          path.join(context.fixture, "outside.txt"),
+          path.join(context.workspace, "escape.txt"),
+        );
+      } catch (error) {
+        if (
+          process.platform === "win32" &&
+          error !== null &&
+          typeof error === "object" &&
+          "code" in error &&
+          error.code === "EPERM"
+        ) {
+          testContext.skip(
+            "Windows denied escaping file symlink creation (EPERM)",
+          );
+        }
+        throw error;
+      }
+
+      const result = await context.both(["status"]);
+      expect(result.mcp.isError).toBe(false);
+      expect(result.mcp.content[0].text).toContain("other.txt");
+      expect(JSON.stringify(result)).not.toMatch(/escape.txt|outside.txt/);
     });
   },
 );
