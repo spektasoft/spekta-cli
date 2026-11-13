@@ -8,7 +8,7 @@ import { missing, useRealGitFixture } from "./proxy-git.integration-harness";
 describe.skipIf(missing.length > 0)("Git check-ignore through CLI/MCP", () => {
   const context = useRealGitFixture();
 
-  it("reports whether one accessible path matches Git ignore rules", async () => {
+  it("uses --no-index for tracked files and reports allowed paths", async () => {
     fs.writeFileSync(path.join(context.workspace, ".gitignore"), "file.txt\n");
 
     const ignored = await context.both(["check-ignore", "file.txt"]);
@@ -22,12 +22,10 @@ describe.skipIf(missing.length > 0)("Git check-ignore through CLI/MCP", () => {
     expect(allowed.mcp.content[0].text).toBe("not_git_ignored");
   });
 
-  it("uses --no-index and checks the supplied and canonical symlink paths", async ({
-    skip,
-  }) => {
+  it("checks the supplied and canonical symlink paths", async ({ skip }) => {
     fs.writeFileSync(
       path.join(context.workspace, ".gitignore"),
-      "file.txt\ntarget.txt\ntarget-link.txt\nalias-only.txt\n",
+      "target.txt\ntarget-link.txt\nalias-only.txt\n",
     );
     fs.writeFileSync(path.join(context.workspace, "target.txt"), "safe\n");
     fs.writeFileSync(path.join(context.workspace, "target-two.txt"), "safe\n");
@@ -51,7 +49,7 @@ describe.skipIf(missing.length > 0)("Git check-ignore through CLI/MCP", () => {
       throw error;
     }
 
-    for (const target of ["file.txt", "target-link.txt", "alias-only.txt"]) {
+    for (const target of ["target-link.txt", "alias-only.txt"]) {
       const result = await context.both(["check-ignore", target]);
       expect(result.mcp.content[0].text, target).toBe("git_ignored");
       expect(result.mcp.isError).toBe(false);
