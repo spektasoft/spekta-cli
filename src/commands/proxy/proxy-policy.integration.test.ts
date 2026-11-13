@@ -251,13 +251,27 @@ describe("CLI and MCP proxy parity", () => {
     await expectRejected("git", ["show", "HEAD:file.txt"], /cannot establish/i);
   });
 
-  it("rejects a symlink repository marker through both adapters", async () => {
+  it("rejects a symlink repository marker through both adapters", async (context) => {
     fs.removeSync(path.join(workspace, ".git"));
-    fs.symlinkSync(
-      path.join(fixture, "outside"),
-      path.join(workspace, ".git"),
-      "dir",
-    );
+    try {
+      fs.symlinkSync(
+        path.join(fixture, "outside"),
+        path.join(workspace, ".git"),
+        "dir",
+      );
+    } catch (error) {
+      if (
+        error !== null &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "EPERM"
+      ) {
+        context.skip(
+          "Windows denied repository marker symlink creation (EPERM)",
+        );
+      }
+      throw error;
+    }
     await expectRejected(
       "git",
       ["show", "HEAD:file.txt"],
