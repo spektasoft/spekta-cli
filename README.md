@@ -95,6 +95,24 @@ rm -ri ~/.spekta
 
 The interactive removal asks before deleting its contents. Skip this step to keep your personal settings.
 
+## Smoke checks
+
+The explicit portable smoke allowlist can be run with:
+
+```bash
+npm run test:smoke:portable
+```
+
+It selects `src/commands/proxy/proxy-execution.real.test.ts` and `src/api/mcp-server-process.integration.test.ts`. These checks use real child processes; the MCP process test also runs the Vite build into a temporary `.mcp-process-*` directory in the project root and removes it during teardown. It therefore needs the installed development dependencies, Node.js, npm available to the child process, permission to spawn processes, and a writable project root. It does not require provider credentials.
+
+The separate provisional real-Git allowlist can be run with:
+
+```bash
+npm run test:smoke:real-git
+```
+
+It selects `src/commands/proxy/proxy-git.integration.test.ts` and sets `SPEKTA_REQUIRE_GIT_INTEGRATION=1` for that Vitest process. Git, RTK, and a `script` executable must all be available and runnable; the test creates and removes temporary real Git repositories. The real-Git membership and its execution cost are provisional. Both commands verify Vitest's JSON report so each selected file must appear, pass at least one test, and contain no failed, skipped, pending, todo, or disabled tests. Reports are written to a temporary directory and removed after the command.
+
 ## Command reference
 
 Run `spekta --help` for every built-in command and supported proxy family, including commands not shown in the interactive menu. Use `spekta <command> --help` or `spekta help <command>` for accepted syntax and examples. For example:
