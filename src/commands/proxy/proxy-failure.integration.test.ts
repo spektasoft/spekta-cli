@@ -32,7 +32,7 @@ beforeAll(async () => {
   fs.symlinkSync(
     path.join(repository, "node_modules"),
     path.join(root, "node_modules"),
-    "dir",
+    process.platform === "win32" ? "junction" : "dir",
   );
   const outDir = path.join(root, "dist");
   await build({
@@ -91,9 +91,22 @@ fs.writeSync(1, ${JSON.stringify(output)});
 fs.writeSync(2, "USEFUL_STDERR\\n");
 ${mode === "signal" ? 'process.kill(process.pid, "SIGTERM");' : `process.exit(${mode === "failure" ? 7 : 0});`}
 `;
-  fs.writeFileSync(path.join(bin, "rtk"), source, {
-    mode: mode === "permission" ? 0o644 : 0o755,
-  });
+  if (
+    process.platform === "win32" &&
+    ["success", "failure", "signal"].includes(mode)
+  ) {
+    fs.writeFileSync(path.join(bin, "rtk.js"), source);
+    fs.writeFileSync(
+      path.join(bin, "rtk.cmd"),
+      `@echo off\r\n"${process.execPath}" "%~dp0rtk.js" %*\r\nexit /b %ERRORLEVEL%\r\n`,
+    );
+  } else {
+    // Windows cannot model POSIX execute bits; leave this extensionless fixture
+    // without a .cmd launcher so the permission case remains non-launchable.
+    fs.writeFileSync(path.join(bin, "rtk"), source, {
+      mode: mode === "permission" ? 0o644 : 0o755,
+    });
+  }
 }
 
 async function both(args: string[] = []) {
@@ -135,6 +148,7 @@ describe.sequential("real subprocess proxy failure reporting", () => {
   it("marks over-budget eligible output incomplete without leaking child output", async () => {
     installRtk("success");
     const { cli, mcp } = await both();
+    expect(fs.existsSync(path.join(fixture, "rtk.marker"))).toBe(true);
     expect(cli.exitCode).toBe(1);
     expect(mcp.isError).toBe(true);
     for (const output of [cli.stdout, mcp.content[0].text]) {
@@ -152,6 +166,7 @@ describe.sequential("real subprocess proxy failure reporting", () => {
   it("reports a nonzero RTK exit as a safe per-operand failure", async () => {
     installRtk("failure");
     const { cli, mcp } = await both();
+    expect(fs.existsSync(path.join(fixture, "rtk.marker"))).toBe(true);
     expect(cli.exitCode).toBe(1);
     expect(cli.stdout).toContain("Operand 1: internal_failure; listing failed");
     expect(cli.stderr).toBe("");
@@ -168,6 +183,9 @@ describe.sequential("real subprocess proxy failure reporting", () => {
     async (mode) => {
       installRtk(mode);
       const { cli, mcp } = await both();
+      expect(fs.existsSync(path.join(fixture, "rtk.marker"))).toBe(
+        mode === "signal",
+      );
       expect(cli.exitCode).toBe(1);
       expect(mcp.isError).toBe(true);
       expect(mcp.content[0].text).not.toBe("");

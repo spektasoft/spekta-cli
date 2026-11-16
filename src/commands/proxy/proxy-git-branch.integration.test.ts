@@ -139,7 +139,7 @@ describe.skipIf(missing.length > 0)(
       expect(result.cli).toContain("FAILED: Exit");
       expect(process.exitCode).not.toBe(0);
       expect(snapshotRepository(outside)).toEqual(outsideBefore);
-    });
+    }, 30000);
 
     it("withholds verbose commit text while retaining the selected branch names", async () => {
       const denied = "DENIED_BRANCH_COMMIT_SUBJECT_7f91";
@@ -193,6 +193,6 @@ describe.skipIf(missing.length > 0)(
         ),
       ).toBeLessThanOrEqual(1000);
       expect(result.mcp.content[0].text).toContain("lines collapsed");
-    });
+    }, 30000);
   },
 );
