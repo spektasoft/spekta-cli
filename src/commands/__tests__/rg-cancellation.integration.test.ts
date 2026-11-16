@@ -298,17 +298,77 @@ describe("public MCP search interruption", () => {
   it("returns a distinct deadline outcome and reaps the search descendant", async () => {
     const paths = await installRtk("search", fixture.root);
     const { client, server } = await connectSearchClient();
+    const controller = new AbortController();
+    const realSetTimeout = globalThis.setTimeout.bind(globalThis);
+    const realClearTimeout = globalThis.clearTimeout.bind(globalThis);
+    const inertDeadlineHandle = realSetTimeout(() => undefined, 60_000);
+    let deadlineCallback: (() => void) | undefined;
+    let deadlineFired = false;
+    let deadlineRegistrations = 0;
+    let request: ReturnType<typeof client.callTool> | undefined;
+    let requestSettled = false;
+    const setTimeoutSpy = vi
+      .spyOn(globalThis, "setTimeout")
+      .mockImplementation((callback, delay, ...args) => {
+        if (delay === 1000) {
+          deadlineRegistrations++;
+          if (typeof callback !== "function")
+            throw new Error("Expected the search deadline to use a callback");
+          deadlineCallback = () => Reflect.apply(callback, undefined, args);
+          return inertDeadlineHandle;
+        }
+        return Reflect.apply(
+          realSetTimeout,
+          globalThis,
+          [callback, delay].concat(args),
+        ) as ReturnType<typeof setTimeout>;
+      });
+    const fireDeadline = () => {
+      if (deadlineFired || !deadlineCallback) return;
+      deadlineFired = true;
+      deadlineCallback();
+    };
     try {
-      const result = (await client.callTool({
-        name: "spekta_rg",
-        arguments: {
-          patterns: ["needle"],
-          paths: [".", "missing-root"],
-          allowance: 512,
-          profile: true,
-          deadline_ms: 1000,
+      request = client.callTool(
+        {
+          name: "spekta_rg",
+          arguments: {
+            patterns: ["needle"],
+            paths: [".", "missing-root"],
+            allowance: 512,
+            profile: true,
+            deadline_ms: 1000,
+          },
         },
-      })) as unknown as {
+        undefined,
+        { signal: controller.signal },
+      );
+      void request.then(
+        () => {
+          requestSettled = true;
+        },
+        () => {
+          requestSettled = true;
+        },
+      );
+      await waitForFile(path.join(fixture.root, "mcp.handler-ready"));
+      await waitForFakeRtk(paths.invokedPath);
+      await waitForFile(paths.startedPath);
+      const invocations = (await fs.readFile(paths.invokedPath, "utf8"))
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as string[]);
+      expect(
+        invocations.some(
+          (args) =>
+            args[0] === "proxy" && args[1] === "rg" && args.includes("--json"),
+        ),
+      ).toBe(true);
+      expect(requestSettled).toBe(false);
+      expect(deadlineRegistrations).toBe(1);
+      expect(deadlineCallback).toBeDefined();
+      fireDeadline();
+      const result = (await request) as unknown as {
         content: Array<{ type: string; text: string }>;
         isError?: boolean;
       };
@@ -328,6 +388,23 @@ describe("public MCP search interruption", () => {
       await assertDescendantWasReaped(paths);
       expect(text).not.toContain("No matches found.");
     } finally {
+      if (request && !requestSettled) {
+        if (deadlineCallback) fireDeadline();
+        else controller.abort();
+        await fs.writeFile(
+          path.join(fixture.root, "test-cleanup.requested"),
+          "cleanup",
+        );
+        await Promise.race([
+          request.then(
+            () => undefined,
+            () => undefined,
+          ),
+          new Promise<void>((resolve) => realSetTimeout(resolve, 1000)),
+        ]);
+      }
+      setTimeoutSpy.mockRestore();
+      realClearTimeout(inertDeadlineHandle);
       await client.close();
       await server.close();
     }
