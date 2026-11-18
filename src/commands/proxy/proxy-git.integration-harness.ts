@@ -207,10 +207,13 @@ function createRealGitContext({ pagerFixture = false } = {}) {
   function teardown(): void {
     vi.restoreAllMocks();
     process.exitCode = savedExit;
-    if (fixture) fs.removeSync(fixture);
-    for (const [key, value] of Object.entries(savedEnv ?? {})) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+    try {
+      if (fixture) fs.removeSync(fixture);
+    } finally {
+      for (const [key, value] of Object.entries(savedEnv ?? {})) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   }
 
