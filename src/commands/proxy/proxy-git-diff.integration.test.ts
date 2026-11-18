@@ -13,14 +13,107 @@ describe.skipIf(missing.length > 0)(
   `real Git/RTK diff semantics${missing.length ? ` (missing: ${missing.join(", ")})` : ""}`,
   () => {
     const context = useRealGitFixture();
-    const { fixtureGit, snapshotRepository, both } = context;
+    const { fixtureGit, snapshotRepository, both, cli, mcp } = context;
 
-    it("keeps working-tree, staged, and HEAD diff meanings distinct", async () => {
+    async function prepareOrdinaryPatchFixture(): Promise<void> {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "denied.txt\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "denied.txt"),
+        "private-v1\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "visible.txt"),
+        "public-v1\n",
+      );
+      await fixtureGit(["add", "--", ".gitignore", "visible.txt"]);
+      await fixtureGit(["add", "-f", "--", "denied.txt"]);
+      await fixtureGit(["commit", "-m", "PATCH_FIXTURE"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "denied.txt"),
+        "private-v2\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "visible.txt"),
+        "public-v2\n",
+      );
+    }
+
+    async function prepareVisibleBinaryFixture(): Promise<void> {
+      const binary = path.join(context.workspace, "image.bin");
+      fs.writeFileSync(binary, Buffer.from([0, 1, 2, 3]));
+      await fixtureGit(["add", "--", "image.bin"]);
+      await fixtureGit(["commit", "-m", "BINARY_BASE"]);
+      fs.writeFileSync(binary, Buffer.from([0, 1, 2, 4]));
+    }
+
+    async function prepareDeniedBinaryFixture(): Promise<void> {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "secret.bin\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "secret.bin"),
+        Buffer.from([1, 2]),
+      );
+      await fixtureGit(["add", "-f", "--", "secret.bin"]);
+      await fixtureGit(["commit", "-m", "DENIED_BINARY"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "secret.bin"),
+        Buffer.from([1, 3]),
+      );
+    }
+
+    async function prepareDivergentBranches(): Promise<void> {
+      await fixtureGit([
+        "restore",
+        "--source=HEAD",
+        "--staged",
+        "--worktree",
+        "--",
+        ".",
+      ]);
+      await fixtureGit(["checkout", "-b", "left", "HEAD~1"]);
+      fs.writeFileSync(path.join(context.workspace, "left.txt"), "left-only\n");
+      await fixtureGit(["add", "--", "left.txt"]);
+      await fixtureGit(["commit", "-m", "LEFT_COMMIT", "--", "left.txt"]);
+      await fixtureGit(["checkout", "-b", "right", "main"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "right.txt"),
+        "right-only\n",
+      );
+      await fixtureGit(["add", "--", "right.txt"]);
+      await fixtureGit(["commit", "-m", "RIGHT_COMMIT", "--", "right.txt"]);
+    }
+
+    async function prepareDeniedRenameDestination(): Promise<void> {
+      await fixtureGit(["mv", "filename-only", "renamed-file.txt"]);
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "*.private\n",
+      );
+      await fixtureGit(["mv", "renamed-file.txt", "denied.private"]);
+    }
+
+    it("keeps working-tree diff meanings distinct", async () => {
       const before = snapshotRepository();
       const working = await both(["diff", "--", "other.txt"]);
       expect(working.mcp.isError).toBe(false);
       expect(working.mcp.content[0].text).toContain("-staged-copy");
       expect(working.mcp.content[0].text).toContain("+unstaged-copy");
+      expect(working.mcp.content[0].text).toContain(
+        "Native tracked Git comparison",
+      );
+      expect(working.mcp.content[0].text).toContain(
+        "new untracked content is not included",
+      );
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("keeps staged diff meanings and its --staged alias equivalent", async () => {
+      const before = snapshotRepository();
       const staged = await both(["diff", "--cached", "--", "other.txt"]);
       expect(staged.mcp.isError).toBe(false);
       expect(staged.mcp.content[0].text).toContain("-other-v2");
@@ -28,15 +121,20 @@ describe.skipIf(missing.length > 0)(
       expect(staged.mcp.content[0].text).not.toContain("unstaged-copy");
       const alias = await both(["diff", "--staged", "--", "other.txt"]);
       expect(alias.mcp.content[0].text).toBe(staged.mcp.content[0].text);
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("keeps HEAD diff meanings distinct", async () => {
+      const before = snapshotRepository();
       const head = await both(["diff", "HEAD", "--", "other.txt"]);
       expect(head.mcp.isError).toBe(false);
       expect(head.mcp.content[0].text).toContain("-other-v2");
       expect(head.mcp.content[0].text).toContain("+unstaged-copy");
       expect(head.mcp.content[0].text).not.toContain("+staged-copy");
-      expect(working.mcp.content[0].text).toContain(
+      expect(head.mcp.content[0].text).toContain(
         "Native tracked Git comparison",
       );
-      expect(working.mcp.content[0].text).toContain(
+      expect(head.mcp.content[0].text).toContain(
         "new untracked content is not included",
       );
       expect(snapshotRepository()).toEqual(before);
@@ -92,42 +190,26 @@ describe.skipIf(missing.length > 0)(
       },
     );
 
-    it("filters ordinary patch sections by eligible paths", async () => {
-      fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
-        "denied.txt\n",
-      );
-      fs.writeFileSync(
-        path.join(context.workspace, "denied.txt"),
-        "private-v1\n",
-      );
-      fs.writeFileSync(
-        path.join(context.workspace, "visible.txt"),
-        "public-v1\n",
-      );
-      await fixtureGit(["add", "--", ".gitignore", "visible.txt"]);
-      await fixtureGit(["add", "-f", "--", "denied.txt"]);
-      await fixtureGit(["commit", "-m", "PATCH_FIXTURE"]);
-      fs.writeFileSync(
-        path.join(context.workspace, "denied.txt"),
-        "private-v2\n",
-      );
-      fs.writeFileSync(
-        path.join(context.workspace, "visible.txt"),
-        "public-v2\n",
-      );
-
-      const result = await both(["diff"]);
-      expect(result.cli).toContain("public-v1");
-      expect(result.mcp.content[0].text).toContain("public-v2");
-      for (const text of [result.cli, result.mcp.content[0].text]) {
-        expect(text).not.toContain("denied.txt");
-        expect(text).not.toContain("private-v1");
-        expect(text).not.toContain("private-v2");
-      }
+    it("filters ordinary patch sections through the CLI", async () => {
+      await prepareOrdinaryPatchFixture();
+      const result = await cli(["diff"]);
+      expect(result).toContain("public-v1");
+      expect(result).not.toContain("denied.txt");
+      expect(result).not.toContain("private-v1");
+      expect(result).not.toContain("private-v2");
     });
 
-    it("renders eligible rename patches and withholds either denied endpoint", async () => {
+    it("filters ordinary patch sections through MCP", async () => {
+      await prepareOrdinaryPatchFixture();
+      const result = await mcp(["diff"]);
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toContain("public-v2");
+      expect(result.content[0].text).not.toContain("denied.txt");
+      expect(result.content[0].text).not.toContain("private-v1");
+      expect(result.content[0].text).not.toContain("private-v2");
+    });
+
+    it("renders eligible rename patches", async () => {
       await fixtureGit(["mv", "filename-only", "renamed-file.txt"]);
       const result = await both(["diff", "--cached"]);
       expect(result.mcp.isError).toBe(false);
@@ -135,19 +217,20 @@ describe.skipIf(missing.length > 0)(
       expect(result.cli).toContain("renamed-file.txt");
       expect(result.mcp.content[0].text).toContain("filename-only");
       expect(result.mcp.content[0].text).toContain("renamed-file.txt");
+    });
 
-      fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
-        "*.private\n",
-      );
-      await fixtureGit(["mv", "renamed-file.txt", "denied.private"]);
+    it("withholds a denied rename destination", async () => {
+      await prepareDeniedRenameDestination();
       const deniedNew = await both(["diff", "--cached"]);
       expect(deniedNew.mcp.isError).toBe(false);
       expect(deniedNew.cli).not.toContain("renamed-file.txt");
       expect(deniedNew.cli).not.toContain("denied.private");
       expect(deniedNew.mcp.content[0].text).not.toContain("renamed-file.txt");
       expect(deniedNew.mcp.content[0].text).not.toContain("denied.private");
+    });
 
+    it("withholds a denied rename source", async () => {
+      await prepareDeniedRenameDestination();
       await fixtureGit(["commit", "-m", "RENAME_DENIED_DESTINATION"]);
       await fixtureGit(["mv", "denied.private", "restored.txt"]);
       const deniedOld = await both(["diff", "--cached"]);
@@ -158,41 +241,34 @@ describe.skipIf(missing.length > 0)(
       expect(deniedOld.mcp.content[0].text).not.toContain("restored.txt");
     });
 
-    it("renders eligible binary notices without decoding binary patches", async () => {
-      const binary = path.join(context.workspace, "image.bin");
-      fs.writeFileSync(binary, Buffer.from([0, 1, 2, 3]));
-      await fixtureGit(["add", "--", "image.bin"]);
-      await fixtureGit(["commit", "-m", "BINARY_BASE"]);
-      fs.writeFileSync(binary, Buffer.from([0, 1, 2, 4]));
-      const visible = await both(["diff"]);
-      expect(visible.mcp.isError).toBe(false);
-      expect(visible.cli).toContain("Binary file changed");
-      expect(visible.cli).toContain("image.bin");
-      expect(visible.mcp.content[0].text).toContain("Binary file changed");
-      expect(visible.mcp.content[0].text).toContain("image.bin");
+    it("renders eligible binary notices through the CLI", async () => {
+      await prepareVisibleBinaryFixture();
+      const visible = await cli(["diff"]);
+      expect(visible).toContain("Binary file changed");
+      expect(visible).toContain("image.bin");
     });
 
-    it("withholds denied binary notices and payloads", async () => {
-      fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
-        "secret.bin\n",
-      );
-      fs.writeFileSync(
-        path.join(context.workspace, "secret.bin"),
-        Buffer.from([1, 2]),
-      );
-      await fixtureGit(["add", "-f", "--", "secret.bin"]);
-      await fixtureGit(["commit", "-m", "DENIED_BINARY"]);
-      fs.writeFileSync(
-        path.join(context.workspace, "secret.bin"),
-        Buffer.from([1, 3]),
-      );
-      const denied = await both(["diff"]);
-      expect(denied.mcp.isError).toBe(false);
-      for (const text of [denied.cli, denied.mcp.content[0].text]) {
-        expect(text).not.toContain("secret.bin");
-        expect(text).not.toContain("DENIED_BINARY");
-      }
+    it("renders eligible binary notices through MCP", async () => {
+      await prepareVisibleBinaryFixture();
+      const visible = await mcp(["diff"]);
+      expect(visible.isError).toBe(false);
+      expect(visible.content[0].text).toContain("Binary file changed");
+      expect(visible.content[0].text).toContain("image.bin");
+    });
+
+    it("withholds denied binary notices and payloads from the CLI", async () => {
+      await prepareDeniedBinaryFixture();
+      const denied = await cli(["diff"]);
+      expect(denied).not.toContain("secret.bin");
+      expect(denied).not.toContain("DENIED_BINARY");
+    });
+
+    it("withholds denied binary notices and payloads from MCP", async () => {
+      await prepareDeniedBinaryFixture();
+      const denied = await mcp(["diff"]);
+      expect(denied.isError).toBe(false);
+      expect(denied.content[0].text).not.toContain("secret.bin");
+      expect(denied.content[0].text).not.toContain("DENIED_BINARY");
     });
 
     it("reports a failed patch child without forwarding its diagnostics", async () => {
@@ -203,7 +279,7 @@ describe.skipIf(missing.length > 0)(
       expect(result.cli).not.toContain("fatal:");
     });
 
-    it("compares revisions and preserves hashes and historical missing paths", async () => {
+    it("compares explicit revisions without including working-tree changes", async () => {
       const hash = await fixtureGit(["rev-parse", "HEAD"]);
       const before = snapshotRepository();
       const pair = await both(["diff", "HEAD~1", hash, "--", "file.txt"]);
@@ -211,43 +287,56 @@ describe.skipIf(missing.length > 0)(
       expect(pair.mcp.content[0].text).toContain("-safe-v1");
       expect(pair.mcp.content[0].text).toContain("+safe-v2");
       expect(pair.mcp.content[0].text).not.toContain("working-copy");
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("supports equivalent two-dot revision range syntax", async () => {
+      const hash = await fixtureGit(["rev-parse", "HEAD"]);
+      const before = snapshotRepository();
+      const pair = await both(["diff", "HEAD~1", hash, "--", "file.txt"]);
       const range = await both(["diff", `HEAD~1..${hash}`, "--", "file.txt"]);
+      expect(pair.mcp.isError).toBe(false);
+      expect(range.mcp.isError).toBe(false);
+      expect(pair.cli).toContain("-safe-v1");
+      expect(pair.cli).toContain("+safe-v2");
+      expect(pair.mcp.content[0].text).toContain("-safe-v1");
+      expect(pair.mcp.content[0].text).toContain("+safe-v2");
+      expect(range.cli).toContain("-safe-v1");
+      expect(range.cli).toContain("+safe-v2");
       expect(range.mcp.content[0].text).toBe(pair.mcp.content[0].text);
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("preserves historical missing paths in revision diffs", async () => {
+      const hash = await fixtureGit(["rev-parse", "HEAD"]);
+      const before = snapshotRepository();
       const deleted = await both(["diff", "HEAD~1", hash, "--", "gone.txt"]);
       expect(deleted.mcp.isError).toBe(false);
       expect(deleted.mcp.content[0].text).toContain("-historical-only");
       expect(snapshotRepository()).toEqual(before);
     });
 
-    it("distinguishes two-dot endpoints from three-dot merge-base comparison", async () => {
-      await fixtureGit([
-        "restore",
-        "--source=HEAD",
-        "--staged",
-        "--worktree",
-        "--",
-        ".",
-      ]);
-      await fixtureGit(["checkout", "-b", "left", "HEAD~1"]);
-      fs.writeFileSync(path.join(context.workspace, "left.txt"), "left-only\n");
-      await fixtureGit(["add", "--", "left.txt"]);
-      await fixtureGit(["commit", "-m", "LEFT_COMMIT", "--", "left.txt"]);
-      await fixtureGit(["checkout", "-b", "right", "main"]);
-      fs.writeFileSync(
-        path.join(context.workspace, "right.txt"),
-        "right-only\n",
-      );
-      await fixtureGit(["add", "--", "right.txt"]);
-      await fixtureGit(["commit", "-m", "RIGHT_COMMIT", "--", "right.txt"]);
+    it("includes both endpoint sides in two-dot diffs", async () => {
+      await prepareDivergentBranches();
       const before = snapshotRepository();
       const endpoints = await both(["diff", "--name-status", "left..right"]);
       expect(endpoints.mcp.isError).toBe(false);
       expect(endpoints.mcp.content[0].text).toContain("left.txt");
       expect(endpoints.mcp.content[0].text).toContain("right.txt");
+      expect(endpoints.cli).toContain("left.txt");
+      expect(endpoints.cli).toContain("right.txt");
+      expect(snapshotRepository()).toEqual(before);
+    });
+
+    it("uses the merge base for three-dot diffs", async () => {
+      await prepareDivergentBranches();
+      const before = snapshotRepository();
       const mergeBase = await both(["diff", "--name-status", "left...right"]);
       expect(mergeBase.mcp.isError).toBe(false);
       expect(mergeBase.mcp.content[0].text).not.toContain("left.txt");
       expect(mergeBase.mcp.content[0].text).toContain("right.txt");
+      expect(mergeBase.cli).not.toContain("left.txt");
+      expect(mergeBase.cli).toContain("right.txt");
       expect(snapshotRepository()).toEqual(before);
     });
 

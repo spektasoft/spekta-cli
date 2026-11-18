@@ -23,30 +23,51 @@ afterEach(async () => {
   await fixture.cleanup();
 });
 
-describe("workspace searches with real ripgrep", () => {
-  it("keeps alias ignores and oversized descendants out of CLI and MCP results", async () => {
-    await fs.symlink(
-      fixture.root,
-      path.join(fixture.root, "alias"),
-      process.platform === "win32" ? "junction" : "dir",
-    );
-    await fs.writeFile(
-      path.join(fixture.root, ".spektaignore"),
-      "alias/secret.txt\n!allowed.txt\n",
-    );
-    await fs.writeFile(
-      path.join(fixture.root, "secret.txt"),
-      "needle ALIAS_IGNORED_CONTENT\n",
-    );
-    await fs.writeFile(
-      path.join(fixture.root, "too-large-secret.txt"),
-      `needle OVERSIZED_CONTENT ${"x".repeat(10 * 1024 * 1024)}`,
-    );
+async function setupAliasIgnoreFixture(): Promise<void> {
+  await fs.symlink(
+    fixture.root,
+    path.join(fixture.root, "alias"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await fs.writeFile(
+    path.join(fixture.root, ".spektaignore"),
+    "alias/secret.txt\n!allowed.txt\n",
+  );
+  await fs.writeFile(
+    path.join(fixture.root, "secret.txt"),
+    "needle ALIAS_IGNORED_CONTENT\n",
+  );
+  await fs.writeFile(
+    path.join(fixture.root, "too-large-secret.txt"),
+    `needle OVERSIZED_CONTENT ${"x".repeat(10 * 1024 * 1024)}`,
+  );
+}
 
+function expectAliasIgnoreBoundary(text: string): void {
+  expect(text).toContain("INTERNAL");
+  expect(text).not.toMatch(
+    /secret\.txt|ALIAS_IGNORED_CONTENT|too-large-secret|OVERSIZED_CONTENT/,
+  );
+}
+
+describe("workspace searches with real ripgrep", () => {
+  it("keeps alias ignores and oversized descendants out of CLI results", async () => {
+    await setupAliasIgnoreFixture();
     const cli = await getGrepOutcome(
       { pattern: "needle", path: "alias" },
       { root: fixture.root },
     );
+
+    const cliText = String(
+      cli.status === "success" || cli.status === "partial_result"
+        ? cli.value
+        : cli.message,
+    );
+    expectAliasIgnoreBoundary(cliText);
+  });
+
+  it("keeps alias ignores and oversized descendants out of MCP results", async () => {
+    await setupAliasIgnoreFixture();
     const mcp = (await TOOL_REGISTRY.spekta_rg.handler(
       { patterns: ["needle"], paths: ["alias"] },
       { root: fixture.root },
@@ -55,23 +76,11 @@ describe("workspace searches with real ripgrep", () => {
       content: Array<{ text?: unknown }>;
       isError?: boolean;
     };
-
-    const cliText = String(
-      cli.status === "success" || cli.status === "partial_result"
-        ? cli.value
-        : cli.message,
-    );
     const mcpTextCandidate = mcp.content[0]?.text;
     const mcpText =
       typeof mcpTextCandidate === "string" ? mcpTextCandidate : "";
-    for (const text of [cliText, mcpText]) {
-      expect(text).toContain("INTERNAL");
-      expect(text).not.toMatch(
-        /secret\.txt|ALIAS_IGNORED_CONTENT|too-large-secret|OVERSIZED_CONTENT|OVERSIZED_CONTENT/,
-      );
-    }
     expect(mcp.isError).toBeUndefined();
-    expect(mcpText).toContain("INTERNAL");
+    expectAliasIgnoreBoundary(mcpText);
   });
 
   it.each([

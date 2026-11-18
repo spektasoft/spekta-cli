@@ -100,7 +100,7 @@ function createRealGitContext({ pagerFixture = false } = {}) {
     visit("");
     return entries;
   }
-  async function both(args: string[], allowance?: number) {
+  async function cli(args: string[], allowance?: number): Promise<string> {
     const cliArgs =
       allowance === undefined
         ? args
@@ -118,16 +118,22 @@ function createRealGitContext({ pagerFixture = false } = {}) {
     vi.mocked(console.log).mockClear();
     vi.mocked(console.error).mockClear();
     await runRtkProxy("git", cliArgs);
-    const mcp = await TOOL_REGISTRY.spekta_shell.handler({
+    return vi
+      .mocked(console.log)
+      .mock.calls.map((call) => String(call[0]))
+      .join("\n");
+  }
+  async function mcp(args: string[], allowance?: number) {
+    return TOOL_REGISTRY.spekta_shell.handler({
       command: "git",
       args,
       ...(allowance === undefined ? {} : { allowance }),
     });
-    const cli = vi
-      .mocked(console.log)
-      .mock.calls.map((call) => String(call[0]))
-      .join("\n");
-    return { cli, mcp };
+  }
+  async function both(args: string[], allowance?: number) {
+    const cliResult = await cli(args, allowance);
+    const mcpResult = await mcp(args, allowance);
+    return { cli: cliResult, mcp: mcpResult };
   }
 
   async function setup(): Promise<void> {
@@ -217,6 +223,8 @@ function createRealGitContext({ pagerFixture = false } = {}) {
     },
     git,
     fixtureGit,
+    cli,
+    mcp,
     shellQuote,
     sentinel,
     snapshotRepository,
