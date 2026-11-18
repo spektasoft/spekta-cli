@@ -70,7 +70,7 @@ Both smoke wrappers validate the JSON report. The selected file must appear and 
 - **NOT REQUIRED:** only for the changed-file test step when all changed paths are documentation-only and do not affect test inputs or configuration; record the paths and reason. Other empty selections are **INCOMPLETE**. The two smoke checks remain required.
 - **OVER BUDGET:** if the full sequence takes more than 10 minutes, record that result and let an active process finish. Do not stop it without human authorization. Treat the sequence as not passed even if its individual checks passed. A completed sequence above 3 minutes but at or below 10 minutes misses the target but is within the upper limit.
 
-If a check times out, mark it **INCOMPLETE**; a timeout is never a pass. If the human considers merging after an incomplete full suite, record the human's decision and reason in the durable record used for that candidate's merge-readiness decision.
+If a check times out, mark it **INCOMPLETE**; a timeout is never a pass.
 
 ## 5. Repeat on the same candidate
 
