@@ -87,11 +87,13 @@ describe("validatePathAccessForWrite", () => {
     await expect(
       validatePathAccessForWrite("../outside-file.txt"),
     ).rejects.toThrow(
-      "Access Denied: ../outside-file.txt is outside the project directory.",
+      `Access Denied: ${path.join("..", "outside-file.txt")} is outside the project directory.`,
     );
 
     await expect(validatePathAccessForWrite("/etc/passwd")).rejects.toThrow(
-      "Access Denied: /etc/passwd is outside the project directory.",
+      process.platform === "win32"
+        ? "Access Denied: write paths must be workspace-relative."
+        : "Access Denied: /etc/passwd is outside the project directory.",
     );
   });
 

@@ -43,6 +43,8 @@ vi.mock("../core/config", () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The registry seam tests simulate the RTK backend contract explicitly.
+  vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
 });
 
 afterEach(() => {
@@ -295,7 +297,7 @@ describe("TOOL_REGISTRY", () => {
   });
 
   it("binds documented operations to the server workspace and ignores injected grep context", async () => {
-    const workspace = Object.freeze({ root: "/canonical/repo" });
+    const workspace = Object.freeze({ root: path.resolve("/canonical/repo") });
     const tools = createToolRegistry(workspace);
     vi.mocked(getReadOutcome).mockResolvedValueOnce({
       status: "success",
@@ -415,7 +417,7 @@ describe("TOOL_REGISTRY", () => {
   });
 
   it("passes the bound workspace to shell validation and execution", async () => {
-    const workspace = Object.freeze({ root: "/canonical/repo" });
+    const workspace = Object.freeze({ root: path.resolve("/canonical/repo") });
     const shell = createToolRegistry(workspace).spekta_shell;
     const proxyPolicy = await import("../commands/proxy/proxy-policy");
     const validateSpy = vi

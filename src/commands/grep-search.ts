@@ -28,6 +28,7 @@ import {
 } from "../core/operation-outcome";
 import { type BatchOperandOutcome } from "../core/batch-planning";
 import { resolveRequestAllowance } from "../core/config/allowance";
+import { terminateWindowsProcessTree } from "../utils/terminate-process-tree";
 
 function spawnRtkRg(
   args: string[],
@@ -43,7 +44,9 @@ function spawnRtkRg(
     env: { ...env, NO_COLOR: "1", TERM: "dumb" },
     detached: process.platform !== "win32",
     reject,
-    cancelSignal: signal,
+    ...(process.platform === "win32" || signal === undefined
+      ? {}
+      : { cancelSignal: signal }),
   });
   if (signal) {
     const terminateOwnedProcessGroup = () => {
@@ -55,7 +58,7 @@ function spawnRtkRg(
           // Fall back to the direct process if its group has already exited.
         }
       }
-      child.kill("SIGTERM");
+      void terminateWindowsProcessTree(child, "SIGTERM");
     };
     const removeAbortListener = () =>
       signal.removeEventListener("abort", terminateOwnedProcessGroup);
@@ -823,7 +826,7 @@ async function getGrepOutcomeInternal(
       args,
       resolvedWorkspace.canonicalRoot,
       true,
-      options.signal,
+      process.platform === "win32" ? undefined : options.signal,
     );
     options.setSearchPhase?.();
 

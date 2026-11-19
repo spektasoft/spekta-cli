@@ -27,8 +27,6 @@ export function registerHelpProcessRoutingTests(harness: HelpProcessHarness) {
       ["prompt", "--exclude-partial", "--help"],
       ["grep", "--help", "existing.ts"],
       ["grep", "pattern", "--glob", "-h"],
-      ["find", ".", "-name", "--help"],
-      ["find", ".", "-type", "-h"],
       ["git", "log", "-n", "-h"],
       ["git", "status", "--", "--help"],
       ["read", "--", "--help"],
@@ -39,6 +37,35 @@ export function registerHelpProcessRoutingTests(harness: HelpProcessHarness) {
       expect(result.stdout).not.toContain("Usage: spekta");
       expect(result.stderr).not.toContain("Unknown help topic");
       expect(result.stderr).not.toContain("Critical Error");
+    });
+
+    it("treats help-looking find operands as data", async () => {
+      const nameResult = await invoke(
+        ["find", ".", "-name", "--help"],
+        false,
+        true,
+      );
+      expect(nameResult.exitCode).toBe(process.platform === "win32" ? 0 : 1);
+      expect(nameResult.stdout).not.toContain("Usage: spekta");
+      expect(nameResult.stderr).not.toContain("Unknown help topic");
+      if (process.platform === "win32")
+        expect(nameResult.stdout).toContain('"--help"');
+      else
+        expect(nameResult.stdout + nameResult.stderr).toContain(
+          "Discovery engine unavailable.",
+        );
+
+      const typeResult = await invoke(
+        ["find", ".", "-type", "-h"],
+        false,
+        true,
+      );
+      expect(typeResult.exitCode).toBe(1);
+      expect(typeResult.stdout + typeResult.stderr).toContain(
+        "find -type requires exactly 'f' or 'd'.",
+      );
+      expect(typeResult.stdout).not.toContain("Usage: spekta");
+      expect(typeResult.stderr).not.toContain("Unknown help topic");
     });
 
     it.each([

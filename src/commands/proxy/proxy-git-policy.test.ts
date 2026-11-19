@@ -1,10 +1,19 @@
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  type TestContext,
+  vi,
+} from "vitest";
 import { validateProxyRequest } from "./proxy-policy";
 import {
   acceptedGitRequests,
+  danglingLinkGitRequests,
   rejectedGitRequests,
 } from "./proxy-git.test-fixtures";
 
@@ -12,6 +21,66 @@ let fixture: string;
 let workspace: string;
 let cwd: { mockReturnValue(value: string): unknown };
 let savedOverrides: Record<string, string | undefined>;
+
+function createDirectorySymlink(
+  target: string,
+  link: string,
+  skip: TestContext["skip"],
+): void {
+  try {
+    fs.symlinkSync(target, link, "dir");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (
+      process.platform === "win32" &&
+      ["EPERM", "EACCES"].includes(code ?? "")
+    ) {
+      skip(`Windows denied directory symlink creation (${code})`);
+    }
+    throw error;
+  }
+}
+
+function createLinksRequiredByRequest(
+  args: string[],
+  skip: TestContext["skip"],
+): void {
+  const paths = args.map((argument) => {
+    const colon = argument.indexOf(":");
+    return colon < 0 ? argument : argument.slice(colon + 1);
+  });
+  if (
+    paths.some((value) => value === "escape" || value.startsWith("escape/"))
+  ) {
+    createDirectorySymlink(
+      path.join(fixture, "outside"),
+      path.join(workspace, "escape"),
+      skip,
+    );
+  }
+  if (
+    paths.some(
+      (value) =>
+        value === "restricted-alias" || value.startsWith("restricted-alias/"),
+    )
+  ) {
+    createDirectorySymlink(
+      path.join(workspace, ".env"),
+      path.join(workspace, "restricted-alias"),
+      skip,
+    );
+  }
+  if (
+    paths.some((value) => value === "dangling" || value.startsWith("dangling/"))
+  ) {
+    createDirectorySymlink(
+      path.join(workspace, "missing"),
+      path.join(workspace, "dangling"),
+      skip,
+    );
+  }
+}
+
 beforeEach(() => {
   savedOverrides = {};
   for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR"]) {
@@ -24,21 +93,7 @@ beforeEach(() => {
   fs.ensureDirSync(path.join(workspace, ".env"));
   fs.ensureDirSync(path.join(fixture, "outside"));
   fs.writeFileSync(path.join(workspace, "file.txt"), "safe");
-  fs.symlinkSync(
-    path.join(fixture, "outside"),
-    path.join(workspace, "escape"),
-    "dir",
-  );
-  fs.symlinkSync(
-    path.join(workspace, ".env"),
-    path.join(workspace, "restricted-alias"),
-    "dir",
-  );
-  fs.symlinkSync(
-    path.join(workspace, "missing"),
-    path.join(workspace, "dangling"),
-    "dir",
-  );
+
   cwd = vi.spyOn(process, "cwd").mockReturnValue(workspace);
 });
 afterEach(() => {
@@ -59,18 +114,29 @@ describe("shared Git classification", () => {
       expect(args).toEqual(original);
     },
   );
-  it.each(rejectedGitRequests.map(([args, reason]) => ({ args, reason })))(
+  it.for(rejectedGitRequests.map(([args, reason]) => ({ args, reason })))(
     "rejects $args",
-    ({ args, reason }) => {
+    ({ args, reason }, { skip }) => {
+      createLinksRequiredByRequest(args, skip);
       expect(() => validateProxyRequest("git", args)).toThrow(reason);
     },
   );
-  it("does not apply filesystem checks to a slash-containing revision", () => {
+  it("rejects dangling-link paths when the fixture can create the link", ({
+    skip,
+  }) => {
+    createLinksRequiredByRequest(["dangling"], skip);
+    for (const [args, reason] of danglingLinkGitRequests) {
+      expect(() => validateProxyRequest("git", args)).toThrow(reason);
+    }
+  });
+  it("does not apply filesystem checks to a slash-containing revision", ({
+    skip,
+  }) => {
     fs.ensureDirSync(path.join(workspace, "feature"));
-    fs.symlinkSync(
+    createDirectorySymlink(
       path.join(fixture, "outside"),
       path.join(workspace, "feature/topic"),
-      "dir",
+      skip,
     );
     expect(() =>
       validateProxyRequest("git", ["show", "feature/topic"]),
@@ -91,18 +157,30 @@ describe("shared Git classification", () => {
       "feature/[t]opic",
       ".env",
       "../outside",
-      "escape",
-      "dangling",
-      "restricted-alias",
     ]) {
       expect(() =>
         validateProxyRequest("git", ["branch", "--list", pattern]),
       ).not.toThrow();
     }
+
     cwd.mockReturnValue(path.join(workspace, ".env"));
     expect(() =>
       validateProxyRequest("git", ["branch", "--list", "feature/*"]),
     ).toThrow(/restricted/i);
+  });
+  it("treats real symlink branch patterns as name filters", ({ skip }) => {
+    for (const [target, link] of [
+      [path.join(fixture, "outside"), path.join(workspace, "escape")],
+      [path.join(workspace, ".env"), path.join(workspace, "restricted-alias")],
+      [path.join(workspace, "missing"), path.join(workspace, "dangling")],
+    ]) {
+      createDirectorySymlink(target, link, skip);
+    }
+    for (const pattern of ["escape", "dangling", "restricted-alias"]) {
+      expect(() =>
+        validateProxyRequest("git", ["branch", "--list", pattern]),
+      ).not.toThrow();
+    }
   });
   it("resolves blob paths from repository root in a nested cwd", () => {
     const nested = path.join(workspace, "nested");
@@ -126,12 +204,12 @@ describe("shared Git classification", () => {
       validateProxyRequest("git", ["show", "HEAD:file.txt"]),
     ).not.toThrow();
   });
-  it("rejects a symlink .git marker", () => {
+  it("rejects a symlink .git marker", ({ skip }) => {
     fs.removeSync(path.join(workspace, ".git"));
-    fs.symlinkSync(
+    createDirectorySymlink(
       path.join(fixture, "outside"),
       path.join(workspace, ".git"),
-      "dir",
+      skip,
     );
     expect(() =>
       validateProxyRequest("git", ["show", "HEAD:file.txt"]),

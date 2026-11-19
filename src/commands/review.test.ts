@@ -1,5 +1,6 @@
 import * as prompts from "@inquirer/prompts";
 import fs from "fs-extra";
+import path from "node:path";
 import autocomplete from "inquirer-autocomplete-standalone"; // Added
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
@@ -66,7 +67,7 @@ describe("runReview", () => {
   it("writes the prompt file and opens the editor", async () => {
     await runReview();
 
-    const expectedPath = "/mock/dir/r-001-base-sh..head-sh.md";
+    const expectedPath = path.join("/mock/dir", "r-001-base-sh..head-sh.md");
     expect(fs.writeFile).toHaveBeenCalledWith(
       expectedPath,
       expect.stringContaining("DIFF_CONTENT"),

@@ -143,7 +143,9 @@ describe.each(["cli", "mcp"] as const)(
       ).toContain("version_mismatch");
     });
 
-    it("detects eligible symlink retargeting and conceals unavailable targets", async () => {
+    it("detects eligible symlink retargeting and conceals unavailable targets", async ({
+      skip,
+    }) => {
       await fs.writeFile(
         path.join(fixture.root, "first.txt"),
         "identical bytes\n",
@@ -153,7 +155,19 @@ describe.each(["cli", "mcp"] as const)(
         "identical bytes\n",
       );
       const link = path.join(fixture.root, "link.txt");
-      await fs.symlink("first.txt", link);
+      try {
+        await fs.symlink("first.txt", link);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (
+          process.platform === "win32" &&
+          ["EPERM", "EACCES"].includes(code ?? "")
+        ) {
+          await fs.remove(link);
+          skip(`Windows denied file symlink creation (${code})`);
+        }
+        throw error;
+      }
       const initial = await invoke(transport, "link.txt", undefined, 600);
       const oldVersion = marker(initial.text)!;
       await fs.unlink(link);

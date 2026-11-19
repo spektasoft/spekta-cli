@@ -1,5 +1,6 @@
 import fs from "fs-extra";
 import os from "node:os";
+import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -17,6 +18,51 @@ let fixture: WorkspaceFixture;
 let originalCwd: string;
 let originalPath: string | undefined;
 let rtkAvailable = false;
+
+function processIsRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code !== "ESRCH";
+  }
+}
+
+async function waitForProcessExit(pidPath: string): Promise<boolean> {
+  if (!(await fs.pathExists(pidPath))) return false;
+  const pid = Number(await fs.readFile(pidPath, "utf8"));
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (!processIsRunning(pid)) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return !processIsRunning(pid);
+}
+
+function normalizeReportedPaths(text: string): string {
+  return text.replaceAll("\\", "/");
+}
+
+vi.setConfig({
+  testTimeout: process.platform === "win32" ? 30_000 : 5_000,
+});
+
+async function writeFakeRtk(
+  binPath: string,
+  source: string,
+  unixSource = source,
+): Promise<void> {
+  if (process.platform === "win32") {
+    await fs.writeFile(path.join(binPath, "rtk.js"), source);
+    await fs.writeFile(
+      path.join(binPath, "rtk.cmd"),
+      `@echo off\r\n"${process.execPath}" "%~dp0rtk.js" %*\r\nexit /b %ERRORLEVEL%\r\n`,
+    );
+  } else {
+    await fs.writeFile(path.join(binPath, "rtk"), unixSource, {
+      mode: 0o755,
+    });
+  }
+}
 
 beforeEach(async () => {
   fixture = await createWorkspaceFixture();
@@ -146,10 +192,10 @@ describe("spekta rg public boundaries", () => {
     await fs.writeFile(path.join(fixture.root, "real.txt"), "needle\n");
     const binPath = await fs.mkdtemp(path.join(os.tmpdir(), "rtk-metadata-"));
     const marker = path.join(binPath, "launched");
-    await fs.writeFile(
-      path.join(binPath, "rtk"),
+    await writeFakeRtk(
+      binPath,
+      `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "launched"); process.exit(0);`,
       `#!/bin/sh\nprintf launched > '${marker}'\nexit 0\n`,
-      { mode: 0o755 },
     );
     const privateRoots = [
       "real.txt",
@@ -194,7 +240,11 @@ describe("spekta rg public boundaries", () => {
         path.join(outsideRoot, "secret.txt"),
         "needle secret\n",
       );
-      await fs.symlink(outsideRoot, path.join(fixture.root, deniedName), "dir");
+      await fs.symlink(
+        outsideRoot,
+        path.join(fixture.root, deniedName),
+        process.platform === "win32" ? "junction" : "dir",
+      );
       await fs.writeFile(path.join(fixture.root, "large.txt"), content);
       process.chdir(fixture.root);
       const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);
@@ -361,7 +411,7 @@ describe("spekta rg public boundaries", () => {
               lines: { text: string };
             };
           };
-          return `${event.data.path.text}:${event.data.line_number}:${event.data.lines.text.trim()}`;
+          return `${normalizeReportedPaths(event.data.path.text)}:${event.data.line_number}:${event.data.lines.text.trim()}`;
         }),
     );
     const output = await getRgOutcome(
@@ -374,7 +424,9 @@ describe("spekta rg public boundaries", () => {
       { root: fixture.root },
     );
     expect(output.status).toBe("success");
-    const outputText = output.status === "success" ? output.value : "";
+    const outputText = normalizeReportedPaths(
+      output.status === "success" ? output.value : "",
+    );
     expect(outputText).toContain("nested/one.txt");
     expect(outputText).toContain("nested/two.txt");
     expect(outputText).toContain("-named.txt");
@@ -473,7 +525,7 @@ describe("spekta rg public boundaries", () => {
               lines: { text: string };
             };
           };
-          return `${event.data.path.text}:${event.data.line_number}:${event.data.lines.text.trim()}`;
+          return `${normalizeReportedPaths(event.data.path.text)}:${event.data.line_number}:${event.data.lines.text.trim()}`;
         }),
     );
     const args = [
@@ -491,9 +543,9 @@ describe("spekta rg public boundaries", () => {
     const cliWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     process.chdir(fixture.root);
     await runRg(args);
-    const cliText = cliWrite.mock.calls
-      .map(([chunk]) => String(chunk))
-      .join("");
+    const cliText = normalizeReportedPaths(
+      cliWrite.mock.calls.map(([chunk]) => String(chunk)).join(""),
+    );
     cliWrite.mockRestore();
     const mcp = await TOOL_REGISTRY.spekta_rg.handler(
       {
@@ -504,7 +556,7 @@ describe("spekta rg public boundaries", () => {
       },
       { root: fixture.root },
     );
-    const mcpText = mcp.content[0]?.text ?? "";
+    const mcpText = normalizeReportedPaths(mcp.content[0]?.text ?? "");
 
     expect(nativeMatches).toEqual(
       new Set([
@@ -541,7 +593,9 @@ describe("spekta rg public boundaries", () => {
     process.chdir(fixture.root);
     const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     await runRg(["needle"]);
-    const cliText = write.mock.calls.map(([chunk]) => String(chunk)).join("");
+    const cliText = normalizeReportedPaths(
+      write.mock.calls.map(([chunk]) => String(chunk)).join(""),
+    );
     expect(cliText).toContain("nested/lower.txt");
     expect(cliText).not.toContain("nested/upper.txt");
 
@@ -549,8 +603,9 @@ describe("spekta rg public boundaries", () => {
       { patterns: ["needle"] },
       { root: fixture.root },
     );
-    expect(mcp.content[0]?.text).toContain("nested/lower.txt");
-    expect(mcp.content[0]?.text).not.toContain("nested/upper.txt");
+    const mcpText = normalizeReportedPaths(mcp.content[0]?.text ?? "");
+    expect(mcpText).toContain("nested/lower.txt");
+    expect(mcpText).not.toContain("nested/upper.txt");
 
     const noMatchWrite = vi
       .spyOn(process.stdout, "write")
@@ -569,6 +624,36 @@ describe("spekta rg public boundaries", () => {
     expect(noMatchMcp.content[0]?.text).toContain(
       "no_matches: No matches found.",
     );
+  });
+
+  it("searches a contained absolute root through CLI and MCP", async ({
+    skip,
+  }) => {
+    if (!rtkAvailable) skip();
+    const absoluteRoot = path.resolve(fixture.root);
+    await fs.writeFile(
+      path.join(absoluteRoot, "absolute.txt"),
+      "needle absolute root\n",
+    );
+    process.chdir(fixture.root);
+
+    const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    await runRg(["-e", "needle", absoluteRoot]);
+    const cliText = normalizeReportedPaths(
+      write.mock.calls.map(([chunk]) => String(chunk)).join(""),
+    );
+    write.mockRestore();
+    expect(cliText).toContain("absolute.txt");
+    expect(cliText).toContain("needle absolute root");
+
+    const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+      { patterns: ["needle"], paths: [absoluteRoot] },
+      { root: fixture.root },
+    );
+    const mcpText = normalizeReportedPaths(mcp.content[0]?.text ?? "");
+    expect(mcp.isError).toBeUndefined();
+    expect(mcpText).toContain("absolute.txt");
+    expect(mcpText).toContain("needle absolute root");
   });
 
   it("reports missing RTK without exposing process diagnostics", async () => {
@@ -596,10 +681,10 @@ describe("spekta rg public boundaries", () => {
 
   it("reports missing ripgrep through a controlled RTK executable", async () => {
     const binPath = await fs.mkdtemp(path.join(os.tmpdir(), "rtk-no-rg-"));
-    await fs.writeFile(
-      path.join(binPath, "rtk"),
+    await writeFakeRtk(
+      binPath,
+      'if (process.argv[2] === "--version") process.exit(0); process.stderr.write("controlled missing ripgrep details\\n"); process.exit(127);',
       '#!/bin/sh\nif [ "$1" = "--version" ]; then exit 0; fi\nprintf \'controlled missing ripgrep details\\n\' >&2\nexit 127\n',
-      { mode: 0o755 },
     );
     process.env.PATH = `${binPath}${path.delimiter}${originalPath ?? ""}`;
     try {
@@ -636,8 +721,9 @@ describe("spekta rg public boundaries", () => {
         lines: { text: "needle buffered private match\n" },
       },
     });
-    await fs.writeFile(
-      path.join(binPath, "rtk"),
+    await writeFakeRtk(
+      binPath,
+      `const args = process.argv.slice(2); if (args[0] === "--version" || (args[0] === "proxy" && args[1] === "rg" && args[2] === "--version")) process.exit(0); if (args[0] === "proxy" && args[1] === "rg") { process.stdout.write(${JSON.stringify(`${matchLine}\n`)}); process.stderr.write("private engine detail\\n"); process.exit(2); } process.exit(2);`,
       `#!/bin/sh
 if [ "$1" = "--version" ]; then exit 0; fi
 if [ "$1" = "proxy" ] && [ "$2" = "rg" ] && [ "$3" = "--version" ]; then exit 0; fi
@@ -648,7 +734,6 @@ if [ "$1" = "proxy" ] && [ "$2" = "rg" ]; then
 fi
 exit 2
 `,
-      { mode: 0o755 },
     );
     process.env.PATH = `${binPath}${path.delimiter}${originalPath ?? ""}`;
     try {
@@ -684,171 +769,216 @@ exit 2
     }
   });
 
-  it("withholds budget overflow through CLI and MCP and cancels RTK's engine child", async () => {
-    if (!rtkAvailable) return;
-    const binPath = await fs.mkdtemp(path.join(os.tmpdir(), "rtk-cancel-"));
-    const pidPath = path.join(binPath, "engine.pid");
-    const stoppedPath = path.join(binPath, "engine.stopped");
-    const realRtk = (await execa("which", ["rtk"])).stdout.trim();
-    await fs.writeFile(
-      path.join(fixture.root, "real.txt"),
-      "needle repeated content for budget cancellation\n".repeat(10_000),
-    );
-    await fs.writeFile(
-      path.join(binPath, "rtk"),
-      `#!${process.execPath}
-const { spawn } = require("node:child_process");
-const fs = require("node:fs");
-if (process.argv.includes("--version")) { console.log("rtk 1"); process.exit(0); }
-const engine = spawn(${JSON.stringify(realRtk)}, process.argv.slice(2), { stdio: "inherit" });
-const observer = spawn(process.execPath, ["-e", ${JSON.stringify(
+  it(
+    "withholds budget overflow through CLI and MCP and cancels RTK's engine child",
+    async () => {
+      if (!rtkAvailable) return;
+      const binPath = await fs.mkdtemp(path.join(os.tmpdir(), "rtk-cancel-"));
+      const wrapperPidPath = path.join(binPath, "wrapper.pid");
+      const pidPath = path.join(binPath, "engine.pid");
+      const stoppedPath = path.join(binPath, "engine.stopped");
+      const realRtk = (
+        await execa(process.platform === "win32" ? "where.exe" : "which", [
+          "rtk",
+        ])
+      ).stdout
+        .split(/\r?\n/)
+        .find((entry) => entry.trim())
+        ?.trim();
+      expect(realRtk).toBeTruthy();
+      await fs.writeFile(
+        path.join(fixture.root, "real.txt"),
+        "needle repeated content for budget cancellation\n".repeat(10_000),
+      );
+      const cancellationSource = `const { spawn } = require("node:child_process"); const fs = require("node:fs"); if (process.argv.includes("--version")) { console.log("rtk 1"); process.exit(0); } if (process.platform === "win32") fs.writeFileSync(${JSON.stringify(wrapperPidPath)}, String(process.pid)); const engine = spawn(${JSON.stringify(realRtk)}, process.argv.slice(2), { stdio: "inherit" }); if (process.platform === "win32") { fs.writeFileSync(${JSON.stringify(pidPath)}, String(engine.pid)); } else { const observer = spawn(process.execPath, ["-e", ${JSON.stringify(
         `process.on("SIGTERM", () => { require("node:fs").writeFileSync(${JSON.stringify(stoppedPath)}, "terminated"); process.exit(0); }); setInterval(()=>{}, 1000);`,
-      )}], { stdio: "ignore" });
-fs.writeFileSync(${JSON.stringify(pidPath)}, String(observer.pid));
-engine.on("exit", () => {});
-setInterval(()=>{}, 1000);
-`,
-      { mode: 0o755 },
-    );
-    const originalTokenLimit = process.env.SPEKTA_GREP_TOKEN_LIMIT;
-    process.env.PATH = `${binPath}${path.delimiter}${originalPath ?? ""}`;
-    // 400 covers the expanded cancellation/scope notices plus a real MCP
-    // envelope; the test still emits enough matches to exercise cancellation.
-    process.env.SPEKTA_GREP_TOKEN_LIMIT = "400";
-    await fs.writeFile(
-      path.join(fixture.root, ".spektaignore"),
-      "ignored.txt\n",
-    );
-    const cliWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    const cliErrorWrite = vi
-      .spyOn(process.stderr, "write")
-      .mockReturnValue(true);
+      )}], { stdio: "ignore" }); fs.writeFileSync(${JSON.stringify(pidPath)}, String(observer.pid)); } setInterval(()=>{}, 1000);`;
+      await writeFakeRtk(
+        binPath,
+        cancellationSource,
+        `#!${process.execPath}\n${cancellationSource}`,
+      );
+      const originalTokenLimit = process.env.SPEKTA_GREP_TOKEN_LIMIT;
+      process.env.PATH = `${binPath}${path.delimiter}${originalPath ?? ""}`;
+      // 400 covers the expanded cancellation/scope notices plus a real MCP
+      // envelope; the test still emits enough matches to exercise cancellation.
+      process.env.SPEKTA_GREP_TOKEN_LIMIT = "400";
+      await fs.writeFile(
+        path.join(fixture.root, ".spektaignore"),
+        "ignored.txt\n",
+      );
+      const cliWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      const cliErrorWrite = vi
+        .spyOn(process.stderr, "write")
+        .mockReturnValue(true);
 
-    try {
+      try {
+        process.chdir(fixture.root);
+        await runRg(["needle"]);
+        const [wrapperTerminated, engineTerminated] =
+          process.platform === "win32"
+            ? await Promise.all([
+                waitForProcessExit(wrapperPidPath),
+                waitForProcessExit(pidPath),
+              ])
+            : [await fs.pathExists(stoppedPath), true];
+        expect(wrapperTerminated).toBe(true);
+        expect(engineTerminated).toBe(true);
+        const cliText = cliWrite.mock.calls
+          .map(([chunk]) => String(chunk))
+          .join("");
+        const cliErrorText = cliErrorWrite.mock.calls
+          .map(([chunk]) => String(chunk))
+          .join("");
+        expect(cliText + cliErrorText).toContain("withheld");
+        expect(cliText).not.toContain("real.txt");
+        expect(cliText).not.toContain("needle ");
+        expect(
+          process.platform === "win32"
+            ? (await waitForProcessExit(wrapperPidPath)) &&
+                (await waitForProcessExit(pidPath))
+            : await fs.pathExists(stoppedPath),
+        ).toBe(true);
+        await fs.remove(stoppedPath);
+
+        const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+          { patterns: ["needle"] },
+          { root: fixture.root },
+          "budget-cancel-request",
+        );
+        const mcpText = mcp.content[0]?.text ?? "";
+        expect(mcpText).toContain("withheld");
+        expect(mcpText).not.toContain("real.txt");
+        expect(mcpText).not.toContain("needle ");
+        expect(
+          getGrepResponseTokenCount(mcpText, "budget-cancel-request"),
+        ).toBeLessThanOrEqual(400);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        expect(
+          process.platform === "win32"
+            ? await waitForProcessExit(pidPath)
+            : await fs.pathExists(stoppedPath),
+        ).toBe(true);
+      } finally {
+        cliWrite.mockRestore();
+        cliErrorWrite.mockRestore();
+        if (originalTokenLimit === undefined)
+          delete process.env.SPEKTA_GREP_TOKEN_LIMIT;
+        else process.env.SPEKTA_GREP_TOKEN_LIMIT = originalTokenLimit;
+        const cleanupPidPath =
+          process.platform === "win32" && (await fs.pathExists(wrapperPidPath))
+            ? wrapperPidPath
+            : pidPath;
+        if (await fs.pathExists(cleanupPidPath)) {
+          const ownedProcess = Number(
+            await fs.readFile(cleanupPidPath, "utf8"),
+          );
+          try {
+            if (process.platform === "win32")
+              spawnSync(
+                "taskkill.exe",
+                ["/PID", String(ownedProcess), "/T", "/F"],
+                { encoding: "utf8", timeout: 10_000 },
+              );
+            else process.kill(ownedProcess, "SIGKILL");
+          } catch {
+            // The search cancellation may already have reaped the child.
+          }
+        }
+        await fs.remove(binPath);
+      }
+    },
+    process.platform === "win32" ? 60_000 : 30_000,
+  );
+
+  it(
+    "withholds CLI and MCP results when the match ceiling is exceeded",
+    async ({ skip }) => {
+      if (!rtkAvailable) skip();
+      process.env.SPEKTA_GREP_TOKEN_LIMIT = "1000000";
       process.chdir(fixture.root);
-      const cliRun = runRg(["needle"]);
-      const completed = await Promise.race([
-        cliRun.then(() => true),
-        new Promise<false>((resolve) => setTimeout(() => resolve(false), 2000)),
-      ]);
-      expect(
-        completed,
-        `engine terminated: ${await fs.pathExists(stoppedPath)}`,
-      ).toBe(true);
-      const cliText = cliWrite.mock.calls
-        .map(([chunk]) => String(chunk))
-        .join("");
-      const cliErrorText = cliErrorWrite.mock.calls
-        .map(([chunk]) => String(chunk))
-        .join("");
-      expect(completed, cliText + cliErrorText).toBe(true);
-      expect(cliText + cliErrorText).toContain("withheld");
-      expect(cliText).not.toContain("real.txt");
-      expect(cliText).not.toContain("needle ");
-      expect(await fs.pathExists(stoppedPath)).toBe(true);
-      await fs.remove(stoppedPath);
 
-      const mcp = await TOOL_REGISTRY.spekta_rg.handler(
+      await fs.writeFile(
+        path.join(fixture.root, "real.txt"),
+        Array.from({ length: 501 }, (_, index) => `needle match-${index}`).join(
+          "\n",
+        ),
+      );
+      const matchWrite = vi
+        .spyOn(process.stdout, "write")
+        .mockReturnValue(true);
+      const matchErrorWrite = vi
+        .spyOn(process.stderr, "write")
+        .mockReturnValue(true);
+      await runRg(["needle"]);
+      const matchCli = [...matchWrite.mock.calls, ...matchErrorWrite.mock.calls]
+        .map(([chunk]) => String(chunk))
+        .join("");
+      matchWrite.mockRestore();
+      matchErrorWrite.mockRestore();
+      const matchMcp = await TOOL_REGISTRY.spekta_rg.handler(
         { patterns: ["needle"] },
         { root: fixture.root },
-        "budget-cancel-request",
+        "match-ceiling-request",
       );
-      const mcpText = mcp.content[0]?.text ?? "";
-      expect(mcpText).toContain("withheld");
-      expect(mcpText).not.toContain("real.txt");
-      expect(mcpText).not.toContain("needle ");
+      const matchMcpText = matchMcp.content[0]?.text ?? "";
+      expect(matchCli).toContain("withheld");
+      expect(matchCli).not.toContain("match-0");
+      expect(matchMcpText).toContain("withheld");
+      expect(matchMcpText).not.toContain("match-0");
       expect(
-        getGrepResponseTokenCount(mcpText, "budget-cancel-request"),
-      ).toBeLessThanOrEqual(400);
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(await fs.pathExists(stoppedPath)).toBe(true);
-    } finally {
-      cliWrite.mockRestore();
-      cliErrorWrite.mockRestore();
-      if (originalTokenLimit === undefined)
-        delete process.env.SPEKTA_GREP_TOKEN_LIMIT;
-      else process.env.SPEKTA_GREP_TOKEN_LIMIT = originalTokenLimit;
-      if (await fs.pathExists(pidPath)) {
-        const engine = Number(await fs.readFile(pidPath, "utf8"));
-        try {
-          process.kill(engine, "SIGKILL");
-        } catch {
-          // The search cancellation may already have reaped the child.
-        }
+        getGrepResponseTokenCount(matchMcpText, "match-ceiling-request"),
+      ).toBeLessThanOrEqual(1_000_000);
+    },
+    process.platform === "win32" ? 60_000 : 30_000,
+  );
+
+  it(
+    "withholds CLI and MCP results when the file ceiling is exceeded",
+    async ({ skip }) => {
+      if (!rtkAvailable) skip();
+      process.env.SPEKTA_GREP_TOKEN_LIMIT = "1000000";
+      process.chdir(fixture.root);
+
+      for (let index = 0; index < 101; index++) {
+        await fs.writeFile(
+          path.join(fixture.root, `ceiling-${index}.txt`),
+          "needle file ceiling\n",
+        );
       }
-      await fs.remove(binPath);
-    }
-  });
-
-  it("withholds CLI and MCP results when the match or file ceiling is exceeded", async ({
-    skip,
-  }) => {
-    if (!rtkAvailable) skip();
-    process.env.SPEKTA_GREP_TOKEN_LIMIT = "1000000";
-    process.chdir(fixture.root);
-
-    await fs.writeFile(
-      path.join(fixture.root, "real.txt"),
-      Array.from({ length: 501 }, (_, index) => `needle match-${index}`).join(
-        "\n",
-      ),
-    );
-    const matchWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    const matchErrorWrite = vi
-      .spyOn(process.stderr, "write")
-      .mockReturnValue(true);
-    await runRg(["needle"]);
-    const matchCli = [...matchWrite.mock.calls, ...matchErrorWrite.mock.calls]
-      .map(([chunk]) => String(chunk))
-      .join("");
-    matchWrite.mockRestore();
-    matchErrorWrite.mockRestore();
-    const matchMcp = await TOOL_REGISTRY.spekta_rg.handler(
-      { patterns: ["needle"] },
-      { root: fixture.root },
-      "match-ceiling-request",
-    );
-    const matchMcpText = matchMcp.content[0]?.text ?? "";
-    expect(matchCli).toContain("withheld");
-    expect(matchCli).not.toContain("match-0");
-    expect(matchMcpText).toContain("withheld");
-    expect(matchMcpText).not.toContain("match-0");
-    expect(
-      getGrepResponseTokenCount(matchMcpText, "match-ceiling-request"),
-    ).toBeLessThanOrEqual(1_000_000);
-
-    for (let index = 0; index < 101; index++) {
       await fs.writeFile(
-        path.join(fixture.root, `ceiling-${index}.txt`),
-        "needle file ceiling\n",
+        path.join(fixture.root, "real.txt"),
+        "needle eligible\n",
       );
-    }
-    await fs.writeFile(
-      path.join(fixture.root, "real.txt"),
-      "needle eligible\n",
-    );
-    const fileWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    const fileErrorWrite = vi
-      .spyOn(process.stderr, "write")
-      .mockReturnValue(true);
-    await runRg(["needle"]);
-    const fileCli = [...fileWrite.mock.calls, ...fileErrorWrite.mock.calls]
-      .map(([chunk]) => String(chunk))
-      .join("");
-    fileWrite.mockRestore();
-    fileErrorWrite.mockRestore();
-    const fileMcp = await TOOL_REGISTRY.spekta_rg.handler(
-      { patterns: ["needle"] },
-      { root: fixture.root },
-      "file-ceiling-request",
-    );
-    const fileMcpText = fileMcp.content[0]?.text ?? "";
-    expect(fileCli).toContain("withheld");
-    expect(fileCli).not.toContain("ceiling-0.txt");
-    expect(fileMcpText).toContain("withheld");
-    expect(fileMcpText).not.toContain("ceiling-0.txt");
-    expect(
-      getGrepResponseTokenCount(fileMcpText, "file-ceiling-request"),
-    ).toBeLessThanOrEqual(1_000_000);
-  }, 30_000);
+      const fileWrite = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+      const fileErrorWrite = vi
+        .spyOn(process.stderr, "write")
+        .mockReturnValue(true);
+      try {
+        await runRg(["needle"]);
+        const fileCli = [...fileWrite.mock.calls, ...fileErrorWrite.mock.calls]
+          .map(([chunk]) => String(chunk))
+          .join("");
+        fileWrite.mockRestore();
+        fileErrorWrite.mockRestore();
+        const fileMcp = await TOOL_REGISTRY.spekta_rg.handler(
+          { patterns: ["needle"] },
+          { root: fixture.root },
+          "file-ceiling-request",
+        );
+        const fileMcpText = fileMcp.content[0]?.text ?? "";
+        expect(fileCli).toContain("withheld");
+        expect(fileCli).not.toContain("ceiling-0.txt");
+        expect(fileMcpText).toContain("withheld");
+        expect(fileMcpText).not.toContain("ceiling-0.txt");
+        expect(
+          getGrepResponseTokenCount(fileMcpText, "file-ceiling-request"),
+        ).toBeLessThanOrEqual(1_000_000);
+      } finally {
+        fileWrite.mockRestore();
+        fileErrorWrite.mockRestore();
+      }
+    },
+    process.platform === "win32" ? 60_000 : 30_000,
+  );
 });

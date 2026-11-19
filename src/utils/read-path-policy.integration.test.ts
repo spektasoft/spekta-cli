@@ -21,7 +21,7 @@ afterEach(async () => {
 const SIZE = 10 * 1024 * 1024;
 
 describe("workspace read policy", () => {
-  it("rejects an external file link before policy/content reads", async () => {
+  it("rejects an external link before policy/content reads", async () => {
     const workspace = await resolveWorkspace({ root: fixture.root });
     const reads = vi.spyOn(fs, "readFile");
     const stats = vi.spyOn(fs, "stat");
@@ -50,9 +50,29 @@ describe("workspace read policy", () => {
       assertPathNotIgnored("ignored.txt", "original.txt", {}, fixture.root),
     ).rejects.toThrow("original.txt is ignored");
   });
+  it("checks spaced paths with either separator against ignore rules", async () => {
+    await fs.ensureDir(path.join(fixture.root, "nested dir"));
+    await fs.writeFile(
+      path.join(fixture.root, "nested dir", "ignored file.txt"),
+      "ignored",
+    );
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "nested dir/ignored file.txt\n",
+    );
+
+    for (const target of [
+      "nested dir/ignored file.txt",
+      String.raw`nested dir\ignored file.txt`,
+      path.join(fixture.root, "nested dir", "ignored file.txt"),
+    ])
+      await expect(
+        isPathIgnored(target, undefined, fixture.root),
+      ).resolves.toBe(true);
+  });
   it.each([
     "ignored.txt",
-    "ignored-alias.txt",
+    ...(process.platform === "win32" ? [] : ["ignored-alias.txt"]),
     "git-ignored.txt",
     "managed.txt",
     "global.txt",
@@ -64,18 +84,34 @@ describe("workspace read policy", () => {
       ),
     ).rejects.toThrow("ignored");
   });
-  it("checks restrictions and ignore policy across aliases", async () => {
+  it("checks restrictions and ignore policy across directory links", async () => {
+    const managedDirectory = path.join(fixture.root, "managed-dir");
+    await fs.ensureDir(managedDirectory);
+    await fs.writeFile(path.join(managedDirectory, "real.txt"), "managed");
     await fs.symlink(
-      path.join(fixture.root, "real.txt"),
-      path.join(fixture.root, "managed-alias.txt"),
+      managedDirectory,
+      path.join(fixture.root, "managed-alias"),
+      process.platform === "win32" ? "junction" : "dir",
     );
     await fs.appendFile(
       path.join(fixture.root, ".spektaignore"),
-      "managed-alias.txt\n",
+      "managed-dir/real.txt\n",
     );
+
+    const restrictedRoot = path.join(fixture.root, "restricted-dir");
+    const restrictedNames = [".env", ".gitignore", ".spektaignore"];
+    for (const name of restrictedNames)
+      await fs.ensureDir(path.join(restrictedRoot, name));
+    for (const name of restrictedNames)
+      await fs.symlink(
+        path.join(restrictedRoot, name),
+        path.join(fixture.root, `alias${name}.txt`),
+        process.platform === "win32" ? "junction" : "dir",
+      );
+
     const workspace = await resolveWorkspace({ root: fixture.root });
     await expect(
-      validateReadPathAccess("managed-alias.txt", workspace),
+      validateReadPathAccess("managed-alias/real.txt", workspace),
     ).rejects.toThrow("ignored");
     for (const target of [
       ".env",
@@ -103,7 +139,8 @@ describe("workspace read policy", () => {
         await fs.close(handle);
       }
     }
-    await fs.symlink(big, path.join(fixture.root, "big-alias.txt"));
+    if (process.platform !== "win32")
+      await fs.symlink(big, path.join(fixture.root, "big-alias.txt"));
     const workspace = await resolveWorkspace({ root: fixture.root });
     await expect(
       validateReadPathAccess("allowed.txt", workspace),
@@ -111,7 +148,10 @@ describe("workspace read policy", () => {
     await expect(validateReadPathAccess("exact.txt", workspace)).resolves.toBe(
       exact,
     );
-    for (const target of ["big.txt", "big-alias.txt"])
+    for (const target of [
+      "big.txt",
+      ...(process.platform === "win32" ? [] : ["big-alias.txt"]),
+    ])
       await expect(validateReadPathAccess(target, workspace)).rejects.toThrow(
         "size limit",
       );

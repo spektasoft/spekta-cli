@@ -88,11 +88,11 @@ describe("whitelisted ignored files in workspace searches", () => {
   });
 
   it.each([
-    ["!odd-files/**", false],
-    ["!odd-files/", true],
+    ["!odd-files/**", false, true],
+    ["!odd-files/", true, false],
   ] as const)(
     "safely searches whitelisted nested git-ignored filenames for %s",
-    async (directoryWhitelist, includesNewlineName) => {
+    async (directoryWhitelist, includesNewlineName, includesDotName) => {
       const oddDir = path.join(fixture.root, "odd-files");
       await fs.ensureDir(oddDir);
       await fs.writeFile(path.join(oddDir, ".gitignore"), "*\n");
@@ -100,10 +100,16 @@ describe("whitelisted ignored files in workspace searches", () => {
         path.join(oddDir, "with space.txt"),
         "needle SPACE_WHITE\n",
       );
-      await fs.writeFile(
-        path.join(oddDir, "line\nbreak.txt"),
-        "needle NEWLINE_WHITE\n",
-      );
+      await fs.writeFile(path.join(oddDir, "..notes"), "needle DOTS_WHITE\n");
+      await fs.writeFile(path.join(oddDir, "-file.txt"), "needle DASH_WHITE\n");
+      await fs.writeFile(path.join(oddDir, "-"), "needle LITERAL_DASH_WHITE\n");
+      const supportsNewlineFilenames = process.platform !== "win32";
+      if (supportsNewlineFilenames) {
+        await fs.writeFile(
+          path.join(oddDir, "line\nbreak.txt"),
+          "needle NEWLINE_WHITE\n",
+        );
+      }
       await fs.writeFile(
         path.join(fixture.root, ".spektaignore"),
         `!allowed.txt\n${directoryWhitelist}\n`,
@@ -114,9 +120,18 @@ describe("whitelisted ignored files in workspace searches", () => {
         { root: fixture.root },
       );
 
-      expect(result).toContain("SPACE_WHITE");
-      if (includesNewlineName) expect(result).toContain("NEWLINE_WHITE");
+      for (const marker of [
+        "SPACE_WHITE",
+        "DASH_WHITE",
+        "LITERAL_DASH_WHITE",
+      ]) {
+        expect(result).toContain(marker);
+      }
+      if (includesNewlineName && supportsNewlineFilenames)
+        expect(result).toContain("NEWLINE_WHITE");
       else expect(result).not.toContain("NEWLINE_WHITE");
+      if (includesDotName) expect(result).toContain("DOTS_WHITE");
+      else expect(result).not.toContain("DOTS_WHITE");
       expect(result).not.toContain("NESTED_IGNORED");
       expect(result).not.toContain("EXTERNAL");
     },

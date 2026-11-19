@@ -52,7 +52,7 @@ describe("getGrepContent - formatting", () => {
 
     const result = await getGrepContent({ pattern: "const", path: "src" });
 
-    expect(result).toContain("#### src/main.ts");
+    expect(result).toContain(`#### src${path.sep}main.ts`);
     expect(result).toContain("```ts\n1:5:const x = 1;\n```");
     expect(result).not.toContain('Search Results for "const":');
   });
@@ -81,7 +81,7 @@ describe("getGrepContent - formatting", () => {
 
     const result = await getGrepContent({ pattern: "test" });
 
-    expect(result).toContain("#### ./file.ts");
+    expect(result).toContain(`#### .${path.sep}file.ts`);
     expect(result).toContain("10:2:valid line");
   });
 
@@ -103,7 +103,7 @@ describe("getGrepContent - formatting", () => {
 
     const result = await getGrepContent({ pattern: "const", path: "src" });
 
-    expect(result).toContain("#### src/main.ts");
+    expect(result).toContain(`#### src${path.sep}main.ts`);
     expect(result).toContain("```ts\n1:5:const x = 1;\n```");
   });
 
@@ -145,7 +145,7 @@ describe("getGrepContent - formatting", () => {
 
     const result = await getGrepContent({ pattern: "class", path: "src" });
 
-    expect(result).toContain("#### src/service.ts");
+    expect(result).toContain(`#### src${path.sep}service.ts`);
     expect(result).toContain("```ts\n10:0:export class Service {}\n```");
   });
 
@@ -167,7 +167,7 @@ describe("getGrepContent - formatting", () => {
 
     const result = await getGrepContent({ pattern: "const" });
 
-    expect(result).toContain("#### ./src/multi.ts");
+    expect(result).toContain(`#### .${path.sep}src${path.sep}multi.ts`);
     expect(result).toContain("```ts\n5:10,25:const a = 1; const b = 2;\n```");
   });
 });

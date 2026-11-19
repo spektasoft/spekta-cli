@@ -41,11 +41,17 @@ describe("previewCodexSetup", () => {
     await chmod(join(bin, "spekta-codex-hook"), 0o755);
     await writeFile(join(bin, "spekta"), "#!/bin/sh\n");
     await chmod(join(bin, "spekta"), 0o755);
-    await writeFile(
-      join(bin, "codex"),
-      "#!/bin/sh\nprintf 'codex-cli 0.160.1\\n'\n",
+    const codex = join(
+      bin,
+      `codex${process.platform === "win32" ? ".cmd" : ""}`,
     );
-    await chmod(join(bin, "codex"), 0o755);
+    await writeFile(
+      codex,
+      process.platform === "win32"
+        ? '@echo off\r\nif "%~1"=="--version" if "%~2"=="" echo codex-cli 0.160.1\r\n'
+        : "#!/bin/sh\nprintf 'codex-cli 0.160.1\\n'\n",
+    );
+    if (process.platform !== "win32") await chmod(codex, 0o755);
     const defaults = await previewCodexSetup({ home: root, path: bin });
     expect(defaults.files).toHaveLength(2);
     const optedIn = await previewCodexSetup({
@@ -73,11 +79,17 @@ describe("previewCodexSetup", () => {
     await chmod(join(bin, "spekta-codex-hook"), 0o755);
     await writeFile(join(bin, "spekta"), "#!/bin/sh\n");
     await chmod(join(bin, "spekta"), 0o755);
-    await writeFile(
-      join(bin, "codex"),
-      "#!/bin/sh\nprintf 'codex-cli 0.159.9\\n'\n",
+    const codex = join(
+      bin,
+      `codex${process.platform === "win32" ? ".cmd" : ""}`,
     );
-    await chmod(join(bin, "codex"), 0o755);
+    await writeFile(
+      codex,
+      process.platform === "win32"
+        ? '@echo off\r\nif "%~1"=="--version" if "%~2"=="" echo codex-cli 0.159.9\r\n'
+        : "#!/bin/sh\nprintf 'codex-cli 0.159.9\\n'\n",
+    );
+    if (process.platform !== "win32") await chmod(codex, 0o755);
     const plan = await previewCodexSetup({ home: root, path: bin, mcp: true });
     expect(plan.status).toBe("refused");
     expect(plan.files).toEqual([]);

@@ -28,6 +28,9 @@ const proxyFixture = createProxyFixture({
 
 beforeEach(() => {
   ({ fixture, workspace } = proxyFixture.setup());
+  // Rendered through the public adapters, these cases exercise the RTK/GNU
+  // backend's invocation and failure contract on every host.
+  vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
   fs.ensureDirSync(path.join(workspace, "space name"));
   fs.ensureDirSync(path.join(workspace, "-directory"));
   fs.writeFileSync(path.join(workspace, "one.ts"), "one");
@@ -319,7 +322,7 @@ describe("restricted find CLI and MCP parity", () => {
   it("reports external and escaping symlink roots as unavailable", async () => {
     const roots = [
       "../outside",
-      path.join(fixture, "outside"),
+      path.relative(workspace, path.join(fixture, "outside")),
       "escape",
       "escape/missing/child",
     ];
@@ -331,7 +334,7 @@ describe("restricted find CLI and MCP parity", () => {
     await expectRejected([String.raw`C:\outside`], /usage_error/i);
     await expectRejected([String.raw`\\server\share\outside`], /usage_error/i);
     process.exitCode = undefined;
-    await runRtkProxy("find", [workspace]);
+    await runRtkProxy("find", ["."]);
     expect(process.exitCode).toBeUndefined();
   });
 

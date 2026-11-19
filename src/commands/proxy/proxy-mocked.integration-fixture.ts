@@ -26,21 +26,24 @@ export function createProxyFixture(options: {
     fs.ensureDirSync(path.join(workspace, ".env"));
     fs.ensureDirSync(path.join(fixture, "outside"));
     fs.writeFileSync(path.join(workspace, "file.txt"), "file");
+    const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
     fs.symlinkSync(
       path.join(fixture, "outside"),
       path.join(workspace, "escape"),
-      "dir",
+      directoryLinkType,
     );
     fs.symlinkSync(
       path.join(workspace, ".env"),
       path.join(workspace, "restricted-alias"),
-      "dir",
+      directoryLinkType,
     );
-    fs.symlinkSync(
-      path.join(workspace, "missing"),
-      path.join(workspace, "dangling"),
-      "dir",
-    );
+    if (process.platform !== "win32") {
+      fs.symlinkSync(
+        path.join(workspace, "missing"),
+        path.join(workspace, "dangling"),
+        directoryLinkType,
+      );
+    }
     vi.spyOn(process, "cwd").mockReturnValue(workspace);
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);

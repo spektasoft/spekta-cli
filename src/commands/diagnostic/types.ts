@@ -7,8 +7,8 @@ export interface DiagnosticFinding {
   path: string;
   status: FindingStatus;
   rawTokens: number;
-  finalTokens: number;
-  excessTokens: number;
+  finalTokens?: number;
+  excessTokens?: number;
   isCompacted: boolean;
   compactionWarning?: string;
   action?: FindingAction;

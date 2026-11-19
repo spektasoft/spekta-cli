@@ -10,8 +10,12 @@ export interface ParsedFindBatch {
   predicates: FindPredicates;
 }
 
+const normalizeRootSeparators = (root: string): string =>
+  process.platform === "win32" ? root.replaceAll("\\", "/") : root;
 const hasUnsupportedRootCharacter = (root: string) =>
-  ["\\", ":", "*", "?", "[", "]"].some((char) => root.includes(char));
+  [":", "*", "?", "[", "]", ...(process.platform === "win32" ? [] : ["\\"])].some(
+    (char) => root.includes(char),
+  );
 const FORBIDDEN = (value: string): boolean =>
   value === "--spekta-force" || value.startsWith("--spekta-force=");
 
@@ -34,7 +38,8 @@ export function parseFindBatch(args: readonly string[]): ParsedFindBatch {
   const roots: string[] = [];
   let index = 0;
   while (index < args.length && !args[index].startsWith("-")) {
-    const root = args[index];
+    const suppliedRoot = args[index];
+    const root = normalizeRootSeparators(suppliedRoot);
     const absolutePosix = root.startsWith("/");
     if (
       root === "" ||

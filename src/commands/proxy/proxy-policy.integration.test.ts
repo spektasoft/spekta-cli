@@ -9,6 +9,7 @@ import { TOOL_REGISTRY } from "../../api/mcp-server/registry";
 
 import { createGitPolicyFixture } from "./proxy-policy.integration-fixture";
 import { rejectedPolicyRequests } from "./proxy-policy.integration-cases";
+import { danglingLinkGitRequests } from "./proxy-git.test-fixtures";
 import {
   expectProxyRejected as expectRejected,
   proxySecret as secret,
@@ -33,7 +34,13 @@ beforeEach(() => {
   ({ fixture, workspace } = proxyFixture.setup());
 });
 
-afterEach(() => proxyFixture.teardown());
+afterEach(() => {
+  try {
+    proxyFixture.teardown();
+  } finally {
+    vi.unstubAllEnvs();
+  }
+});
 
 function mockRtkListing(stdout: string): void {
   vi.mocked(execa).mockImplementation(((file: string) => {
@@ -100,6 +107,7 @@ describe("CLI and MCP proxy parity", () => {
       fs.writeFileSync(path.join(workspace, "directory-two", "inner.txt"), "x");
       const inDirectory = args[0]?.endsWith("directory") === true;
       mockRtkListing(inDirectory ? "inner.txt\n" : "directory\nfile.txt\n");
+      vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
       await runRtkProxy("ls", args);
       const mcp = await TOOL_REGISTRY.spekta_shell.handler({
         command: "ls",
@@ -109,14 +117,17 @@ describe("CLI and MCP proxy parity", () => {
         .mocked(execa)
         .mock.calls.filter(([file]) => file === "rtk");
       expect(rtkCalls).toHaveLength(Math.max(args.length, 1) * 2);
-      const expectedOperands = args.length === 0 ? ["."] : args;
+      const displayOperands = args.length === 0 ? ["."] : args;
+      const expectedRtkOperands = displayOperands.map((operand) =>
+        process.platform === "win32" ? operand.replaceAll("/", "\\") : operand,
+      );
       for (const [index, call] of rtkCalls.entries()) {
         expect(call[1]).toEqual([
           "proxy",
           "ls",
           "-1Ab",
           "--",
-          expectedOperands[index % expectedOperands.length],
+          expectedRtkOperands[index % expectedRtkOperands.length],
         ]);
       }
       expect(console.log).toHaveBeenCalledWith(
@@ -124,7 +135,7 @@ describe("CLI and MCP proxy parity", () => {
       );
       expect(console.error).not.toHaveBeenCalled();
       expect(process.exitCode).toBeUndefined();
-      const listing = expectedOperands
+      const listing = displayOperands
         .map(
           (operand, index) =>
             `Operand ${index + 1}: returned; ${JSON.stringify(operand)}\n` +
@@ -145,6 +156,7 @@ describe("CLI and MCP proxy parity", () => {
   it("retains a valid directory beside an unavailable operand through CLI and MCP", async () => {
     fs.writeFileSync(path.join(workspace, "directory", "inner.txt"), "x");
     mockRtkListing("inner.txt\n");
+    vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
     await runRtkProxy("ls", ["missing", "directory"]);
     const mcp = await TOOL_REGISTRY.spekta_shell.handler({
       command: "ls",
@@ -239,13 +251,27 @@ describe("CLI and MCP proxy parity", () => {
     await expectRejected("git", ["show", "HEAD:file.txt"], /cannot establish/i);
   });
 
-  it("rejects a symlink repository marker through both adapters", async () => {
+  it("rejects a symlink repository marker through both adapters", async (context) => {
     fs.removeSync(path.join(workspace, ".git"));
-    fs.symlinkSync(
-      path.join(fixture, "outside"),
-      path.join(workspace, ".git"),
-      "dir",
-    );
+    try {
+      fs.symlinkSync(
+        path.join(fixture, "outside"),
+        path.join(workspace, ".git"),
+        "dir",
+      );
+    } catch (error) {
+      if (
+        error !== null &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === "EPERM"
+      ) {
+        context.skip(
+          "Windows denied repository marker symlink creation (EPERM)",
+        );
+      }
+      throw error;
+    }
     await expectRejected(
       "git",
       ["show", "HEAD:file.txt"],
@@ -290,6 +316,7 @@ describe("CLI and MCP proxy parity", () => {
   });
 
   it("treats omitted MCP args as ls without an operand", async () => {
+    vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
     mockRtkListing("file.txt\n");
     const result = await TOOL_REGISTRY.spekta_shell.handler({ command: "ls" });
     expect(result.isError).toBe(false);
@@ -314,6 +341,16 @@ describe("CLI and MCP proxy parity", () => {
       const requests = rejectedPolicyRequests();
       for (const [command, args, reason] of requests)
         await expectRejected(command, args, reason);
+    },
+  );
+
+  it.skipIf(process.platform === "win32")(
+    "rejects dangling-link requests without prompting when the fixture can create the link",
+    async () => {
+      for (const [args, reason] of danglingLinkGitRequests) {
+        const command = "git";
+        await expectRejected(command, args, reason);
+      }
     },
   );
 
@@ -360,6 +397,7 @@ describe("CLI and MCP proxy parity", () => {
   });
 
   it("preserves MCP nonzero RTK result and missing RTK error responses", async () => {
+    vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
     vi.mocked(execa).mockResolvedValueOnce({
       stdout: "",
       stderr: secret,
@@ -370,6 +408,12 @@ describe("CLI and MCP proxy parity", () => {
     expect(failed.content[0].text).toContain(
       "Operand 1: internal_failure; listing failed",
     );
+    expect(failed.content[0].text).not.toContain(secret);
+    expect(execa).toHaveBeenCalledWith(
+      "rtk",
+      ["proxy", "ls", "-1Ab", "--", "."],
+      expect.any(Object),
+    );
     vi.mocked(execa).mockRejectedValueOnce(
       Object.assign(new Error("missing"), { code: "ENOENT" }),
     );
@@ -378,5 +422,8 @@ describe("CLI and MCP proxy parity", () => {
     expect(missing.content[0].text).toBe(
       "RTK listing failed before output could be checked.",
     );
+    expect(
+      vi.mocked(execa).mock.calls.filter(([file]) => file === "rtk"),
+    ).toHaveLength(2);
   });
 });

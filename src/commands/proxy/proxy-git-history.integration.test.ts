@@ -151,7 +151,7 @@ describe.skipIf(missing.length > 0)(
       }
     });
 
-    it("filters historical summary paths and withholds commit prose", async () => {
+    async function setupMixedHistoryFixture() {
       fs.writeFileSync(
         path.join(context.workspace, ".gitignore"),
         "denied.txt\n",
@@ -165,13 +165,19 @@ describe.skipIf(missing.length > 0)(
       await fixtureGit(["add", "-f", "--", "denied.txt"]);
       await fixtureGit(["commit", "-m", "MIXED_HISTORY_SECRET"]);
       fs.removeSync(path.join(context.workspace, "denied.txt"));
+    }
 
-      for (const args of [
-        ["log", "--name-only", "-n", "1"],
-        ["log", "--stat", "-n", "1"],
-        ["show", "--name-status", "HEAD"],
-        ["show", "--stat", "HEAD"],
-      ]) {
+    const summaryCases = [
+      { label: "log name-only", args: ["log", "--name-only", "-n", "1"] },
+      { label: "log stat", args: ["log", "--stat", "-n", "1"] },
+      { label: "show name-status", args: ["show", "--name-status", "HEAD"] },
+      { label: "show stat", args: ["show", "--stat", "HEAD"] },
+    ];
+
+    it.each(summaryCases)(
+      "filters historical $label paths and withholds commit prose",
+      async ({ args }) => {
+        await setupMixedHistoryFixture();
         const result = await both(args);
         expect(result.mcp.isError).toBe(false);
         expect(result.cli).toContain("visible.txt");
@@ -182,16 +188,21 @@ describe.skipIf(missing.length > 0)(
         expect(result.mcp.content[0].text).not.toContain(
           "MIXED_HISTORY_SECRET",
         );
-      }
+      },
+    );
 
-      const freeText = await both(["log", "--oneline", "-n", "1"]);
-      expect(freeText.mcp.isError).toBe(true);
-      expect(freeText.mcp.content[0].text).not.toContain(
-        "MIXED_HISTORY_SECRET",
-      );
-      const mixedPatch = await both(["log", "-p", "-n", "1"]);
-      expect(mixedPatch.mcp.isError).toBe(false);
-      for (const text of [mixedPatch.cli, mixedPatch.mcp.content[0].text]) {
+    it("rejects free-text history output without commit prose", async () => {
+      await setupMixedHistoryFixture();
+      const result = await both(["log", "--oneline", "-n", "1"]);
+      expect(result.mcp.isError).toBe(true);
+      expect(result.mcp.content[0].text).not.toContain("MIXED_HISTORY_SECRET");
+    });
+
+    it("filters mixed history patches and withholds commit prose", async () => {
+      await setupMixedHistoryFixture();
+      const result = await both(["log", "-p", "-n", "1"]);
+      expect(result.mcp.isError).toBe(false);
+      for (const text of [result.cli, result.mcp.content[0].text]) {
         expect(text).toContain("visible");
         expect(text).not.toContain("denied.txt");
         expect(text).not.toContain("hidden");

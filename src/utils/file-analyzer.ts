@@ -3,22 +3,24 @@ import { compactFile } from "./compactor";
 import { getFileLines, getTokenCount } from "./read-utils";
 import { validatePathAccess, validateReadPathAccess } from "./security";
 import type { ResolvedWorkspace } from "./workspace";
+import { isStructuralOverviewUnavailable } from "./parser-capabilities";
 
 export interface FileAnalysis {
   path: string;
   content: string;
   totalLines: number;
   rawTokens: number;
-  finalTokens: number;
+  finalTokens?: number;
   isCompacted: boolean;
   compactionWarning?: string;
-  exceedsLimit: boolean;
-  excessTokens: number;
+  exceedsLimit?: boolean;
+  excessTokens?: number;
 }
 
 export async function analyzeFile(
   filePath: string,
   workspace?: ResolvedWorkspace,
+  platform: NodeJS.Platform = process.platform,
 ): Promise<FileAnalysis> {
   let readPath = filePath;
   if (workspace) {
@@ -36,30 +38,45 @@ export async function analyzeFile(
   let finalContent = content;
   let isCompacted = false;
   let compactionWarning: string | undefined;
+  const compactThreshold = getCompactThreshold();
 
-  if (rawTokens > getCompactThreshold()) {
-    const result = compactFile(filePath, content, 1);
-    if (result.isCompacted) {
-      finalContent = result.content;
-      isCompacted = true;
-    } else if (result.warning) {
-      compactionWarning = result.warning;
+  if (rawTokens > compactThreshold) {
+    if (isStructuralOverviewUnavailable(platform)) {
+      compactionWarning =
+        "Compaction analysis is unavailable on Windows; only raw token counts are reported.";
+    } else {
+      const result = compactFile(filePath, content, 1);
+      if (result.isCompacted) {
+        finalContent = result.content;
+        isCompacted = true;
+      } else if (result.warning) {
+        compactionWarning = result.warning;
+      }
     }
   }
 
-  const finalTokens = getTokenCount(finalContent);
+  const analysisUnavailable =
+    rawTokens > compactThreshold && isStructuralOverviewUnavailable(platform);
+  const finalTokens = analysisUnavailable
+    ? undefined
+    : getTokenCount(finalContent);
   const readTokenLimit = getReadTokenLimit();
-  const exceedsLimit = finalTokens > readTokenLimit;
+  const exceedsLimit =
+    finalTokens === undefined ? undefined : finalTokens > readTokenLimit;
 
   return {
     path: filePath,
     content: finalContent,
     totalLines: total,
     rawTokens,
-    finalTokens,
     isCompacted,
-    compactionWarning,
-    exceedsLimit,
-    excessTokens: exceedsLimit ? finalTokens - readTokenLimit : 0,
+    ...(finalTokens === undefined
+      ? {}
+      : {
+          finalTokens,
+          exceedsLimit,
+          excessTokens: exceedsLimit ? finalTokens - readTokenLimit : 0,
+        }),
+    ...(compactionWarning === undefined ? {} : { compactionWarning }),
   };
 }

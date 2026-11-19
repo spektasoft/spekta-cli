@@ -20,7 +20,16 @@ const backendSuiteName =
   "restricted find with real RTK and GNU Findutils" +
   (backendTestsEnabled ? "" : " (opt-in: run npm run test:find-backend)");
 
-const reviewedRtkVersions = new Set(["0.46.0", "0.49.0", "0.50.0"]);
+const minimumSupportedRtkVersion = [0, 46, 0] as const;
+
+function isSupportedRtkVersion(version: string): boolean {
+  const parts = version.split(".").map(Number);
+  for (let index = 0; index < minimumSupportedRtkVersion.length; index += 1) {
+    const difference = parts[index] - minimumSupportedRtkVersion[index];
+    if (difference !== 0) return difference > 0;
+  }
+  return true;
+}
 
 let fixture = "";
 let workspace = "";
@@ -104,12 +113,11 @@ describeBackend(backendSuiteName, () => {
 
     const version = versionResult.stdout.match(/\b(\d+\.\d+\.\d+)\b/)?.[1];
 
-    if (version === undefined || !reviewedRtkVersions.has(version)) {
+    if (version === undefined || !isSupportedRtkVersion(version)) {
       throw new Error(
         [
-          `RTK version '${version ?? "unknown"}' has not been reviewed for this suite.`,
-          `Use RTK ${[...reviewedRtkVersions].join(", ")}.`,
-          "Review another release's proxy implementation before extending the reviewed-version list.",
+          `RTK version '${version ?? "unknown"}' is unsupported by this suite.`,
+          "Use RTK 0.46.0 or newer and pass the GNU Findutils capability and behavior checks.",
         ].join(" "),
       );
     }

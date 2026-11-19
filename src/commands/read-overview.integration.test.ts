@@ -33,6 +33,7 @@ async function invoke(
   allowance = 2000,
 ) {
   if (transport === "cli") {
+    process.exitCode = undefined;
     let text = "";
     const spy = vi
       .spyOn(process.stdout, "write")
@@ -47,7 +48,7 @@ async function invoke(
         "--allowance",
         String(allowance),
       ]);
-      return { text, rendered: text };
+      return { text, rendered: text, failed: process.exitCode === 1 };
     } finally {
       spy.mockRestore();
     }
@@ -58,11 +59,12 @@ async function invoke(
   return {
     text: result.content[0].text,
     rendered: serializeMcpToolReply("overview", result),
+    failed: result.isError === true,
   };
 }
 const source =
   "export function answer() {\n  const omittedEvidence = 41;\n  return omittedEvidence + 1;\n}\n";
-describe.each(["cli", "mcp"] as const)(
+describe.skipIf(process.platform === "win32").each(["cli", "mcp"] as const)(
   "explicit structural overview over %s",
   (transport) => {
     it.each(["0", "999999"])(
@@ -199,6 +201,36 @@ describe.each(["cli", "mcp"] as const)(
     });
   },
 );
+describe.skipIf(process.platform !== "win32").each(["cli", "mcp"] as const)(
+  "Windows structural overview boundary over %s",
+  (transport) => {
+    it("rejects CLI/MCP batch overviews explicitly and preserves ordinary reads", async () => {
+      await fs.writeFile(path.join(fixture.root, "answer.ts"), source);
+      await fs.writeFile(path.join(fixture.root, "second.ts"), source);
+
+      const overview = await invoke(transport, ["answer.ts", "second.ts"]);
+      expect(overview.text).toContain("unsupported_operation");
+      expect(overview.text).toContain(
+        "Structural overview is unavailable on Windows",
+      );
+      expect(overview.failed).toBe(true);
+      if (transport === "cli") expect(process.exitCode).toBe(1);
+
+      const ordinary = await invoke(transport, ["answer.ts"], false);
+      expect(ordinary.text).toContain("const omittedEvidence");
+      expect(ordinary.failed).toBe(false);
+
+      const ordinaryBatch = await invoke(
+        transport,
+        ["answer.ts", "second.ts"],
+        false,
+      );
+      expect(ordinaryBatch.text).toContain("Operand 1: returned");
+      expect(ordinaryBatch.text).toContain("Operand 2: returned");
+      expect(ordinaryBatch.failed).toBe(false);
+    });
+  },
+);
 it("rejects malformed overview flags and MCP types", async () => {
   for (const args of [
     ["--overview"],
@@ -238,7 +270,9 @@ it("advertises overview grammar and a boolean MCP parameter", () => {
     schema.safeParse({ paths: ["answer.ts"], overview: "true" }).success,
   ).toBe(false);
 });
-it("bounds saved overview and fallback output, including the save notice", async () => {
+it.skipIf(process.platform === "win32")(
+  "bounds saved overview and fallback output, including the save notice",
+  async () => {
   const previousNoEditor = process.env.SPEKTA_NO_EDITOR;
   process.env.SPEKTA_NO_EDITOR = "1";
   await fs.writeFile(path.join(fixture.root, "answer.ts"), source);
@@ -271,8 +305,11 @@ it("bounds saved overview and fallback output, including the save notice", async
   }
   if (previousNoEditor === undefined) delete process.env.SPEKTA_NO_EDITOR;
   else process.env.SPEKTA_NO_EDITOR = previousNoEditor;
-});
-it("continues fallback content with the original version marker", async () => {
+  },
+);
+it.skipIf(process.platform === "win32")(
+  "continues fallback content with the original version marker",
+  async () => {
   const lines = Array.from(
     { length: 100 },
     (_, i) => `continuation line ${i + 1}`,
@@ -302,7 +339,8 @@ it("continues fallback content with the original version marker", async () => {
     .split("\n```")[0]
     .split("\n");
   expect(body).toEqual(lines.slice(start - 1, start - 1 + body.length));
-});
+  },
+);
 it("admits overview metadata before reading file content", async () => {
   for (const name of ["answer.ts", "second.ts", "third.ts"])
     await fs.writeFile(path.join(fixture.root, name), source);
@@ -318,6 +356,10 @@ it("admits overview metadata before reading file content", async () => {
     undefined,
     "overview",
   );
-  expect(result.content[0].text).toContain("output_limit_exceeded");
+  expect(result.content[0].text).toContain(
+    process.platform === "win32"
+      ? "unsupported_operation"
+      : "output_limit_exceeded",
+  );
   expect(readSpy).not.toHaveBeenCalled();
 });

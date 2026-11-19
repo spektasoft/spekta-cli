@@ -18,7 +18,7 @@ if (missing.length && process.env.SPEKTA_REQUIRE_GIT_INTEGRATION === "1") {
 }
 export const secret = "ghp_abcdefghijklmnopqrstuvwxyz";
 
-function createRealGitContext() {
+function createRealGitContext({ pagerFixture = false } = {}) {
   let fixture: string;
   let workspace: string;
   let savedExit: typeof process.exitCode;
@@ -51,7 +51,17 @@ function createRealGitContext() {
     });
   }
   async function fixtureGit(args: string[]) {
-    const result = await git(args);
+    const configArgs = pagerFixture
+      ? [
+          "-c",
+          "user.name=Proxy Fixture",
+          "-c",
+          "user.email=fixture@example.invalid",
+          "-c",
+          "commit.gpgsign=false",
+        ]
+      : [];
+    const result = await git([...configArgs, ...args]);
     if (result.exitCode !== 0)
       throw new Error(`Fixture git failed: ${result.stderr}`);
     return result.stdout;
@@ -90,7 +100,7 @@ function createRealGitContext() {
     visit("");
     return entries;
   }
-  async function both(args: string[], allowance?: number) {
+  async function cli(args: string[], allowance?: number): Promise<string> {
     const cliArgs =
       allowance === undefined
         ? args
@@ -108,16 +118,22 @@ function createRealGitContext() {
     vi.mocked(console.log).mockClear();
     vi.mocked(console.error).mockClear();
     await runRtkProxy("git", cliArgs);
-    const mcp = await TOOL_REGISTRY.spekta_shell.handler({
+    return vi
+      .mocked(console.log)
+      .mock.calls.map((call) => String(call[0]))
+      .join("\n");
+  }
+  async function mcp(args: string[], allowance?: number) {
+    return TOOL_REGISTRY.spekta_shell.handler({
       command: "git",
       args,
       ...(allowance === undefined ? {} : { allowance }),
     });
-    const cli = vi
-      .mocked(console.log)
-      .mock.calls.map((call) => String(call[0]))
-      .join("\n");
-    return { cli, mcp };
+  }
+  async function both(args: string[], allowance?: number) {
+    const cliResult = await cli(args, allowance);
+    const mcpResult = await mcp(args, allowance);
+    return { cli: cliResult, mcp: mcpResult };
   }
 
   async function setup(): Promise<void> {
@@ -137,26 +153,39 @@ function createRealGitContext() {
     vi.spyOn(process, "cwd").mockReturnValue(workspace);
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
-    await fixtureGit(["init", "--template=", "-b", "main"]);
-    await fixtureGit(["config", "user.name", "Proxy Fixture"]);
-    await fixtureGit(["config", "user.email", "fixture@example.invalid"]);
-    await fixtureGit(["config", "commit.gpgsign", "false"]);
+    await fixtureGit([
+      "init",
+      "--template=",
+      "-b",
+      pagerFixture ? "feature/topic" : "main",
+    ]);
+    if (!pagerFixture) {
+      await fixtureGit(["config", "user.name", "Proxy Fixture"]);
+      await fixtureGit(["config", "user.email", "fixture@example.invalid"]);
+      await fixtureGit(["config", "commit.gpgsign", "false"]);
+    }
     fs.ensureDirSync(path.join(workspace, "nested"));
-    for (const [name, text] of Object.entries({
-      "file.txt": "safe-v1\n",
-      "other.txt": "other-v1\n",
-      "gone.txt": "historical-only\n",
-      "space name": "spaces-blob\n",
-      "-file": "dash-blob\n",
-      "filename-only": "ambiguous-filename\n",
-      "nested/file.txt": "nested-blob\n",
-      ".env": "restricted-secret\n",
-      "big.txt": `${secret}\n${"large allowed line\n".repeat(3000)}`,
-    }))
+    const files: Record<string, string> = pagerFixture
+      ? {
+          "file.txt": "safe-v1\n",
+          "other.txt": "other-v1\n",
+        }
+      : {
+          "file.txt": "safe-v1\n",
+          "other.txt": "other-v1\n",
+          "gone.txt": "historical-only\n",
+          "space name": "spaces-blob\n",
+          "-file": "dash-blob\n",
+          "filename-only": "ambiguous-filename\n",
+          "nested/file.txt": "nested-blob\n",
+          ".env": "restricted-secret\n",
+          "big.txt": `${secret}\n${"large allowed line\n".repeat(3000)}`,
+        };
+    for (const [name, text] of Object.entries(files))
       fs.writeFileSync(path.join(workspace, name), text);
     await fixtureGit(["add", "-f", "--", "."]);
     await fixtureGit(["commit", "-m", "INITIAL_COMMIT"]);
-    await fixtureGit(["branch", "feature/topic"]);
+    if (!pagerFixture) await fixtureGit(["branch", "feature/topic"]);
     fs.writeFileSync(path.join(workspace, "file.txt"), `safe-v2\n${secret}\n`);
     fs.writeFileSync(path.join(workspace, "other.txt"), "other-v2\n");
     fs.removeSync(path.join(workspace, "gone.txt"));
@@ -178,10 +207,13 @@ function createRealGitContext() {
   function teardown(): void {
     vi.restoreAllMocks();
     process.exitCode = savedExit;
-    if (fixture) fs.removeSync(fixture);
-    for (const [key, value] of Object.entries(savedEnv ?? {})) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+    try {
+      if (fixture) fs.removeSync(fixture);
+    } finally {
+      for (const [key, value] of Object.entries(savedEnv ?? {})) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   }
 
@@ -194,6 +226,8 @@ function createRealGitContext() {
     },
     git,
     fixtureGit,
+    cli,
+    mcp,
     shellQuote,
     sentinel,
     snapshotRepository,
@@ -203,8 +237,8 @@ function createRealGitContext() {
   };
 }
 
-export function useRealGitFixture() {
-  const context = createRealGitContext();
+export function useRealGitFixture(options?: { pagerFixture?: boolean }) {
+  const context = createRealGitContext(options);
   beforeEach(context.setup, 30000);
   afterEach(context.teardown);
   return context;

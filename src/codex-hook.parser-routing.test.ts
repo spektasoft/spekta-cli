@@ -46,10 +46,17 @@ describe("Codex inspection hook routing boundaries", () => {
   it("keeps workspace-spelled symlink reads on the Spekta route", () => {
     const workspace = mkdtempSync(join(tmpdir(), "spekta-hook-workspace-"));
     const external = mkdtempSync(join(tmpdir(), "spekta-hook-external-"));
+    const windows = process.platform === "win32";
     try {
-      symlinkSync(external, join(workspace, "skills"));
+      symlinkSync(external, join(workspace, "skills"), windows ? "junction" : "dir");
+      const command = windows
+        ? "Get-Content -LiteralPath 'skills/special skill/SKILL.md'"
+        : "cat 'skills/special skill/SKILL.md'";
+      const expectedCommand = windows
+        ? "& 'spekta.cmd' 'read' 'skills/special skill/SKILL.md'"
+        : "'spekta' 'read' 'skills/special skill/SKILL.md'";
       const raw = rewriteEvent({
-        ...event("cat 'skills/special skill/SKILL.md'"),
+        ...event(command),
         cwd: workspace,
       });
       expect(raw).toBe(
@@ -58,7 +65,7 @@ describe("Codex inspection hook routing boundaries", () => {
             hookEventName: "PreToolUse",
             permissionDecision: "allow",
             updatedInput: {
-              command: "'spekta' 'read' 'skills/special skill/SKILL.md'",
+              command: expectedCommand,
             },
           },
         }),

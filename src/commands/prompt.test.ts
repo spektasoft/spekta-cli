@@ -1,4 +1,5 @@
 import fs from "fs-extra";
+import path from "path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as config from "../core/config";
 import * as ui from "../ui/ui";
@@ -144,7 +145,7 @@ describe("prompt CLI", () => {
     await runPromptRunner(["Test", "--output", "nested/a.md"]);
     expect(fs.ensureDir).toHaveBeenCalled();
     expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.stringContaining("nested/a.md"),
+      path.resolve("nested", "a.md"),
       "Rendered content",
       "utf-8",
     );
@@ -188,7 +189,7 @@ describe("prompt CLI", () => {
     vi.mocked(config.renderPrompt).mockResolvedValue("Rendered");
     await runPromptRunner(["Test"]);
     expect(fs.writeFile).toHaveBeenCalledWith(
-      expect.stringContaining("spekta/docs/uncategorized"),
+      path.resolve("spekta", "docs", "uncategorized", "test-id.md"),
       "Rendered",
       "utf-8",
     );

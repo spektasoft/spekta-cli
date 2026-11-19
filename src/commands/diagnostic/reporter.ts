@@ -41,8 +41,10 @@ export function generateDiagnosticReport(
       lines.push(`### ${f.path}`);
       lines.push(`- Status: ${f.status}`);
       lines.push(`- Raw tokens: ${f.rawTokens}`);
-      lines.push(`- Final tokens: ${f.finalTokens}`);
-      lines.push(`- Excess tokens: ${f.excessTokens}`);
+      if (f.finalTokens !== undefined)
+        lines.push(`- Final tokens: ${f.finalTokens}`);
+      if (f.excessTokens !== undefined)
+        lines.push(`- Excess tokens: ${f.excessTokens}`);
       lines.push(`- Compacted: ${f.isCompacted}`);
 
       if (f.compactionWarning) {
@@ -63,8 +65,10 @@ export function generateDiagnosticReport(
       lines.push(`### ${f.path}`);
       lines.push(`- Status: ${f.status}`);
       lines.push(`- Raw tokens: ${f.rawTokens}`);
-      lines.push(`- Final tokens: ${f.finalTokens}`);
-      lines.push(`- Excess tokens: ${f.excessTokens}`);
+      if (f.finalTokens !== undefined)
+        lines.push(`- Final tokens: ${f.finalTokens}`);
+      if (f.excessTokens !== undefined)
+        lines.push(`- Excess tokens: ${f.excessTokens}`);
       lines.push(`- Compacted: ${f.isCompacted}`);
 
       if (f.compactionWarning) {
@@ -85,8 +89,10 @@ export function generateDiagnosticReport(
       lines.push(`### ${f.path}`);
       lines.push(`- Status: ${f.status}`);
       lines.push(`- Raw tokens: ${f.rawTokens}`);
-      lines.push(`- Final tokens: ${f.finalTokens}`);
-      lines.push(`- Excess tokens: ${f.excessTokens}`);
+      if (f.finalTokens !== undefined)
+        lines.push(`- Final tokens: ${f.finalTokens}`);
+      if (f.excessTokens !== undefined)
+        lines.push(`- Excess tokens: ${f.excessTokens}`);
       lines.push(`- Compacted: ${f.isCompacted}`);
 
       const warning =

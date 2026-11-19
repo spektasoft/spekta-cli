@@ -10,6 +10,11 @@ export interface ResolvedWorkspace {
   canonicalRoot: string;
 }
 
+/** Normalize either documented workspace-relative separator for this host. */
+export function normalizeWorkspacePath(targetPath: string): string {
+  return targetPath.replace(/[\\/]+/g, path.sep);
+}
+
 export function isPathWithin(root: string, target: string): boolean {
   const relative = path.relative(root, target);
   return (
@@ -42,7 +47,15 @@ export async function resolveWorkspaceTarget(
   targetPath: string,
   workspace: ResolvedWorkspace,
 ): Promise<{ absolutePath: string; canonicalPath: string }> {
-  const absolutePath = path.resolve(workspace.root, targetPath);
+  // A Windows drive/UNC path must not become an apparently relative POSIX
+  // filename when the same API is invoked from Linux or WSL.
+  if (!path.isAbsolute(targetPath) && path.win32.isAbsolute(targetPath)) {
+    throw outside(targetPath);
+  }
+  const normalizedPath = path.isAbsolute(targetPath)
+    ? targetPath
+    : normalizeWorkspacePath(targetPath);
+  const absolutePath = path.resolve(workspace.root, normalizedPath);
   if (
     !isPathWithin(workspace.root, absolutePath) &&
     !isPathWithin(workspace.canonicalRoot, absolutePath)
@@ -97,7 +110,13 @@ export async function resolveWorkspaceMutationTarget(
   workspace: ResolvedWorkspace,
   allowMissing = false,
 ): Promise<{ absolutePath: string; canonicalPath: string }> {
-  const absolutePath = path.resolve(workspace.root, targetPath);
+  if (!path.isAbsolute(targetPath) && path.win32.isAbsolute(targetPath)) {
+    throw outside(targetPath);
+  }
+  const normalizedPath = path.isAbsolute(targetPath)
+    ? targetPath
+    : normalizeWorkspacePath(targetPath);
+  const absolutePath = path.resolve(workspace.root, normalizedPath);
   const lexicalRoot = isPathWithin(workspace.root, absolutePath)
     ? workspace.root
     : isPathWithin(workspace.canonicalRoot, absolutePath)

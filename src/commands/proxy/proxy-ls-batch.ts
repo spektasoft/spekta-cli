@@ -15,6 +15,7 @@ import {
 import type { FailureOutcome } from "../../core/operation-outcome";
 import { getTokenCount } from "../../utils/read-utils";
 import {
+  normalizeWorkspacePath,
   resolveWorkspace,
   type ResolvedWorkspace,
   type WorkspaceContext,
@@ -138,10 +139,15 @@ function reserveMetadata(slots: ListSlot[], increaseHint: string): string {
         "unattempted",
         "internal_failure",
       ];
-      const longest = candidates
-        .map((status) => row(slot, status))
-        .sort((a, b) => Buffer.byteLength(b) - Buffer.byteLength(a))[0];
-      return longest + (slot.available ? `${EMPTY_LISTING}\n` : "");
+      const rows = candidates.map(
+        (status) =>
+          row(slot, status) + (slot.available ? `${EMPTY_LISTING}\n` : ""),
+      );
+      return rows.reduce((largest, candidate) =>
+        getTokenCount(candidate) > getTokenCount(largest)
+          ? candidate
+          : largest,
+      );
     })
     .join("");
   return (
@@ -157,8 +163,9 @@ async function resolveListDirectory(
   context: WorkspaceContext | undefined,
 ): Promise<boolean> {
   try {
-    validateCommandArguments([operand], context);
-    const target = path.resolve(workspace.root, operand);
+    const normalizedOperand = normalizeWorkspacePath(operand);
+    validateCommandArguments([normalizedOperand], context);
+    const target = path.resolve(workspace.root, normalizedOperand);
     const canonical = await fs.realpath(target);
     const relative = path.relative(workspace.canonicalRoot, canonical);
     if (
@@ -251,7 +258,7 @@ export async function getListBatchOutcome(
 
   if (
     !admitBatchMetadata(
-      Buffer.byteLength(reserveMetadata(slots, options.increaseHint), "utf8"),
+      getTokenCount(reserveMetadata(slots, options.increaseHint)),
       options.allowance,
     )
   ) {
@@ -271,14 +278,15 @@ export async function getListBatchOutcome(
       if (!slot.available) continue;
       attempted++;
       try {
-        const result = await options.runLs(slot.operand);
+        const normalizedOperand = normalizeWorkspacePath(slot.operand);
+        const result = await options.runLs(normalizedOperand);
         if (result.exitCode !== 0) {
           slot.status = "internal_failure";
           continue;
         }
         const filtered = await filterEligibleLsEntries(
           result.stdout,
-          slot.operand,
+          normalizedOperand,
           resolved,
         );
         if (filtered.status !== "success") {

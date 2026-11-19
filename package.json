@@ -11,8 +11,10 @@
   },
   "scripts": {
     "build": "vite build",
-    "deploy": "npm run build && chmod +x dist/index.js dist/codex-hook.js && npm link .",
+    "deploy": "npm run build && node scripts/deploy.mjs",
     "test": "vitest",
+    "test:smoke:portable": "node scripts/run-smoke.mjs portable",
+    "test:smoke:real-git": "node scripts/run-smoke.mjs real-git",
     "test:repl-color": "node scripts/verify-repl-color-policy.mjs",
     "test:codex-hook": "vitest run src/codex-hook*.test.ts",
     "test:find-backend": "SPEKTA_FIND_BACKEND_TESTS=1 vitest run src/commands/proxy/proxy-find.backend.test.ts",

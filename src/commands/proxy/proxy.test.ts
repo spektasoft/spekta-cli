@@ -43,12 +43,15 @@ function mockRtkResult(result: {
 describe("RTK execution", () => {
   const mockExeca = vi.mocked(execa);
   let savedExitCode: typeof process.exitCode;
+  let savedListingBackendOverride: string | undefined;
   const secret = "ghp_abcdefghijklmnopqrstuvwxyz";
 
   beforeEach(() => {
     vi.clearAllMocks();
     savedExitCode = process.exitCode;
     process.exitCode = undefined;
+    savedListingBackendOverride = process.env.SPEKTA_LISTING_BACKEND_OVERRIDE;
+    process.env.SPEKTA_LISTING_BACKEND_OVERRIDE = "rtk";
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
@@ -56,6 +59,11 @@ describe("RTK execution", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     process.exitCode = savedExitCode;
+    if (savedListingBackendOverride === undefined) {
+      delete process.env.SPEKTA_LISTING_BACKEND_OVERRIDE;
+    } else {
+      process.env.SPEKTA_LISTING_BACKEND_OVERRIDE = savedListingBackendOverride;
+    }
     for (const root of workspaces.splice(0)) fs.removeSync(root);
   });
 
@@ -219,12 +227,20 @@ describe("RTK execution", () => {
   );
 
   it("renders unusual names as one escaped entry each", async () => {
-    const names = ["line\nbreak.txt", "tick```fence.txt", "tab\tname.txt"];
+    const isWindows = process.platform === "win32";
+    const names = isWindows
+      ? ["tick```fence.txt", "space name.txt", "-leading.txt"]
+      : ["line\nbreak.txt", "tick```fence.txt", "tab\tname.txt"];
     const workspace = makeWorkspace(names);
+    const encodedNames = names.map((name) =>
+      name === "line\nbreak.txt"
+        ? "line\\nbreak.txt"
+        : name === "tab\tname.txt"
+          ? "tab\\tname.txt"
+          : name,
+    );
     mockRtkResult({
-      stdout:
-        ["line\\nbreak.txt", "tick```fence.txt", "tab\\tname.txt"].join("\n") +
-        "\n",
+      stdout: `${encodedNames.join("\n")}\n`,
       stderr: "",
       exitCode: 0,
       failed: false,
@@ -233,9 +249,14 @@ describe("RTK execution", () => {
     await runRtkProxy("ls", [], workspace);
 
     const output = vi.mocked(console.log).mock.calls[0][0] as string;
-    expect(output).toContain('"line\\nbreak.txt"');
     expect(output).toContain('"tick\\u0060\\u0060\\u0060fence.txt"');
-    expect(output).toContain('"tab\\tname.txt"');
-    expect(output).not.toContain("line\nbreak.txt");
+    if (isWindows) {
+      expect(output).toContain('"space name.txt"');
+      expect(output).toContain('"-leading.txt"');
+    } else {
+      expect(output).toContain('"line\\nbreak.txt"');
+      expect(output).toContain('"tab\\tname.txt"');
+      expect(output).not.toContain("line\nbreak.txt");
+    }
   });
 });

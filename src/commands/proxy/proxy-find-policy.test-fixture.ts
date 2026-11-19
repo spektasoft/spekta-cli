@@ -20,17 +20,23 @@ export function useFindPolicyFixture(): void {
       fs.ensureDirSync(path.join(workspace, dir));
     fs.ensureDirSync(path.join(fixture, "outside"));
     fs.writeFileSync(path.join(workspace, "file.txt"), "file");
+    const directoryLinkType = process.platform === "win32" ? "junction" : "dir";
     for (const [target, name] of [
       ["directory", "internal-alias"],
       [path.join(fixture, "outside"), "escape"],
       [".env", "restricted-alias"],
       ["missing", "dangling"],
-    ])
+    ]) {
+      // A dangling directory junction needs an existing destination on
+      // supported Windows configurations; this syntax-only fixture does not
+      // need that alias to test request validation.
+      if (process.platform === "win32" && name === "dangling") continue;
       fs.symlinkSync(
         path.isAbsolute(target) ? target : path.join(workspace, target),
         path.join(workspace, name),
-        "dir",
+        directoryLinkType,
       );
+    }
     vi.spyOn(process, "cwd").mockReturnValue(workspace);
   });
   afterEach(() => {

@@ -31,13 +31,36 @@ Start a new Codex session after registration to load the opt-in server. MCP setu
 
 ## Supported hook requests
 
-On the verified platform, the hook recognizes literal standalone `ls`, `find`, `cat`, `sed`, and `rg` requests. It rewrites supported `ls`, `find`, `rg`, and read forms to Spekta; explicit `rtk` invocations, including `rtk cat` and `rtk rg`, remain on the normal RTK route. Search routing supports repeated `-e`/`--regexp` patterns, multiple path operands, `-i`/`--ignore-case`, `-s`/`--case-sensitive`, `-S`/`--smart-case`, repeated intact `-g`/`--glob` values, and `--` option termination. The hook preserves argument order and quoting. Spekta applies workspace and eligible-file restrictions and its complete-response budget; if it rejects a request or exceeds that budget, do not retry the original native command or another route. Unsupported native flags, stdin, pattern files, substitutions, redirections, pipelines, expansions, and compound shell syntax pass through unchanged. Read routing accepts `cat PATH` with no options, and `sed -n 'START,ENDp' PATH` or `sed -n 'STARTp' PATH` with one path; starts are positive decimal line numbers, and a numeric end must be at least the start (or `$`). For the concise retrieval command and recovery workflow, see [Agent command and recovery reference](agent-reference.md).
+On Linux and WSL with Bash, the hook recognizes literal standalone `ls`, `find`, `cat`, `sed`, and `rg` requests. It rewrites supported `ls`, `find`, `rg`, and read forms to Spekta; explicit `rtk` invocations, including `rtk cat` and `rtk rg`, remain on the normal RTK route. Search routing supports repeated `-e`/`--regexp` patterns, multiple path operands, `-i`/`--ignore-case`, `-s`/`--case-sensitive`, `-S`/`--smart-case`, repeated intact `-g`/`--glob` values, and `--` option termination. Read routing accepts `cat PATH` with no options, and `sed -n 'START,ENDp' PATH` or `sed -n 'STARTp' PATH` with one path; starts are positive decimal line numbers, and a numeric end must be at least the start (or `$`).
+
+On native Windows, Codex supplies PowerShell text through its `Bash` hook event. The hook rewrites only these literal standalone forms:
+
+| PowerShell command | Spekta operation |
+| --- | --- |
+| `Get-ChildItem -LiteralPath <directory> -Name` | `spekta ls` |
+| `Get-ChildItem -LiteralPath <root> -Recurse`, optionally with `-File` or `-Directory` | `spekta find` |
+| `Get-Content -LiteralPath <file>` | `spekta read` |
+| `Get-Content -LiteralPath <file> -TotalCount N` with a positive decimal `N` | `spekta read` for the first N lines |
+| `rg.exe <supported search arguments>` | `spekta rg` |
+| `git.exe <supported Git arguments>` | `spekta git` |
+
+Windows aliases such as `ls`, `dir`, `cat`, and `type`, explicit RTK commands, and `find.exe` pass through unchanged. Unsupported switches or Git/search grammar, pipelines, expressions, redirections, expansion, splatting, and compound commands pass through unchanged. Arguments must be literal; supported forms preserve spaces and the original slash style. Spekta applies workspace and eligible-file restrictions and its complete-response budget. If it rejects a request or exceeds that budget, do not retry the native command through another route. For Linux/WSL recovery guidance, see [Agent command and recovery reference](agent-reference.md).
+
+Generated native PowerShell rewrites invoke the CLI with the call operator and explicit Windows shim name, for example `& 'spekta.cmd' 'read' 'README.md[1,1]'`. This selects the `.cmd` shim directly without changing PowerShell execution policy.
+
+## Native Windows x64 paths and invocation
+
+Use native Windows x64 with Node.js 22 or newer and PowerShell 5.1 or CMD. Install from the checkout with `npm.cmd install --package-lock=false`, deploy with `npm.cmd run deploy`, and invoke the generated CLI as `spekta.cmd`; the hook shim is `spekta-codex-hook.cmd`. A command path containing spaces is supported.
+
+Workspace-relative paths may use `/` or `\` separators. Directory listing rejects absolute paths. Discovery rejects Windows drive-absolute and UNC roots. Read, search, and ignore-check accept contained absolute paths and deny paths outside the workspace. Git path arguments after `--` are relative-only, and write/replace paths are relative-only and must remain inside the workspace.
+
+Windows structural read overview remains unavailable because the native Tree-sitter artifact cannot be loaded; diagnostics report raw counts without fabricated compaction results. Windows ARM64 is outside the supported target and has not been verified. The supported Windows hook forms and boundaries are listed in [Supported hook requests](#supported-hook-requests).
 
 The hook reads one event up to 64 KiB and has a two-second stdin deadline. A rewrite asks Codex to run the transformed command; the hook itself never executes the pending command. Codex still applies its usual approval and sandbox handling, and Spekta performs its filesystem policy checks during execution.
 
 ## Compatibility
 
-Hook routing was verified for Codex CLI 0.160.0 and 0.160.1 on local Linux with Bash. This is a bounded compatibility record, not a promise about later releases. Zsh, native Windows, and remote/cloud execution are not verified. The hook depends on the deployed `spekta-codex-hook` executable being available in the environment where Codex runs it.
+The supported native Windows target is x64 with Node.js 22 or newer and PowerShell 5.1 or CMD. The supported Unix shell route is Linux/WSL with Bash. Zsh, remote/cloud execution, and Windows ARM64 are not supported or verified here. The hook depends on the deployed `spekta-codex-hook` executable being available in the environment where Codex runs it.
 
 ## Remove the integration
 

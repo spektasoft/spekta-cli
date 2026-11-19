@@ -20,17 +20,23 @@ describe("executeRtkCommand with real Execa child processes", () => {
     fs.ensureDirSync(bin);
     fs.ensureDirSync(workspace);
 
-    const child = path.join(bin, "rtk");
-    fs.writeFileSync(
-      child,
-      `#!${process.execPath}
-const fs = require("node:fs");
-fs.writeSync(1, JSON.stringify({args: process.argv.slice(2), cwd: process.cwd(), env: {marker: process.env.PROXY_EXECA_TEST, noColor: process.env.NO_COLOR, term: process.env.TERM}}));
+    const childSource = `const fs = require("node:fs");
+fs.writeSync(1, JSON.stringify({args: process.platform === "win32" ? ["probe", ...process.argv.slice(2)] : process.argv.slice(2), cwd: process.cwd(), env: {marker: process.env.PROXY_EXECA_TEST, noColor: process.env.NO_COLOR, term: process.env.TERM}}));
 fs.writeSync(2, "captured stderr");
 fs.writeFileSync(process.env.PROXY_EXECA_MARKER, "ran");
-`,
-      { mode: 0o755 },
-    );
+`;
+    if (process.platform === "win32") {
+      // A copied Node executable gives Windows a native .exe fixture without
+      // routing arguments through cmd.exe or a shell script.
+      fs.copyFileSync(process.execPath, path.join(bin, "rtk.exe"));
+      fs.writeFileSync(path.join(workspace, "probe"), childSource);
+    } else {
+      fs.writeFileSync(
+        path.join(bin, "rtk"),
+        `#!${process.execPath}\n${childSource}`,
+        { mode: 0o755 },
+      );
+    }
 
     vi.stubEnv("PATH", bin);
     vi.stubEnv("PROXY_EXECA_TEST", "copied environment");

@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 vi.mock("execa", () => ({
   execa: vi.fn(),
@@ -57,6 +60,25 @@ describe("executeRtkCommand", () => {
       }),
     );
   });
+
+  it.skipIf(process.platform !== "win32")(
+    "reports a missing RTK shim as unavailable before launching cmd.exe",
+    async () => {
+      const missingBin = mkdtempSync(path.join(os.tmpdir(), "spekta-no-rtk-"));
+      const previousPath = process.env.PATH;
+      process.env.PATH = missingBin;
+      try {
+        await expect(executeRtkCommand("ls", ["."])).resolves.toEqual({
+          available: false,
+        });
+        expect(execa).not.toHaveBeenCalled();
+      } finally {
+        if (previousPath === undefined) delete process.env.PATH;
+        else process.env.PATH = previousPath;
+        rmSync(missingBin, { recursive: true, force: true });
+      }
+    },
+  );
 
   it.each([
     ...acceptedBranchRequests.map((args) => {
@@ -281,10 +303,10 @@ describe("executeRtkCommand", () => {
 
   it("runs ls from the supplied workspace root", () => {
     const invocation = prepareRtkInvocation("ls", ["folder"], {
-      root: "/workspace/root",
+      root: path.resolve("/workspace/root"),
     });
     expect(invocation.args).toEqual(["proxy", "ls", "-1Ab", "--", "folder"]);
-    expect(invocation.cwd).toBe("/workspace/root");
+    expect(invocation.cwd).toBe(path.resolve("/workspace/root"));
     expect(invocation.env.LC_ALL).toBe("C");
   });
 

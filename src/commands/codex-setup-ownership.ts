@@ -9,17 +9,24 @@ import {
 } from "./codex-setup-types.js";
 
 export function activeHookSources(options: CodexSetupOptions): string[] {
+  const home = resolve(options.home);
   const sources = [
-    join(options.home, ".codex", "hooks.json"),
-    join(options.home, ".codex", "config.toml"),
+    join(home, ".codex", "hooks.json"),
+    join(home, ".codex", "config.toml"),
   ];
   if (options.cwd) {
     let directory = resolve(options.cwd);
     while (true) {
-      sources.push(
-        join(directory, ".codex", "hooks.json"),
-        join(directory, ".codex", "config.toml"),
-      );
+      if (
+        process.platform === "win32"
+          ? directory.toLowerCase() !== home.toLowerCase()
+          : directory !== home
+      )
+        sources.push(
+          join(directory, ".codex", "hooks.json"),
+          join(directory, ".codex", "config.toml"),
+        );
+      else break;
       const parent = resolve(directory, "..");
       if (parent === directory) break;
       directory = parent;
@@ -325,12 +332,10 @@ export function isRecognizedOwnedHook(value: unknown): boolean {
   )
     return false;
   try {
-    return (
-      typeof JSON.parse(command.command) === "string" &&
-      String(JSON.parse(command.command)).length > 0 &&
-      String(JSON.parse(command.command)).split(/[\\/]/).at(-1) ===
-        "spekta-codex-hook"
-    );
+    if (typeof JSON.parse(command.command) !== "string") return false;
+    const executable = String(JSON.parse(command.command));
+    const basename = executable.split(/[\\/]/).at(-1) ?? "";
+    return /^spekta-codex-hook(?:\.(?:com|exe|bat|cmd|ps1))?$/i.test(basename);
   } catch {
     return false;
   }

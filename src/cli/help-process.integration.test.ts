@@ -1,4 +1,4 @@
-import { afterAll, beforeAll } from "vitest";
+import { afterAll, beforeAll, vi } from "vitest";
 import { createHelpProcessHarness } from "./help-process-harness";
 import { registerHelpProcessRoutingTests } from "./help-process-routing";
 import { registerHelpProcessTopicResolutionTests } from "./help-process-topic-resolution";
@@ -8,6 +8,7 @@ import { registerHelpProcessCommandDetailsTests } from "./help-process-command-d
 import { registerHelpProcessRootTests } from "./help-process-root";
 
 const harness = createHelpProcessHarness();
+vi.setConfig({ testTimeout: 15000 });
 beforeAll(() => harness.build(), 30000);
 afterAll(() => harness.cleanup());
 

@@ -15,6 +15,20 @@ npm run deploy
 
 The install command installs dependencies declared by this checkout without creating or updating a package lockfile. The deploy command builds Spekta and globally links both executables: `spekta` and `spekta-codex-hook`. This repository checkout is the supported installation route described here; there is no published-package installation command in this guide.
 
+### Windows NVM relink troubleshooting
+
+On Windows with an NVM-managed Node installation, `npm run deploy` can finish its build and then report `EEXIST` while `npm link` checks an existing `spekta` or `spekta-codex-hook` shim. Do not assume every `EEXIST` is harmless: first verify that the global `node_modules/spekta-cli` link targets this checkout. When that link is verified, the completed build has already updated the linked CLI through the checkout's `dist` directory; `npm run build` can update that output without relinking. This Windows-only build shortcut does not repair or refresh a wrong link; on Unix, use `npm run deploy` so the entrypoint executable permissions are restored. Do not delete existing shims or use `--force` based on `EEXIST` alone.
+
+If PowerShell blocks the `npm.ps1` or `spekta.ps1` launcher, invoke `npm.cmd` or `spekta.cmd` instead; no execution-policy change is needed.
+
+### Windows x64 support status
+
+Native Windows support targets x64 with Node.js 22 or newer and PowerShell 5.1 or CMD. In PowerShell, invoke the Windows shims as `npm.cmd` and `spekta.cmd`; for example, install from this checkout with `npm.cmd install --package-lock=false`, deploy with `npm.cmd run deploy`, then check `spekta.cmd --help`. For Codex hook setup and supported PowerShell rewrite forms, see [Codex setup and compatibility](guides/codex-setup.md). Windows ARM64 is not supported by this release scope and remains unverified.
+
+The Windows Tree-sitter artifact cannot be loaded, so parser-backed features are isolated from normal CLI startup. Ordinary reads, batch reads, and search remain available. Structural read overview is unavailable on Windows. Diagnostics retain raw token counts and mark compaction analysis unavailable when a file exceeds the compaction threshold; they do not report fabricated compacted counts. Linux/WSL continues to use parser-backed behavior.
+
+Windows structural overview support will be reconsidered after a specific package version and artifact pass native loading, a real parser operation, and relevant regression checks.
+
 ## First use
 
 Check that the CLI is available without starting a workflow:
@@ -80,6 +94,10 @@ rm -ri ~/.spekta
 ```
 
 The interactive removal asks before deleting its contents. Skip this step to keep your personal settings.
+
+## Testing
+
+See the [manual readiness check before push or merge](guides/manual-readiness.md) for the native-Windows procedure, changed-file test selection, smoke commands and prerequisites, result rules, and full-suite/platform coverage.
 
 ## Command reference
 

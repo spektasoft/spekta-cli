@@ -148,6 +148,30 @@ describe("classifyAnalysis", () => {
         "Compaction could not be completed; manual review required.",
     });
   });
+
+  it("keeps unavailable compaction findings raw-only", () => {
+    const finding = classifyAnalysis(
+      {
+        ...analysis,
+        rawTokens: 1200,
+        finalTokens: undefined,
+        exceedsLimit: undefined,
+        excessTokens: undefined,
+        compactionWarning:
+          "Compaction analysis is unavailable on Windows; only raw token counts are reported.",
+      },
+      500,
+      1000,
+    );
+
+    expect(finding).toMatchObject({
+      status: "Analysis incomplete",
+      rawTokens: 1200,
+    });
+    expect(finding?.compactionWarning).toMatch(/unavailable on Windows/i);
+    expect(finding).not.toHaveProperty("finalTokens");
+    expect(finding).not.toHaveProperty("excessTokens");
+  });
 });
 
 describe("scanTarget", () => {

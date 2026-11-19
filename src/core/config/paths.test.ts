@@ -57,16 +57,41 @@ describe("Asset Root Resolution & Dual Path Layouts", () => {
 });
 
 describe("Asset Root Resolution & Paths", () => {
+  let originalHomeOverride: string | undefined;
+
+  beforeEach(() => {
+    originalHomeOverride = process.env.SPEKTA_HOME_OVERRIDE;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    if (originalHomeOverride === undefined) {
+      delete process.env.SPEKTA_HOME_OVERRIDE;
+    } else {
+      process.env.SPEKTA_HOME_OVERRIDE = originalHomeOverride;
+    }
+    refreshPaths();
+  });
+
   it("HOME_TOOLS points to ~/.spekta/tools by default", () => {
-    expect(HOME_TOOLS).toContain(".spekta/tools");
+    delete process.env.SPEKTA_HOME_OVERRIDE;
+    refreshPaths();
+    expect(HOME_TOOLS).toBe(path.join(os.homedir(), ".spekta", "tools"));
   });
 
   it("refreshPaths updates HOME_TOOLS correctly", () => {
+    const originalOverride = process.env.SPEKTA_HOME_OVERRIDE;
     const original = HOME_TOOLS;
-    process.env.SPEKTA_HOME_OVERRIDE = "/custom/path";
+    const customDir = path.join(os.tmpdir(), "custom-home");
+    process.env.SPEKTA_HOME_OVERRIDE = customDir;
     refreshPaths();
-    expect(HOME_TOOLS).toBe("/custom/path/tools");
-    delete process.env.SPEKTA_HOME_OVERRIDE;
+    expect(HOME_TOOLS).toBe(path.join(customDir, "tools"));
+
+    if (originalOverride === undefined) {
+      delete process.env.SPEKTA_HOME_OVERRIDE;
+    } else {
+      process.env.SPEKTA_HOME_OVERRIDE = originalOverride;
+    }
     refreshPaths();
     expect(HOME_TOOLS).toBe(original);
   });
@@ -90,17 +115,20 @@ describe("Asset Root Resolution & Paths", () => {
       ...process,
       env: {
         ...process.env,
-        SPEKTA_HOME_OVERRIDE: "/custom/home/path",
+        SPEKTA_HOME_OVERRIDE: path.join(os.tmpdir(), "custom-home-path"),
       },
     });
 
     refreshPaths();
 
-    expect(HOME_DIR).toBe("/custom/home/path");
-    expect(HOME_PROVIDERS_USER).toBe("/custom/home/path/providers.yaml");
-    expect(HOME_PROVIDERS_FREE).toBe("/custom/home/path/providers-free.yaml");
-    expect(HOME_PROMPTS).toBe("/custom/home/path/prompts");
-    expect(HOME_IGNORE).toBe("/custom/home/path/.spektaignore");
-    expect(HOME_TOOLS).toBe("/custom/home/path/tools");
+    const customHome = path.join(os.tmpdir(), "custom-home-path");
+    expect(HOME_DIR).toBe(customHome);
+    expect(HOME_PROVIDERS_USER).toBe(path.join(customHome, "providers.yaml"));
+    expect(HOME_PROVIDERS_FREE).toBe(
+      path.join(customHome, "providers-free.yaml"),
+    );
+    expect(HOME_PROMPTS).toBe(path.join(customHome, "prompts"));
+    expect(HOME_IGNORE).toBe(path.join(customHome, ".spektaignore"));
+    expect(HOME_TOOLS).toBe(path.join(customHome, "tools"));
   });
 });

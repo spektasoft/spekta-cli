@@ -63,6 +63,30 @@ describe("create and replace workspace boundary integration", () => {
     expect(await fs.readFile(target, "utf-8")).toBe("after value\n");
   });
 
+  it("accepts backslash relative paths with spaces and rejects contained absolute mutation paths", async () => {
+    const target = String.raw`nested dir\new file.md`;
+    const absoluteTarget = path.join(fixture.root, "real.txt");
+    const created = await getWriteContent(target, "before value\n", context());
+
+    expect(created.success).toBe(true);
+    expect(
+      await fs.readFile(
+        path.join(fixture.root, "nested dir", "new file.md"),
+        "utf-8",
+      ),
+    ).toBe("before value\n");
+    await expect(
+      getWriteContent(absoluteTarget, "escape\n", context()),
+    ).rejects.toThrow(/workspace-relative/i);
+    await expect(
+      getReplaceContent(
+        { path: absoluteTarget, blocks: [] },
+        replaceBlock("INTERNAL", "CHANGED"),
+        context(),
+      ),
+    ).rejects.toThrow(/workspace-relative/i);
+  });
+
   it("rejects relative and absolute siblings outside the effective workspace through APIs, CLI, and MCP", async () => {
     const sibling = path.join(fixture.repo, "sibling.txt");
     const originalSibling = await fs.readFile(sibling, "utf-8");
@@ -221,13 +245,11 @@ describe("create and replace workspace boundary integration", () => {
     expect(writeFile).not.toHaveBeenCalled();
   });
 
-  it("allows an internal workspace through its symlink root and canonical spelling", async () => {
+  it("allows relative mutations through an internal workspace symlink root", async () => {
     process.chdir(fixture.alias);
     const aliasRoot = context(fixture.alias);
     const targets = [
       "relative.txt",
-      path.join(fixture.alias, "alias-absolute.txt"),
-      path.join(fixture.root, "canonical-absolute.txt"),
     ];
 
     for (const target of targets) {
@@ -241,7 +263,7 @@ describe("create and replace workspace boundary integration", () => {
       ).toBe("inside\n");
     }
 
-    const nested = path.join(fixture.alias, "internal-dir", "created.txt");
+    const nested = "internal-dir/created.txt";
     expect(
       (await getWriteContent(nested, "nested inside\n", aliasRoot)).success,
     ).toBe(true);
@@ -252,11 +274,7 @@ describe("create and replace workspace boundary integration", () => {
       ),
     ).toBe("nested inside\n");
 
-    const replacementTargets = [
-      "internal-file.txt",
-      path.join(fixture.alias, "internal-file.txt"),
-      path.join(fixture.root, "internal-file.txt"),
-    ];
+    const replacementTargets = ["real.txt"];
     for (const [index, target] of replacementTargets.entries()) {
       const marker = `INTERNAL_${index}`;
       const result = await executeSafeReplace(
@@ -268,7 +286,7 @@ describe("create and replace workspace boundary integration", () => {
     }
     expect(
       await fs.readFile(path.join(fixture.root, "real.txt"), "utf-8"),
-    ).toContain("INTERNAL_2");
+    ).toContain("INTERNAL_0");
   });
 
   it("rejects a workspace root that is a file before any mutation", async () => {
@@ -304,25 +322,52 @@ describe("create and replace workspace boundary integration", () => {
       path.join(fixture.root, ".env"),
       "utf-8",
     );
+    const ignoredDirectory = path.join(fixture.root, "ignored-dir");
+    await fs.ensureDir(ignoredDirectory);
+    await fs.writeFile(
+      path.join(ignoredDirectory, "ignored.txt"),
+      "needle SPEKTA_IGNORED\n",
+    );
+    await fs.symlink(
+      ignoredDirectory,
+      path.join(fixture.root, "ignored-alias"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const restrictedDirectory = path.join(
+      fixture.root,
+      "restricted-dir",
+      ".env",
+    );
+    await fs.ensureDir(restrictedDirectory);
+    await fs.writeFile(path.join(restrictedDirectory, "secret.txt"), "x");
+    await fs.symlink(
+      restrictedDirectory,
+      path.join(fixture.root, "restricted-alias"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "ignored-dir/ignored.txt\n",
+    );
     const format = vi.spyOn(formatUtils, "formatFileInPlace");
 
     await expect(
       executeSafeReplace(
-        { path: path.join(fixture.root, "ignored-alias.txt"), blocks: [] },
+        { path: "ignored-alias/ignored.txt", blocks: [] },
         replaceBlock("SPEKTA_IGNORED", "CHANGED"),
         context(),
       ),
     ).rejects.toThrow(/ignored/i);
     await expect(
       executeSafeReplace(
-        { path: path.join(fixture.root, "alias.env.txt"), blocks: [] },
-        replaceBlock("RESTRICTED_ENV", "CHANGED"),
+        { path: "restricted-alias/secret.txt", blocks: [] },
+        replaceBlock("x", "CHANGED"),
         context(),
       ),
     ).rejects.toThrow(/restricted/i);
 
     const allowed = await executeSafeReplace(
-      { path: path.join(fixture.root, "allowed.txt"), blocks: [] },
+      { path: "allowed.txt", blocks: [] },
       replaceBlock("WHITELISTED", "STILL_ALLOWED"),
       context(),
     );
@@ -349,17 +394,17 @@ describe("create and replace workspace boundary integration", () => {
     await fs.symlink(
       path.join(fixture.root, "canonical-blocked"),
       path.join(fixture.root, "canonical-alias"),
-      "dir",
+      process.platform === "win32" ? "junction" : "dir",
     );
     await fs.symlink(
       path.join(fixture.root, "safe"),
       path.join(fixture.root, "requested-blocked"),
-      "dir",
+      process.platform === "win32" ? "junction" : "dir",
     );
     await fs.symlink(
       path.join(fixture.root, "restricted", ".env"),
       path.join(fixture.root, "restricted-alias"),
-      "dir",
+      process.platform === "win32" ? "junction" : "dir",
     );
     process.chdir(fixture.ambient);
     const aliasRoot = context(fixture.alias);

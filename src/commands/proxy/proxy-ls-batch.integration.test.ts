@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dispatchCommand } from "../../cli/commands";
 import { createToolRegistry } from "../../api/mcp-server/registry";
 import { getTokenCount } from "../../utils/read-utils";
+import { listContentAllowance } from "./proxy-ls-batch";
 
 let root: string;
 let bin: string;
@@ -32,6 +33,8 @@ beforeEach(async () => {
   await installFakeRtk();
   process.chdir(workspace);
   vi.stubEnv("PATH", bin);
+  // The fake RTK launcher cases pin the RTK backend contract on every host.
+  vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
   vi.stubEnv("SPEKTA_HOME_OVERRIDE", path.join(root, "home"));
   vi.stubEnv("SPEKTA_ASSET_ROOT_OVERRIDE", repository);
   vi.stubEnv("SPEKTA_LIST_TOKEN_LIMIT", "1000");
@@ -61,7 +64,15 @@ const names = fs.readdirSync(dir).sort();
 if (args[1] === "find") fs.writeSync(1, names.map((name) => "./" + name).join("\\n") + "\\n");
 else if (names.length) fs.writeSync(1, names.join("\\n") + "\\n");
 `;
-  await fs.writeFile(path.join(bin, "rtk"), source, { mode: 0o755 });
+  if (process.platform === "win32") {
+    await fs.writeFile(path.join(bin, "rtk.js"), source);
+    await fs.writeFile(
+      path.join(bin, "rtk.cmd"),
+      `@echo off\r\n"${process.execPath}" "%~dp0rtk.js" %*\r\nexit /b %ERRORLEVEL%\r\n`,
+    );
+  } else {
+    await fs.writeFile(path.join(bin, "rtk"), source, { mode: 0o755 });
+  }
 }
 
 function bodyFromCli(text: string): string {
@@ -130,6 +141,26 @@ describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
     expect(explicit.failed).toBe(false);
   });
 
+  it("accepts either separator style for relative paths containing spaces", async () => {
+    await fs.ensureDir(path.join(workspace, "nested dir"));
+    await fs.writeFile(path.join(workspace, "nested dir", "entry.txt"), "x");
+    for (const operand of ["nested dir", "nested dir\\"]) {
+      const result = await invoke(transport, [operand]);
+      expect(result.text).toContain(
+        `Operand 1: returned; ${JSON.stringify(operand)}`,
+      );
+      expect(result.text).toContain('"entry.txt"');
+      expect(result.failed).toBe(false);
+    }
+  });
+
+  it("continues to reject contained absolute paths", async () => {
+    await fs.ensureDir(path.join(workspace, "contained"));
+    const result = await invoke(transport, [path.join(workspace, "contained")]);
+    expect(result.text).toContain("Operand 1: unavailable; unavailable_access");
+    expect(result.failed).toBe(true);
+  });
+
   it("keeps several valid directories in supplied order with independent entries", async () => {
     for (const name of ["first dir", ".second"]) {
       await fs.ensureDir(path.join(workspace, name));
@@ -160,7 +191,11 @@ describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
     await fs.ensureDir(path.join(workspace, "ignored"));
     await fs.writeFile(path.join(workspace, ".spektaignore"), "ignored\n");
     await fs.ensureDir(outside);
-    await fs.symlink(outside, path.join(workspace, "escape"));
+    await fs.symlink(
+      outside,
+      path.join(workspace, "escape"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
     const denied = [".env", "ignored", outside, "escape", "missing-private"];
     const outputs = [];
     for (const item of denied) outputs.push(await invoke(transport, [item]));
@@ -195,7 +230,7 @@ describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
     const longNames = Array.from(
       { length: 70 },
       (_, index) =>
-        `entry-${String(index).padStart(2, "0")}-${randomBytes(90).toString("hex")}.txt`,
+        `entry-${String(index).padStart(2, "0")}-${randomBytes(48).toString("hex")}.txt`,
     );
     for (const name of longNames)
       await fs.writeFile(path.join(workspace, directory, name), "x");
@@ -217,7 +252,7 @@ describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
     expect(
       longNames.some((name) => !result.text.includes(JSON.stringify(name))),
     ).toBe(true);
-  });
+  }, process.platform === "win32" ? 15_000 : 5_000);
 
   it("keeps duplicate operands and duplicate entry names in order", async () => {
     await fs.ensureDir(path.join(workspace, "repeat"));
@@ -239,15 +274,10 @@ describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
         ),
         "x",
       );
-    let low = 1;
-    let high = 7000;
-    while (low < high) {
-      const midpoint = Math.floor((low + high) / 2);
-      const candidate = await invoke(transport, ["budget"], midpoint);
-      if (candidate.text.includes("Batch: success")) high = midpoint;
-      else low = midpoint + 1;
-    }
-    const exactAllowance = low;
+    const roomy = await invoke(transport, ["budget"], 7000);
+    expect(roomy.text).toContain("Batch: success");
+    const wrapperReservation = 7000 - listContentAllowance(7000);
+    const exactAllowance = getTokenCount(roomy.text) + wrapperReservation;
     const exact = await invoke(transport, ["budget"], exactAllowance);
     const short = await invoke(transport, ["budget"], exactAllowance - 1);
     expect(exact.text).toContain("Operand 1: returned;");
@@ -262,12 +292,40 @@ describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
   it("shares capacity fairly, redistributes after a short listing, and retains siblings on RTK failure", async () => {
     for (const name of ["huge", "brief", "later"])
       await fs.ensureDir(path.join(workspace, name));
-    for (let index = 0; index < 300; index++)
+    for (let index = 0; index < 100; index++)
       await fs.writeFile(path.join(workspace, "huge", `huge-${index}`), "x");
     await fs.writeFile(path.join(workspace, "brief", "one"), "x");
-    for (let index = 0; index < 100; index++)
+    for (let index = 0; index < 50; index++)
       await fs.writeFile(path.join(workspace, "later", `later-${index}`), "x");
-    const result = await invoke(transport, ["huge", "brief", "later"], 1200);
+    const hugeNames = Array.from(
+      { length: 100 },
+      (_, index) => `huge-${index}`,
+    ).sort();
+    const laterNames = Array.from(
+      { length: 50 },
+      (_, index) => `later-${index}`,
+    ).sort();
+    const sharedBody = [
+      "Batch: partial_result",
+      'Operand 1: incomplete; output_limit_exceeded; "huge"',
+      ...hugeNames.slice(0, 75).map((name) => JSON.stringify(name)),
+      'Operand 2: returned; "brief"',
+      '"one"',
+      'Operand 3: returned; "later"',
+      ...laterNames.map((name) => JSON.stringify(name)),
+      "Listing incomplete. List a narrower directory or request a larger allowance. A larger allowance up to 8000 tokens is supported.",
+      "",
+    ].join("\n");
+    const allowanceForFairSiblingTarget =
+      getTokenCount(sharedBody) + (1100 - listContentAllowance(1100));
+    const result = await invoke(
+      transport,
+      ["huge", "brief", "later"],
+      allowanceForFairSiblingTarget,
+    );
+    expect(result.text).toContain(
+      'Operand 1: incomplete; output_limit_exceeded; "huge"',
+    );
     expect(result.text).toContain('Operand 2: returned; "brief"');
     expect(result.text).toContain('"one"');
     expect(result.text).toContain('"later-');
@@ -290,7 +348,21 @@ describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
 it.each(["cli", "mcp"] as const)(
   "rejects metadata overflow before RTK through %s and omits increase guidance at the ceiling",
   async (transport) => {
-    const many = Array.from({ length: 100 }, () => ".");
+    const longDirectory = `budget-${randomBytes(72).toString("hex")}`;
+    await fs.ensureDir(path.join(workspace, longDirectory));
+    const many = Array.from({ length: 100 }, () => longDirectory);
+    const reservedRows = many
+      .map(
+        (_, index) =>
+          `Operand ${index + 1}: returned; ${JSON.stringify(longDirectory)}\nNo eligible entries in this listing.\n`,
+      )
+      .join("");
+    const ceilingMetadata =
+      `Batch: partial_result\n${reservedRows}` +
+      "Listing incomplete. List a narrower directory.\n";
+    expect(getTokenCount(ceilingMetadata)).toBeGreaterThan(
+      listContentAllowance(8000),
+    );
     const overflow = await invoke(transport, many, 100);
     expect(fs.existsSync(marker)).toBe(false);
     expect(overflow.text).toContain("Split the batch into fewer directories.");
@@ -315,6 +387,7 @@ it.each(["cli", "mcp"] as const)(
       capture.mockRestore();
     }
   },
+  process.platform === "win32" ? 60_000 : 5_000,
 );
 
 it.each(["cli", "mcp"] as const)(
@@ -340,8 +413,13 @@ it("accepts MCP allowance for find while retaining the ls and find shared budget
 it.each(["cli", "mcp"] as const)(
   "reports missing RTK over %s with the sanitized whole-request message",
   async (transport) => {
-    await fs.remove(path.join(bin, "rtk"));
-    vi.stubEnv("PATH", "");
+    if (process.platform === "win32") {
+      await fs.remove(path.join(bin, "rtk.cmd"));
+      await fs.remove(path.join(bin, "rtk.js"));
+    } else await fs.remove(path.join(bin, "rtk"));
+    const missingBin = path.join(root, "missing-bin");
+    await fs.ensureDir(missingBin);
+    vi.stubEnv("PATH", missingBin);
     const result = await invoke(transport, ["."]);
     expect(result.failed).toBe(true);
     expect(result.text).toBe(

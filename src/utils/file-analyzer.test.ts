@@ -57,7 +57,7 @@ describe("analyzeFile", () => {
     // First call: raw token measurement. Second call: final measurement on compacted content.
     mockGetTokenCount.mockReturnValueOnce(2500).mockReturnValueOnce(50);
 
-    const result = await analyzeFile("large.ts");
+    const result = await analyzeFile("large.ts", undefined, "linux");
 
     expect(mockCompactFile).toHaveBeenCalledWith(
       "large.ts",
@@ -71,6 +71,23 @@ describe("analyzeFile", () => {
     expect(result.exceedsLimit).toBe(false);
   });
 
+  it("keeps Windows diagnostics raw-only when compaction would be required", async () => {
+    mockGetFileLines.mockResolvedValue({
+      lines: ["large source"],
+      total: 1,
+    });
+    mockGetTokenCount.mockReturnValue(2500);
+
+    const result = await analyzeFile("large.ts", undefined, "win32");
+
+    expect(result.rawTokens).toBe(2500);
+    expect(result).not.toHaveProperty("finalTokens");
+    expect(result).not.toHaveProperty("exceedsLimit");
+    expect(result).not.toHaveProperty("excessTokens");
+    expect(result.compactionWarning).toMatch(/unavailable on Windows/i);
+    expect(mockCompactFile).not.toHaveBeenCalled();
+  });
+
   it("is healthy when compaction brings a raw-over-limit file back under the limit", async () => {
     mockGetReadTokenLimit.mockReturnValue(1000);
     mockGetCompactThreshold.mockReturnValue(500);
@@ -81,7 +98,7 @@ describe("analyzeFile", () => {
     });
     mockGetTokenCount.mockReturnValueOnce(2500).mockReturnValueOnce(800);
 
-    const result = await analyzeFile("was-large.ts");
+    const result = await analyzeFile("was-large.ts", undefined, "linux");
 
     expect(result.rawTokens).toBe(2500);
     expect(result.finalTokens).toBe(800);
@@ -119,7 +136,7 @@ describe("analyzeFile", () => {
     });
     mockGetTokenCount.mockReturnValue(600);
 
-    const result = await analyzeFile("legacy.php");
+    const result = await analyzeFile("legacy.php", undefined, "linux");
 
     expect(result.isCompacted).toBe(false);
     expect(result.compactionWarning).toBe(

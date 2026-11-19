@@ -14,6 +14,9 @@ const fixture = createProxyFixture({
 let workspace: string;
 beforeEach(() => {
   ({ workspace } = fixture.setup());
+  // Rendered through the public adapters, these cases exercise the RTK/GNU
+  // backend's invocation and failure contract on every host.
+  vi.stubEnv("SPEKTA_LISTING_BACKEND_OVERRIDE", "rtk");
   fs.writeFileSync(path.join(workspace, "visible.ts"), "ok");
 });
 afterEach(() => fixture.teardown());
@@ -110,7 +113,7 @@ it("bounds the complete response using only eligible results", async () => {
   expect(cli).toContain("incomplete; output_limit_exceeded");
 });
 
-it("filters ignored ancestors and ineligible aliases under nested roots", async () => {
+it("filters ignored ancestors and honors negations under nested roots", async () => {
   fs.ensureDirSync(path.join(workspace, "directory", "ignored"));
   fs.writeFileSync(
     path.join(workspace, ".spektaignore"),
@@ -119,12 +122,8 @@ it("filters ignored ancestors and ineligible aliases under nested roots", async 
   for (const name of ["ok.ts", "secret.log", "keep.log", "ignored/hidden.ts"]) {
     fs.writeFileSync(path.join(workspace, "directory", name), "ok");
   }
-  fs.symlinkSync(
-    path.join(workspace, "directory", "secret.log"),
-    path.join(workspace, "directory", "alias"),
-  );
   const { cli, mcp } = await discover(
-    "directory/ok.ts\ndirectory/secret.log\ndirectory/keep.log\ndirectory/ignored\ndirectory/ignored/hidden.ts\ndirectory/alias",
+    "directory/ok.ts\ndirectory/secret.log\ndirectory/keep.log\ndirectory/ignored\ndirectory/ignored/hidden.ts",
     ["directory", "-type", "f", "-name", "*.ts", "-print"],
   );
   expect(mcp).toEqual({
@@ -139,12 +138,66 @@ it("filters ignored ancestors and ineligible aliases under nested roots", async 
   expect(cli).not.toMatch(/secret|ignored|hidden|alias/);
 });
 
-it("does not disclose targets reached through directory symlink descendants", async () => {
-  fs.symlinkSync(
-    path.join(workspace, "directory"),
-    path.join(workspace, "internal-alias"),
-    "dir",
-  );
+it("filters ineligible file-symlink aliases under nested roots", async ({
+  skip,
+}) => {
+  fs.ensureDirSync(path.join(workspace, "directory"));
+  fs.writeFileSync(path.join(workspace, ".spektaignore"), "*.log\n");
+  fs.writeFileSync(path.join(workspace, "directory", "secret.log"), "ok");
+  try {
+    fs.symlinkSync(
+      path.join(workspace, "directory", "secret.log"),
+      path.join(workspace, "directory", "alias"),
+    );
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (
+      process.platform === "win32" &&
+      ["EPERM", "EACCES"].includes(code ?? "")
+    ) {
+      skip(`Windows denied file symlink creation (${code})`);
+    }
+    throw error;
+  }
+  const { cli, mcp } = await discover("directory/secret.log\ndirectory/alias", [
+    "directory",
+    "-type",
+    "f",
+    "-name",
+    "*.ts",
+    "-print",
+  ]);
+  expect(mcp).toEqual({
+    isError: false,
+    content: [
+      {
+        type: "text",
+        text: 'Batch: success\nOperand 1: returned; "directory"\n',
+      },
+    ],
+  });
+  expect(cli).not.toMatch(/secret|alias/);
+});
+
+it("does not disclose targets reached through directory symlink descendants", async ({
+  skip,
+}) => {
+  try {
+    fs.symlinkSync(
+      path.join(workspace, "directory"),
+      path.join(workspace, "internal-alias"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (
+      process.platform === "win32" &&
+      ["EPERM", "EACCES"].includes(code ?? "")
+    ) {
+      skip(`Windows denied directory link creation (${code})`);
+    }
+    throw error;
+  }
   fs.writeFileSync(path.join(workspace, "directory", "child.ts"), "ok");
   const { mcp } = await discover(
     "./internal-alias\n./internal-alias/child.ts\n./visible.ts",

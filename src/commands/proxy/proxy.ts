@@ -23,6 +23,11 @@ import {
 } from "./proxy-ls-batch";
 import type { WorkspaceContext } from "../../utils/workspace";
 import { resolveRequestAllowance } from "../../core/config/allowance";
+import {
+  resolveListingBackend,
+  runNativeFindDiscovery,
+  runNativeLsListing,
+} from "./proxy-listing-backend";
 import { getTokenCount } from "../../utils/read-utils";
 import { boundGitCliResponse } from "./proxy-git-response-budget";
 import {
@@ -241,8 +246,6 @@ export async function runRtkProxy(
         validationAllowance: settings.defaultTokens,
         maximumAllowance: settings.ceilingTokens,
         measure: findCliMeasure,
-        metadataBytes: (text, isError) =>
-          Buffer.byteLength(findCliResponse(text, isError), "utf8"),
         backend: () =>
           Promise.reject(new Error("unreachable after parser rejection")),
         hasRtk: true,
@@ -267,10 +270,13 @@ export async function runRtkProxy(
       return;
     }
     const allowance = resolvedAllowance.allowance ?? 1000;
+    const listingBackend = resolveListingBackend();
     const outcome = await getListBatchOutcome(requestArgs, context, {
       allowance: listContentAllowance(allowance),
       increaseHint: listAllowanceIncreaseHint(allowance),
       runLs: async (operand) => {
+        if (listingBackend === "native")
+          return await runNativeLsListing(operand, context);
         const result = await executeRtkCommand("ls", [operand], context);
         if (!result.available) throw new RtkListingUnavailableError();
         return { stdout: result.stdout, exitCode: result.exitCode };
@@ -317,6 +323,7 @@ export async function runRtkProxy(
           ? `usage_error: Allowance exceeds the configured ceiling; configured ceiling is ${settings.ceilingTokens} tokens.`
           : undefined,
     );
+    const findBackend = resolveListingBackend();
     const outcome =
       resolved.status !== "ok"
         ? {
@@ -342,18 +349,20 @@ export async function runRtkProxy(
                   ? ` A larger allowance up to ${settings.ceilingTokens} tokens is supported.`
                   : "",
               measure: findCliMeasure,
-              metadataBytes: (text, isError) =>
-                Buffer.byteLength(findCliResponse(text, isError), "utf8"),
-              hasRtk: await isRtkAvailable(),
-              backend: async (operand, predicates) => {
-                const result = await executeRtkCommand(
-                  "find",
-                  [operand, ...predicates],
-                  context,
-                );
-                if (!result.available) throw new Error("RTK unavailable");
-                return { stdout: result.stdout, exitCode: result.exitCode };
-              },
+              hasRtk: findBackend === "native" || (await isRtkAvailable()),
+              backend:
+                findBackend === "native"
+                  ? (operand, predicates) =>
+                      runNativeFindDiscovery(operand, predicates, context)
+                  : async (operand, predicates) => {
+                      const result = await executeRtkCommand(
+                        "find",
+                        [operand, ...predicates],
+                        context,
+                      );
+                      if (!result.available) throw new Error("RTK unavailable");
+                      return { stdout: result.stdout, exitCode: result.exitCode };
+                    },
             });
     if (outcome.status === "partial_result" || outcome.isError)
       process.exitCode = 1;

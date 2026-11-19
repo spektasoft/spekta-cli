@@ -7,7 +7,10 @@ import {
   type WorkspaceContext,
 } from "../../utils/workspace";
 import { RESTRICTED_FILES, validateReadPathAccess } from "../../utils/security";
-import { assertPathNotIgnored } from "../../utils/path-ignore";
+import {
+  assertPathNotIgnored,
+  getIgnoreRuleMatches,
+} from "../../utils/path-ignore";
 import { getTokenCount } from "../../utils/read-utils";
 import { formatProxyOutput, truncateOutput } from "./proxy-output";
 import { redactSecrets } from "./proxy-secret-redaction";
@@ -42,7 +45,9 @@ export async function renderGitStatusOutcome(
       "--porcelain=v2";
     const records = result.stdout === "" ? [] : result.stdout.split("\0");
     if (records.length && records.pop() !== "") return failure(rejected);
-    const lines: string[] = [];
+    const lines: Array<
+      string | { prefix: string; name: string; source?: string }
+    > = [];
     const unsafeText = (value: string): boolean =>
       Array.from(value).some(
         (char) =>
@@ -58,8 +63,9 @@ export async function renderGitStatusOutcome(
         .some((part) => part === ".." || part === "." || part === "") &&
       !unsafeText(name) &&
       !name.includes("\\");
+    // Git paths use forward slashes regardless of the host platform.
     const quote = (name: string): string =>
-      JSON.stringify(name).replace(/`/g, "\\u0060");
+      JSON.stringify(name.split(path.sep).join("/")).replace(/`/g, "\\u0060");
     for (let index = 0; index < records.length; index++) {
       const record = records[index];
       if (
@@ -112,24 +118,38 @@ export async function renderGitStatusOutcome(
           workspace.root,
           path.resolve(repositoryRoot, source),
         );
-      if (
-        !(await isEligibleGitPath(name, workspace)) ||
-        (source !== undefined && !(await isEligibleGitPath(source, workspace)))
-      )
-        continue;
-      lines.push(
-        prefix +
-          (source === undefined
-            ? quote(name)
-            : `${quote(source)} -> ${quote(name)}`),
-      );
+      lines.push({ prefix, name, source });
     }
+    const eligiblePaths = await areEligibleGitPaths(
+      lines.flatMap((line) =>
+        typeof line === "string"
+          ? []
+          : line.source === undefined
+            ? [line.name]
+            : [line.name, line.source],
+      ),
+      workspace,
+    );
+    const renderedLines = lines.flatMap((line) => {
+      if (typeof line === "string") return [line];
+      if (
+        !eligiblePaths.get(line.name) ||
+        (line.source !== undefined && !eligiblePaths.get(line.source))
+      )
+        return [];
+      return [
+        line.prefix +
+          (line.source === undefined
+            ? quote(line.name)
+            : `${quote(line.source)} -> ${quote(line.name)}`),
+      ];
+    });
     // Directory aggregation and native long-format counts are deliberately replaced
     // by individual eligible entries. Branch metadata is budgeted with the entries.
     const output = redactSecrets(
       [
         "Eligible native Git status; eligible untracked entries may appear, while native ignored untracked entries do not.",
-        ...lines,
+        ...renderedLines,
       ].join("\n"),
     );
     let budget = allowance;
@@ -156,6 +176,89 @@ export async function renderGitStatusOutcome(
   } catch {
     return failure(rejected);
   }
+}
+
+/** Batch Git-ignore checks for the records in one native status response. */
+async function areEligibleGitPaths(
+  names: readonly string[],
+  workspace: Awaited<ReturnType<typeof resolveWorkspace>>,
+): Promise<ReadonlyMap<string, boolean>> {
+  const eligibility = new Map<string, boolean>();
+  const candidatesByName = new Map<string, string[]>();
+  const targetsByName = new Map<
+    string,
+    Awaited<ReturnType<typeof resolveWorkspaceMutationTarget>>
+  >();
+
+  await Promise.all(
+    [...new Set(names)].map(async (name) => {
+      try {
+        const target = await resolveWorkspaceMutationTarget(
+          name,
+          workspace,
+          true,
+        );
+        const candidates = [
+          ...new Set([
+            name,
+            path.relative(workspace.canonicalRoot, target.canonicalPath),
+          ]),
+        ];
+        if (
+          candidates.some((candidate) =>
+            candidate
+              .split("/")
+              .some((part) => RESTRICTED_FILES.includes(part)),
+          )
+        ) {
+          eligibility.set(name, false);
+          return;
+        }
+        candidatesByName.set(name, candidates);
+        targetsByName.set(name, target);
+      } catch {
+        eligibility.set(name, false);
+      }
+    }),
+  );
+
+  const allCandidates = [...candidatesByName.values()].flat();
+  let ignoreMatches: ReadonlyMap<string, "spekta" | "git" | null>;
+  try {
+    ignoreMatches = await getIgnoreRuleMatches(
+      allCandidates,
+      true,
+      workspace.canonicalRoot,
+    );
+  } catch {
+    for (const name of candidatesByName.keys()) eligibility.set(name, false);
+    return eligibility;
+  }
+
+  await Promise.all(
+    [...candidatesByName].map(async ([name, candidates]) => {
+      if (
+        candidates.some(
+          (candidate) =>
+            ignoreMatches.get(candidate.split(path.sep).join("/")) !== null,
+        )
+      ) {
+        eligibility.set(name, false);
+        return;
+      }
+      const target = targetsByName.get(name);
+      try {
+        if (target && (await fs.pathExists(target.absolutePath)))
+          await validateReadPathAccess(name, workspace, {
+            gitIgnoreAlreadyChecked: true,
+          });
+        eligibility.set(name, true);
+      } catch {
+        eligibility.set(name, false);
+      }
+    }),
+  );
+  return eligibility;
 }
 
 /** Shared name and content disclosure check for Git paths, including historical paths. */

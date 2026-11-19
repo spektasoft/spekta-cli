@@ -1,5 +1,6 @@
 import { lstat, mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { getUserHomeDirectory } from "../utils/user-home.js";
 import {
   CodexSetupPlan,
   CodexSetupOptions,
@@ -227,7 +228,7 @@ export async function runCodexSetup(args: string[] = []): Promise<void> {
       "Usage: spekta setup --global --codex --dry-run|--apply [--mcp]",
     );
   const options = {
-    home: process.env.HOME ?? "",
+    home: getUserHomeDirectory(),
     path: process.env.PATH ?? "",
     cwd: process.cwd(),
     mcp,

@@ -175,6 +175,32 @@ describe("generateDiagnosticReport", () => {
     );
   });
 
+  it("reports Windows compaction unavailability without compacted counts", () => {
+    const report = generateDiagnosticReport(
+      {
+        target: ".",
+        scannedCount: 1,
+        findings: [
+          {
+            path: "large.ts",
+            status: "Analysis incomplete",
+            rawTokens: 1500,
+            isCompacted: false,
+            compactionWarning:
+              "Compaction analysis is unavailable on Windows; only raw token counts are reported.",
+          },
+        ],
+        errors: [],
+      },
+      policy,
+    );
+
+    expect(report).toContain("Raw tokens: 1500");
+    expect(report).toContain("Compaction analysis is unavailable on Windows");
+    expect(report).not.toContain("Final tokens:");
+    expect(report).not.toContain("Excess tokens:");
+  });
+
   it("omits healthy findings and reports clean scan message", () => {
     const result: ScanResult = {
       target: "src",

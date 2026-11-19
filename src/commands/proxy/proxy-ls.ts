@@ -115,14 +115,16 @@ export async function isEligibleEntry(
 ): Promise<boolean> {
   try {
     const requested = path.join(directory, name);
-    const canonicalPath = await validateReadPathAccess(requested, workspace);
+    const absolutePath = path.resolve(workspace.root, requested);
+    // The decoded name is a literal directory entry. Passing it as a relative
+    // workspace path would normalize POSIX backslashes as separators.
+    const canonicalPath = await validateReadPathAccess(absolutePath, workspace);
     const canonicalSegments = path
       .relative(workspace.canonicalRoot, canonicalPath)
       .split(path.sep);
     if (canonicalSegments.some((part) => RESTRICTED_FILES.includes(part))) {
       return false;
     }
-    const absolutePath = path.resolve(workspace.root, requested);
     if (!(await fs.stat(canonicalPath)).isDirectory()) return true;
     const requestedRelative = path.relative(workspace.root, absolutePath);
     const canonicalRelative = path.relative(

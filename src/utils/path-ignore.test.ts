@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { execa } from "execa";
 import { getIgnorePatterns } from "../core/config";
-import { assertPathNotIgnored, isPathIgnored } from "./path-ignore";
+import {
+  assertPathNotIgnored,
+  getIgnoreRuleMatches,
+  isPathIgnored,
+} from "./path-ignore";
 
 vi.mock("execa");
 vi.mock("../core/config", () => ({
@@ -50,6 +54,89 @@ describe("isPathIgnored", () => {
     vi.mocked(execa).mockResolvedValueOnce({ exitCode: 0 } as never);
     const result = await isPathIgnored("spekta/whitelisted.json");
     expect(result).toBe(false);
+  });
+});
+
+describe("getIgnoreRuleMatches", () => {
+  it("checks multiple Git paths in one invocation", async () => {
+    vi.mocked(execa).mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: "ignored.txt\0",
+    } as never);
+
+    const matches = await getIgnoreRuleMatches(
+      ["visible.txt", "ignored.txt"],
+      true,
+      "C:/workspace",
+    );
+
+    expect(matches.get("visible.txt")).toBeNull();
+    expect(matches.get("ignored.txt")).toBe("git");
+    expect(execa).toHaveBeenCalledTimes(1);
+    expect(execa).toHaveBeenCalledWith(
+      "git",
+      ["check-ignore", "-z", "--no-index", "--stdin"],
+      {
+        cwd: "C:/workspace",
+        input: "visible.txt\0ignored.txt\0",
+        reject: false,
+      },
+    );
+  });
+
+  it("checks only paths not already denied by Spekta ignore rules", async () => {
+    vi.mocked(getIgnorePatterns).mockResolvedValue(["denied.txt"]);
+    vi.mocked(execa).mockResolvedValueOnce({
+      exitCode: 1,
+      stdout: "",
+    } as never);
+
+    const matches = await getIgnoreRuleMatches(
+      ["denied.txt", "visible.txt", "also-visible.txt"],
+      true,
+      "C:/workspace",
+    );
+
+    expect(matches.get("denied.txt")).toBe("spekta");
+    expect(matches.get("visible.txt")).toBeNull();
+    expect(matches.get("also-visible.txt")).toBeNull();
+    expect(execa).toHaveBeenCalledWith(
+      "git",
+      ["check-ignore", "-z", "--no-index", "--stdin"],
+      {
+        cwd: "C:/workspace",
+        input: "visible.txt\0also-visible.txt\0",
+        reject: false,
+      },
+    );
+  });
+
+  it("applies Spekta whitelist overrides to Git-ignored paths in a batch", async () => {
+    vi.mocked(getIgnorePatterns).mockResolvedValue(["!whitelisted.txt"]);
+    vi.mocked(execa).mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: "whitelisted.txt\0ignored.txt\0",
+    } as never);
+
+    const matches = await getIgnoreRuleMatches(
+      ["visible.txt", "whitelisted.txt", "ignored.txt"],
+      true,
+      "C:/workspace",
+    );
+
+    expect(matches.get("visible.txt")).toBeNull();
+    expect(matches.get("whitelisted.txt")).toBeNull();
+    expect(matches.get("ignored.txt")).toBe("git");
+    expect(execa).toHaveBeenCalledTimes(1);
+    expect(execa).toHaveBeenCalledWith(
+      "git",
+      ["check-ignore", "-z", "--no-index", "--stdin"],
+      {
+        cwd: "C:/workspace",
+        input: "visible.txt\0whitelisted.txt\0ignored.txt\0",
+        reject: false,
+      },
+    );
   });
 });
 
