@@ -8,6 +8,8 @@ import { resolveAllowanceSettings } from "../../core/config/allowance";
 import { formatProxyOutput } from "./proxy-output";
 import { boundGitCliResponse } from "./proxy-git-response-budget";
 import { missing, useRealGitFixture } from "./proxy-git.integration-harness";
+import { isEligibleGitPath } from "./proxy-git-status";
+import { resolveWorkspace } from "../../utils/workspace";
 
 describe.skipIf(missing.length > 0)(
   "Git status disclosure through CLI/MCP",
@@ -41,6 +43,31 @@ describe.skipIf(missing.length > 0)(
         }
       }
     }, 15000);
+    it("conceals a missing sensitive path unless the workspace excepts it", async () => {
+      const target = "synthetic-private.key";
+      fs.writeFileSync(
+        path.join(context.workspace, target),
+        "synthetic fixture",
+      );
+      await context.fixtureGit(["add", "--", target]);
+      fs.removeSync(path.join(context.workspace, target));
+
+      const workspace = await resolveWorkspace({ root: context.workspace });
+      expect(await isEligibleGitPath(target, workspace)).toBe(false);
+      const denied = await context.both(["status", "--short"]);
+      expect(denied.mcp.isError).toBe(false);
+      expect(JSON.stringify(denied)).not.toContain(target);
+
+      fs.writeFileSync(
+        path.join(context.workspace, ".spektaignore"),
+        `!${target}\n`,
+      );
+      expect(await isEligibleGitPath(target, workspace)).toBe(true);
+      const allowed = await context.both(["status", "--short"]);
+      expect(allowed.mcp.isError).toBe(false);
+      expect(allowed.mcp.content[0].text).toContain(target);
+    });
+
     it("preserves staged, unstaged, and untracked short-status records", async () => {
       const result = await context.both(["status", "--short"]);
       expect(result.mcp.isError).toBe(false);

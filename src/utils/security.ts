@@ -2,7 +2,9 @@ import { execa } from "execa";
 import fs from "fs-extra";
 import ignore from "ignore";
 import path from "path";
+import { getIgnorePatterns } from "../core/config";
 import { assertPathNotIgnored } from "./path-ignore";
+import { hasExactSensitiveException, isSensitivePath } from "./sensitive-files";
 import {
   isPathWithin,
   resolveWorkspace,
@@ -61,6 +63,7 @@ export const validatePathAccess = async (
     skipGitIgnoreCheck?: boolean;
     workspaceRoot?: string;
     displayPath?: string;
+    allowSensitiveEnv?: boolean;
   } = {},
 ): Promise<void> => {
   const root = options.workspaceRoot ?? process.cwd();
@@ -69,7 +72,10 @@ export const validatePathAccess = async (
   const fileName = path.basename(absolutePath);
   const relativePath = path.relative(root, absolutePath);
 
-  if (RESTRICTED_FILES.includes(fileName)) {
+  if (
+    RESTRICTED_FILES.includes(fileName) &&
+    !(options.allowSensitiveEnv && fileName === ".env")
+  ) {
     throw new Error(`Access Denied: ${fileName} is a restricted system file.`);
   }
 
@@ -116,13 +122,50 @@ export const validatePathAccess = async (
   }
 };
 
+export async function assertSensitivePathAccess(
+  requestedRelative: string,
+  canonicalRelative: string,
+  workspaceRoot: string,
+): Promise<void> {
+  const sensitiveRelative = isSensitivePath(canonicalRelative)
+    ? canonicalRelative
+    : isSensitivePath(requestedRelative)
+      ? requestedRelative
+      : undefined;
+  if (sensitiveRelative === undefined) return;
+
+  const workspaceIgnore = path.join(workspaceRoot, ".spektaignore");
+  const workspacePatterns = (await fs.pathExists(workspaceIgnore))
+    ? (await fs.readFile(workspaceIgnore, "utf-8"))
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#"))
+    : [];
+  const positivePatterns = (await getIgnorePatterns(workspaceRoot)).filter(
+    (pattern) => !pattern.startsWith("!"),
+  );
+  const positiveMatcher =
+    positivePatterns.length > 0 ? ignore().add(positivePatterns) : undefined;
+  const hasPositiveMatch = [requestedRelative, canonicalRelative].some(
+    (relative) =>
+      relative !== "" &&
+      positiveMatcher?.ignores(relative.split(path.sep).join("/")),
+  );
+  if (
+    !hasExactSensitiveException(sensitiveRelative, workspacePatterns) ||
+    hasPositiveMatch
+  ) {
+    throw new Error("Access Denied: restricted system file.");
+  }
+}
+
 export const validateReadPathAccess = async (
   targetPath: string,
   workspace: ResolvedWorkspace,
   options: { gitIgnoreAlreadyChecked?: boolean } = {},
 ): Promise<string> => {
   const requestedName = path.basename(path.resolve(workspace.root, targetPath));
-  if (RESTRICTED_FILES.includes(requestedName)) {
+  if (RESTRICTED_FILES.includes(requestedName) && requestedName !== ".env") {
     throw new Error(
       `Access Denied: ${requestedName} is a restricted system file.`,
     );
@@ -134,10 +177,27 @@ export const validateReadPathAccess = async (
   const requestedRoot = isPathWithin(workspace.root, absolutePath)
     ? workspace.root
     : workspace.canonicalRoot;
+  const requestedRelative = path.relative(requestedRoot, absolutePath);
+  const canonicalRelative = path.relative(
+    workspace.canonicalRoot,
+    canonicalPath,
+  );
+  await assertSensitivePathAccess(
+    requestedRelative,
+    canonicalRelative,
+    workspace.canonicalRoot,
+  );
+  const sensitiveRelative = isSensitivePath(canonicalRelative)
+    ? canonicalRelative
+    : isSensitivePath(requestedRelative)
+      ? requestedRelative
+      : undefined;
+
   await validatePathAccess(absolutePath, {
     workspaceRoot: requestedRoot,
     displayPath: targetPath,
     skipGitIgnoreCheck: options.gitIgnoreAlreadyChecked,
+    allowSensitiveEnv: sensitiveRelative !== undefined,
   });
   if (
     canonicalPath !== absolutePath ||
@@ -147,6 +207,7 @@ export const validateReadPathAccess = async (
       workspaceRoot: workspace.canonicalRoot,
       displayPath: targetPath,
       skipGitIgnoreCheck: options.gitIgnoreAlreadyChecked,
+      allowSensitiveEnv: sensitiveRelative !== undefined,
     });
   }
   return canonicalPath;

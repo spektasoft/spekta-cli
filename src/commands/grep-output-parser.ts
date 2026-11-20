@@ -1,6 +1,9 @@
 import readline from "node:readline";
 import path from "node:path";
-import type { ResolvedWorkspace } from "../utils/workspace";
+import {
+  normalizeWorkspacePath,
+  type ResolvedWorkspace,
+} from "../utils/workspace";
 import { getGrepTokenLimit } from "../core/config";
 import { getTokenCount } from "../utils/read-utils";
 import { isPathIgnored } from "../utils/path-ignore";
@@ -273,9 +276,12 @@ export async function parseGrepOutput(
                     path.isAbsolute(relativeToSearch)
                   )
                     continue;
+                  const requestedPath = requestedPaths[index] ?? ".";
                   const requestedMatchPath = path.resolve(
                     context.workspace.root,
-                    requestedPaths[index] ?? ".",
+                    path.isAbsolute(requestedPath)
+                      ? requestedPath
+                      : normalizeWorkspacePath(requestedPath),
                     relativeToSearch,
                   );
                   try {

@@ -6,7 +6,11 @@ import {
   resolveWorkspaceMutationTarget,
   type WorkspaceContext,
 } from "../../utils/workspace";
-import { RESTRICTED_FILES, validateReadPathAccess } from "../../utils/security";
+import {
+  assertSensitivePathAccess,
+  RESTRICTED_FILES,
+  validateReadPathAccess,
+} from "../../utils/security";
 import {
   assertPathNotIgnored,
   getIgnoreRuleMatches,
@@ -214,6 +218,11 @@ async function areEligibleGitPaths(
           eligibility.set(name, false);
           return;
         }
+        await assertSensitivePathAccess(
+          name,
+          path.relative(workspace.canonicalRoot, target.canonicalPath),
+          workspace.canonicalRoot,
+        );
         candidatesByName.set(name, candidates);
         targetsByName.set(name, target);
       } catch {
@@ -269,6 +278,11 @@ export async function isEligibleGitPath(
   try {
     const resolved = workspace ?? (await resolveWorkspace());
     const target = await resolveWorkspaceMutationTarget(name, resolved, true);
+    await assertSensitivePathAccess(
+      name,
+      path.relative(resolved.canonicalRoot, target.canonicalPath),
+      resolved.canonicalRoot,
+    );
     for (const candidate of new Set([
       name,
       path.relative(resolved.canonicalRoot, target.canonicalPath),

@@ -60,27 +60,33 @@ describe("CLI and existing MCP workspace boundaries", () => {
       expect(output.join("")).not.toContain("sibling.txt");
     },
   );
-  it("reads and searches relative paths with either separator and spaces", async () => {
-    await fs.ensureDir(path.join(fixture.root, "nested dir"));
-    await fs.writeFile(
-      path.join(fixture.root, "nested dir", "entry file.txt"),
-      "needle WINDOWS_PATH_INPUT\n",
-    );
+  it(
+    "reads and searches relative paths with either separator and spaces",
+    async () => {
+      await fs.ensureDir(path.join(fixture.root, "nested dir"));
+      await fs.writeFile(
+        path.join(fixture.root, "nested dir", "entry file.txt"),
+        "needle WINDOWS_PATH_INPUT\n",
+      );
 
-    for (const target of [
-      "nested dir/entry file.txt",
-      String.raw`nested dir\entry file.txt`,
-      path.join(fixture.root, "nested dir", "entry file.txt"),
-    ]) {
-      const read = await TOOL_REGISTRY.spekta_read.handler({ paths: [target] });
-      expect(read.content[0].text).toContain("WINDOWS_PATH_INPUT");
-      const search = await TOOL_REGISTRY.spekta_rg.handler({
-        patterns: ["WINDOWS_PATH_INPUT"],
-        paths: [target],
-      });
-      expect(search.content[0].text).toContain("WINDOWS_PATH_INPUT");
-    }
-  }, process.platform === "win32" ? 30_000 : undefined);
+      for (const target of [
+        "nested dir/entry file.txt",
+        String.raw`nested dir\entry file.txt`,
+        path.join(fixture.root, "nested dir", "entry file.txt"),
+      ]) {
+        const read = await TOOL_REGISTRY.spekta_read.handler({
+          paths: [target],
+        });
+        expect(read.content[0].text).toContain("WINDOWS_PATH_INPUT");
+        const search = await TOOL_REGISTRY.spekta_rg.handler({
+          patterns: ["WINDOWS_PATH_INPUT"],
+          paths: [target],
+        });
+        expect(search.content[0].text).toContain("WINDOWS_PATH_INPUT");
+      }
+    },
+    process.platform === "win32" ? 30_000 : undefined,
+  );
   it("CLI commands deny symlink escapes", async () => {
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
@@ -100,34 +106,88 @@ describe("CLI and existing MCP workspace boundaries", () => {
     }
     expect(output.join("")).not.toContain("EXTERNAL");
   });
-  it("real MCP handlers keep eligible output and reject escapes", async () => {
-    expect(
-      (await TOOL_REGISTRY.spekta_read.handler({ paths: ["real.txt"] }))
-        .content[0].text,
-    ).toContain("INTERNAL");
-    expect(
-      (await TOOL_REGISTRY.spekta_rg.handler({ patterns: ["needle"] }))
-        .content[0].text,
-    ).toContain("INTERNAL");
-    for (const target of [
-      "../sibling.txt",
-      "external-file.txt",
-      "external-dir/secret.txt",
-    ]) {
-      const read = await TOOL_REGISTRY.spekta_read.handler({ paths: [target] });
-      const search = await TOOL_REGISTRY.spekta_rg.handler({
-        patterns: ["needle"],
-        paths: [target],
-      });
-      for (const response of [read, search]) {
-        const fields = JSON.stringify(response);
-        expect(response.isError).toBe(true);
-        expect(fields).not.toContain(target);
-        expect(fields).not.toContain("SIBLING");
-        expect(fields).not.toContain("EXTERNAL");
+  it("CLI and MCP reads enforce exact sensitive-file exceptions", async () => {
+    const target = "keys/private.key";
+    const sibling = "keys/other.key";
+    await fs.outputFile(path.join(fixture.root, target), "SYNTHETIC_PRIVATE\n");
+    await fs.outputFile(
+      path.join(fixture.root, sibling),
+      "SYNTHETIC_SIBLING\n",
+    );
+
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output.push(String(chunk));
+      return true;
+    });
+    const errors = vi.spyOn(Logger, "error").mockImplementation(() => true);
+
+    await dispatchCommand("read", [target]);
+    expect(process.exitCode).toBe(1);
+    expect(output.join("")).not.toContain(target);
+    expect(output.join("")).not.toContain("SYNTHETIC_PRIVATE");
+    expect(errors).not.toHaveBeenCalledWith(expect.stringContaining(target));
+
+    const denied = await TOOL_REGISTRY.spekta_read.handler({ paths: [target] });
+    expect(denied.isError).toBe(true);
+    expect(JSON.stringify(denied)).not.toContain(target);
+    expect(JSON.stringify(denied)).not.toContain("SYNTHETIC_PRIVATE");
+
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      `!${target}\n`,
+    );
+    process.exitCode = undefined;
+    output.length = 0;
+    await dispatchCommand("read", [target]);
+    expect(output.join("")).toContain("SYNTHETIC_PRIVATE");
+
+    const allowed = await TOOL_REGISTRY.spekta_read.handler({
+      paths: [target],
+    });
+    expect(allowed.content[0].text).toContain("SYNTHETIC_PRIVATE");
+    const deniedSibling = await TOOL_REGISTRY.spekta_read.handler({
+      paths: [sibling],
+    });
+    expect(deniedSibling.isError).toBe(true);
+    expect(JSON.stringify(deniedSibling)).not.toContain(sibling);
+    expect(JSON.stringify(deniedSibling)).not.toContain("SYNTHETIC_SIBLING");
+  });
+
+  it(
+    "real MCP handlers keep eligible output and reject escapes",
+    async () => {
+      expect(
+        (await TOOL_REGISTRY.spekta_read.handler({ paths: ["real.txt"] }))
+          .content[0].text,
+      ).toContain("INTERNAL");
+      expect(
+        (await TOOL_REGISTRY.spekta_rg.handler({ patterns: ["needle"] }))
+          .content[0].text,
+      ).toContain("INTERNAL");
+      for (const target of [
+        "../sibling.txt",
+        "external-file.txt",
+        "external-dir/secret.txt",
+      ]) {
+        const read = await TOOL_REGISTRY.spekta_read.handler({
+          paths: [target],
+        });
+        const search = await TOOL_REGISTRY.spekta_rg.handler({
+          patterns: ["needle"],
+          paths: [target],
+        });
+        for (const response of [read, search]) {
+          const fields = JSON.stringify(response);
+          expect(response.isError).toBe(true);
+          expect(fields).not.toContain(target);
+          expect(fields).not.toContain("SIBLING");
+          expect(fields).not.toContain("EXTERNAL");
+        }
       }
-    }
-  }, process.platform === "win32" ? 30_000 : undefined);
+    },
+    process.platform === "win32" ? 30_000 : undefined,
+  );
 
   it("bounds a formatted read delivered through the MCP handler", async () => {
     const previousLimit = process.env.SPEKTA_READ_TOKEN_LIMIT;
@@ -177,36 +237,40 @@ describe("CLI and existing MCP workspace boundaries", () => {
     expect(fields).not.toContain("real.txt");
   });
 
-  it("keeps overlapping server registries on their own roots and ignore files", async () => {
-    const secondRoot = path.join(fixture.base, "second-workspace");
-    await fs.ensureDir(secondRoot);
-    await execa("git", ["init", "--quiet"], { cwd: secondRoot });
-    await fs.writeFile(path.join(secondRoot, "real.txt"), "needle SECOND\n");
-    await fs.writeFile(
-      path.join(secondRoot, "ignored.txt"),
-      "needle SECOND_IGNORED\n",
-    );
-    await fs.writeFile(path.join(secondRoot, ".spektaignore"), "\n");
+  it(
+    "keeps overlapping server registries on their own roots and ignore files",
+    async () => {
+      const secondRoot = path.join(fixture.base, "second-workspace");
+      await fs.ensureDir(secondRoot);
+      await execa("git", ["init", "--quiet"], { cwd: secondRoot });
+      await fs.writeFile(path.join(secondRoot, "real.txt"), "needle SECOND\n");
+      await fs.writeFile(
+        path.join(secondRoot, "ignored.txt"),
+        "needle SECOND_IGNORED\n",
+      );
+      await fs.writeFile(path.join(secondRoot, ".spektaignore"), "\n");
 
-    const firstServer = createToolRegistry({ root: fixture.root });
-    const secondServer = createToolRegistry({ root: secondRoot });
-    process.chdir(fixture.ambient);
+      const firstServer = createToolRegistry({ root: fixture.root });
+      const secondServer = createToolRegistry({ root: secondRoot });
+      process.chdir(fixture.ambient);
 
-    const [firstRead, secondRead, firstSearch, secondSearch] =
-      await Promise.all([
-        firstServer.spekta_read.handler({ paths: ["real.txt"] }),
-        secondServer.spekta_read.handler({ paths: ["real.txt"] }),
-        firstServer.spekta_rg.handler({ patterns: ["needle"] }),
-        secondServer.spekta_rg.handler({ patterns: ["needle"] }),
-      ]);
+      const [firstRead, secondRead, firstSearch, secondSearch] =
+        await Promise.all([
+          firstServer.spekta_read.handler({ paths: ["real.txt"] }),
+          secondServer.spekta_read.handler({ paths: ["real.txt"] }),
+          firstServer.spekta_rg.handler({ patterns: ["needle"] }),
+          secondServer.spekta_rg.handler({ patterns: ["needle"] }),
+        ]);
 
-    expect(firstRead.content[0].text).toContain("INTERNAL");
-    expect(firstRead.content[0].text).not.toContain("WRONG_CWD");
-    expect(secondRead.content[0].text).toContain("SECOND");
-    expect(firstSearch.content[0].text).toContain("INTERNAL");
-    expect(firstSearch.content[0].text).not.toContain("WRONG_CWD");
-    expect(secondSearch.content[0].text).toContain("SECOND_IGNORED");
-  }, process.platform === "win32" ? 30_000 : undefined);
+      expect(firstRead.content[0].text).toContain("INTERNAL");
+      expect(firstRead.content[0].text).not.toContain("WRONG_CWD");
+      expect(secondRead.content[0].text).toContain("SECOND");
+      expect(firstSearch.content[0].text).toContain("INTERNAL");
+      expect(firstSearch.content[0].text).not.toContain("WRONG_CWD");
+      expect(secondSearch.content[0].text).toContain("SECOND_IGNORED");
+    },
+    process.platform === "win32" ? 30_000 : undefined,
+  );
 
   it("bound MCP mutations reject traversal and symlink escapes", async () => {
     const tools = createToolRegistry({ root: fixture.root });
