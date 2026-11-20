@@ -2,7 +2,7 @@ import { execa } from "execa";
 import fs from "fs-extra";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getGrepTokenLimit, getIgnorePatterns } from "../../core/config";
-import { validateReadPathAccess } from "../../utils/security";
+import { validateEligibleReadPathAccess } from "../../utils/security";
 import { resolveWorkspace } from "../../utils/workspace";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -17,12 +17,17 @@ vi.mock("execa");
 vi.mock("fs-extra");
 vi.mock("../../utils/path-ignore", () => ({
   isPathIgnored: vi.fn().mockResolvedValue(false),
+  getIgnoreRuleMatches: vi.fn().mockResolvedValue(new Map()),
 }));
 vi.mock("../../utils/security", () => ({
-  validateReadPathAccess: vi.fn(),
+  validateEligibleReadPathAccess: vi.fn(),
   RESTRICTED_FILES: [".env", ".gitignore", ".spektaignore"],
 }));
-vi.mock("../../utils/workspace", () => ({ resolveWorkspace: vi.fn() }));
+vi.mock("../../utils/workspace", () => ({
+  normalizeWorkspacePath: (target: string) =>
+    target.replace(/[\\/]+/g, path.sep),
+  resolveWorkspace: vi.fn(),
+}));
 vi.mock("../../core/config", () => ({
   HOME_IGNORE: "/mock/home/.spektaignore",
   getAssetPaths: () => ({
@@ -40,10 +45,12 @@ describe("getGrepContent - truncation", () => {
       const root = path.resolve(context?.root ?? process.cwd());
       return Promise.resolve({ root, canonicalRoot: root });
     });
-    vi.mocked(validateReadPathAccess).mockImplementation((target, workspace) =>
-      Promise.resolve(path.resolve(workspace.canonicalRoot, target)),
+    vi.mocked(validateEligibleReadPathAccess).mockImplementation(
+      (target, workspace) =>
+        Promise.resolve(path.resolve(workspace.canonicalRoot, target)),
     );
     vi.mocked(fs.pathExists).mockResolvedValue(false as never);
+    vi.mocked(fs.stat).mockResolvedValue({ isDirectory: () => false } as never);
     vi.mocked(getGrepTokenLimit).mockReturnValue(2000);
     vi.mocked(isPathIgnored).mockResolvedValue(false);
   });
@@ -53,7 +60,7 @@ describe("getGrepContent - truncation", () => {
     vi.mocked(getGrepTokenLimit).mockReturnValue(1_000_000);
 
     const matches = Array.from({ length: MAX_MATCHES + 1 }, (_, i) =>
-      createRgMatch("test.ts", i + 1, 0, `match ${i}`),
+      createRgMatch("test.ts", i + 1, 0, `test match ${i}`),
     ).join("\n");
 
     vi.mocked(execa).mockImplementation(() => mockExecaStream(matches));
@@ -93,10 +100,11 @@ describe("getGrepContent - truncation", () => {
   });
 
   it("reports no eligible matches through MCP when all candidates are ignored", async () => {
-    vi.mocked(validateReadPathAccess).mockImplementation((target, workspace) =>
-      target.includes("ignored.ts")
-        ? Promise.reject(new Error("Path is ineligible"))
-        : Promise.resolve(path.resolve(workspace.canonicalRoot, target)),
+    vi.mocked(validateEligibleReadPathAccess).mockImplementation(
+      (target, workspace) =>
+        target.includes("ignored.ts")
+          ? Promise.reject(new Error("Path is ineligible"))
+          : Promise.resolve(path.resolve(workspace.canonicalRoot, target)),
     );
     vi.mocked(execa).mockImplementation(() =>
       mockExecaStream(createRgMatch("ignored.ts", 1, 0, "needle")),

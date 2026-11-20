@@ -3,7 +3,7 @@ import fs from "fs-extra";
 import path from "node:path";
 import { getGrepTokenLimit, getIgnorePatterns } from "../core/config";
 import { getTokenCount } from "../utils/read-utils";
-import { isWhitelisted, validateReadPathAccess } from "../utils/security";
+import { validateEligibleReadPathAccess } from "../utils/security";
 import {
   buildGrepArgs,
   buildGrepFileListArgs,
@@ -29,6 +29,7 @@ import {
 import { type BatchOperandOutcome } from "../core/batch-planning";
 import { resolveRequestAllowance } from "../core/config/allowance";
 import { terminateWindowsProcessTree } from "../utils/terminate-process-tree";
+import { getIgnoreRuleMatches } from "../utils/path-ignore";
 
 function spawnRtkRg(
   args: string[],
@@ -431,32 +432,34 @@ function failureOutcome(
 async function findWhitelistedGitIgnoredFiles(
   options: GrepOptions,
   canonicalSearchPath: string,
+  requestedSearchPath: string,
   workspace: ResolvedWorkspace,
   spektaIgnorePatterns: string[],
   signal?: AbortSignal,
 ): Promise<string[]> {
-  if (!spektaIgnorePatterns.some((pattern) => pattern.startsWith("!"))) {
-    return [];
-  }
-
   if (!(await fs.stat(canonicalSearchPath)).isDirectory()) {
     return [];
   }
 
+  const listingSearchPath = path.resolve(
+    workspace.root,
+    path.isAbsolute(requestedSearchPath)
+      ? requestedSearchPath
+      : requestedSearchPath,
+  );
   const normalListArgs = await buildGrepFileListArgs(
     options,
     workspace.canonicalRoot,
-    canonicalSearchPath,
+    listingSearchPath,
     false,
   );
   const listFiles = async (args: string[]): Promise<string[]> => {
     try {
-      const result = await spawnRtkRg(
-        args,
-        workspace.canonicalRoot,
-        false,
-        signal,
-      );
+      const result = await execa("rg", args, {
+        cwd: workspace.canonicalRoot,
+        reject: false,
+        ...(signal ? { cancelSignal: signal } : {}),
+      });
       if (result.exitCode !== 0 && result.exitCode !== 1) {
         throw new Error("Ripgrep file listing failed.");
       }
@@ -475,7 +478,7 @@ async function findWhitelistedGitIgnoredFiles(
   const ignoredListArgs = await buildGrepFileListArgs(
     options,
     workspace.canonicalRoot,
-    canonicalSearchPath,
+    listingSearchPath,
   );
   const listing = await listFiles(ignoredListArgs);
   const candidates = [
@@ -510,29 +513,31 @@ async function findWhitelistedGitIgnoredFiles(
     throw error;
   }
 
-  const whitelisted: string[] = [];
+  const eligible: string[] = [];
+  const ignoreMatches = await getIgnoreRuleMatches(
+    relativeCandidates,
+    false,
+    workspace.canonicalRoot,
+  );
   for (const [index, relativePath] of relativeCandidates.entries()) {
     if (
       !gitIgnored.has(relativePath) ||
-      !isWhitelisted(relativePath, spektaIgnorePatterns)
+      ignoreMatches.get(relativePath) === "spekta"
     ) {
       continue;
     }
     try {
-      const canonicalPath = await validateReadPathAccess(
+      const canonicalPath = await validateEligibleReadPathAccess(
         candidates[index],
         workspace,
-        // Git ignore status and whitelist eligibility were both established
-        // above, so repeating Git's per-path check here only adds serial work.
-        { gitIgnoreAlreadyChecked: true },
       );
-      whitelisted.push(canonicalPath);
+      eligible.push(canonicalPath);
     } catch {
       // Invalid, restricted, or otherwise denied candidates must not be searched.
     }
   }
 
-  return [...new Set(whitelisted)];
+  return [...new Set(eligible)];
 }
 
 export async function getGrepOutcome(
@@ -621,7 +626,7 @@ async function getGrepOutcomeInternal(
   const uniquePaths = new Map<string, string>();
   for (const [index, searchPath] of requestedPaths.entries()) {
     try {
-      const canonical = await validateReadPathAccess(
+      const canonical = await validateEligibleReadPathAccess(
         searchPath,
         resolvedWorkspace,
       );
@@ -805,10 +810,11 @@ async function getGrepOutcomeInternal(
       ...new Set(
         (
           await Promise.all(
-            canonicalSearchPaths.map((searchPath) =>
+            canonicalSearchPaths.map((searchPath, index) =>
               findWhitelistedGitIgnoredFiles(
                 options,
                 searchPath,
+                admittedRequestedPaths[index] ?? searchPath,
                 resolvedWorkspace,
                 ignorePatterns,
                 options.signal,

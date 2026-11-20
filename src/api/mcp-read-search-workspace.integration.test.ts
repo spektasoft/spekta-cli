@@ -32,6 +32,49 @@ afterEach(async () => {
 });
 
 describe("CLI and existing MCP workspace boundaries", () => {
+  it("searches nested Git-ignored resources through CLI and MCP without a whitelist", async () => {
+    const nested = path.join(fixture.root, "nested-git-ignored");
+    const target = path.join(nested, "search-target.log");
+    const marker = "NESTED_GIT_IGNORED_SEARCH";
+    await fs.ensureDir(nested);
+    await fs.writeFile(path.join(nested, ".gitignore"), "*.log\n");
+    await fs.writeFile(target, `${marker}\n`);
+    expect(
+      (
+        await execa(
+          "git",
+          ["check-ignore", "-q", "--", "nested-git-ignored/search-target.log"],
+          {
+            cwd: fixture.root,
+            reject: false,
+          },
+        )
+      ).exitCode,
+    ).toBe(0);
+
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(Logger, "error").mockImplementation(() => true);
+    await dispatchCommand("rg", [marker]);
+    expect(output.join("")).toContain(marker);
+
+    const discovered = await TOOL_REGISTRY.spekta_rg.handler({
+      patterns: [marker],
+    });
+    expect(discovered.isError).toBeUndefined();
+    expect(discovered.content[0].text).toContain(marker);
+
+    const explicit = await TOOL_REGISTRY.spekta_rg.handler({
+      patterns: [marker],
+      paths: ["nested-git-ignored/search-target.log"],
+    });
+    expect(explicit.isError).toBeUndefined();
+    expect(explicit.content[0].text).toContain(marker);
+  });
+
   it("reads a Git-ignored file through CLI and MCP without disclosing denied siblings", async () => {
     const target = "git-ignored.txt";
     expect(

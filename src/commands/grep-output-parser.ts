@@ -7,7 +7,7 @@ import {
 import { getGrepTokenLimit } from "../core/config";
 import { getTokenCount } from "../utils/read-utils";
 import { isPathIgnored } from "../utils/path-ignore";
-import { validateReadPathAccess } from "../utils/security";
+import { validateEligibleReadPathAccess } from "../utils/security";
 import type { OperationOutcome } from "../core/operation-outcome";
 import { terminateWindowsProcessTree } from "../utils/terminate-process-tree";
 
@@ -255,7 +255,7 @@ export async function parseGrepOutput(
           if (eligiblePath === undefined) {
             try {
               if (context) {
-                eligiblePath = await validateReadPathAccess(
+                eligiblePath = await validateEligibleReadPathAccess(
                   filePath,
                   context.workspace,
                 );
@@ -285,10 +285,11 @@ export async function parseGrepOutput(
                     relativeToSearch,
                   );
                   try {
-                    const requestedEligiblePath = await validateReadPathAccess(
-                      requestedMatchPath,
-                      context.workspace,
-                    );
+                    const requestedEligiblePath =
+                      await validateEligibleReadPathAccess(
+                        requestedMatchPath,
+                        context.workspace,
+                      );
                     if (requestedEligiblePath === eligiblePath)
                       matchedRequestedPath = true;
                   } catch {

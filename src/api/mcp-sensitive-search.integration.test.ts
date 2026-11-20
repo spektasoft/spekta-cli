@@ -72,6 +72,37 @@ describe("CLI sensitive search policy", () => {
 });
 
 describe("MCP sensitive search policy", () => {
+  it("conceals files denied by workspace Spekta-ignore rules", async () => {
+    const target = "private-data.txt";
+    const marker = "SYNTHETIC_CONFIG_RESTRICTED";
+    await fs.writeFile(path.join(fixture.root, target), `${marker}\n`);
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      `${target}\n`,
+    );
+
+    const mcp = await TOOL_REGISTRY.spekta_rg.handler({
+      patterns: [marker],
+      paths: [target],
+    });
+    expect(JSON.stringify(mcp)).not.toContain(target);
+    expect(JSON.stringify(mcp)).not.toContain(marker);
+
+    const cliOutput: string[] = [];
+    const cliError: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      cliOutput.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(Logger, "error").mockImplementation((message) => {
+      cliError.push(String(message));
+      return true;
+    });
+    await dispatchCommand("rg", [marker, target]);
+    expect(cliOutput.join("") + cliError.join("")).not.toContain(target);
+    expect(cliOutput.join("") + cliError.join("")).not.toContain(marker);
+  });
+
   it("conceals denied files and permits one exact workspace exception", async () => {
     const target = "keys/private.key";
     const sibling = "keys/other.key";
