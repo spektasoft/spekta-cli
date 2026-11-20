@@ -13,7 +13,7 @@ import {
   getTokenCount,
   parseFilePathWithRange,
 } from "../utils/read-utils";
-import { validateReadPathAccess } from "../utils/security";
+import { validateEligibleReadPathAccess } from "../utils/security";
 import {
   resolveWorkspace,
   type ResolvedWorkspace,
@@ -333,7 +333,10 @@ export async function getReadOutcome(
 
     let readPath: string;
     try {
-      readPath = await validateReadPathAccess(req.path, resolvedWorkspace);
+      readPath = await validateEligibleReadPathAccess(
+        req.path,
+        resolvedWorkspace,
+      );
     } catch {
       return unavailable();
     }
@@ -345,7 +348,10 @@ export async function getReadOutcome(
       );
       let currentPath: string;
       try {
-        currentPath = await validateReadPathAccess(req.path, resolvedWorkspace);
+        currentPath = await validateEligibleReadPathAccess(
+          req.path,
+          resolvedWorkspace,
+        );
       } catch {
         return unavailable();
       }
@@ -426,7 +432,7 @@ export async function getReadOutcome(
       combinedOutput += complete;
     } catch {
       try {
-        const currentPath = await validateReadPathAccess(
+        const currentPath = await validateEligibleReadPathAccess(
           req.path,
           resolvedWorkspace,
         );

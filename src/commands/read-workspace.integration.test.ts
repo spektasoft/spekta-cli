@@ -27,6 +27,12 @@ function read(target: string, mode: (typeof modes)[number], root: string) {
 }
 
 describe("workspace reads", () => {
+  it("reads a Git-ignored file when other policy allows it", async () => {
+    process.chdir(fixture.ambient);
+    const output = await read("git-ignored.txt", "full", fixture.root);
+    expect(output).toContain("needle GIT_IGNORED");
+  });
+
   it.each(modes)("reads canonical targets in %s mode", async (mode) => {
     process.chdir(fixture.ambient);
     const streams = vi.spyOn(readUtils, "getVersionedFileLines");

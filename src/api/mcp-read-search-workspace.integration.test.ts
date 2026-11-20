@@ -32,6 +32,53 @@ afterEach(async () => {
 });
 
 describe("CLI and existing MCP workspace boundaries", () => {
+  it("reads a Git-ignored file through CLI and MCP without disclosing denied siblings", async () => {
+    const target = "git-ignored.txt";
+    expect(
+      (
+        await execa("git", ["check-ignore", "-q", "--", target], {
+          cwd: fixture.root,
+          reject: false,
+        })
+      ).exitCode,
+    ).toBe(0);
+
+    const output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      output.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(Logger, "error").mockImplementation(() => true);
+    await dispatchCommand("read", [target]);
+    expect(output.join("")).toContain("GIT_IGNORED");
+
+    const allowed = await TOOL_REGISTRY.spekta_read.handler({
+      paths: [target],
+    });
+    expect(allowed.isError).toBeUndefined();
+    expect(allowed.content[0].text).toContain("GIT_IGNORED");
+
+    const denied = await TOOL_REGISTRY.spekta_read.handler({
+      paths: ["ignored.txt"],
+    });
+    expect(denied.isError).toBe(true);
+    expect(JSON.stringify(denied)).not.toContain("ignored.txt");
+    expect(JSON.stringify(denied)).not.toContain("SPEKTA_IGNORED");
+  });
+
+  it("checks the canonical target of a symlink alias to a Git-ignored file", async () => {
+    if (process.platform === "win32") return;
+    await fs.symlink(
+      path.join(fixture.root, "git-ignored.txt"),
+      path.join(fixture.root, "ignored-target-alias.txt"),
+    );
+    const result = await TOOL_REGISTRY.spekta_read.handler({
+      paths: ["ignored-target-alias.txt"],
+    });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain("GIT_IGNORED");
+  });
+
   it.each(["read", "rg"])(
     "CLI %s limits access to invocation cwd",
     async (command) => {

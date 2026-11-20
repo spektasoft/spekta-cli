@@ -1,18 +1,15 @@
 import fs from "fs-extra";
 import os from "os";
 import path from "path";
+import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   resolveWorkspace,
   type ResolvedWorkspace,
 } from "../../utils/workspace";
-import { execa } from "execa";
 import { getIgnorePatterns } from "../../core/config";
 import { filterEligibleLsEntries } from "./proxy-ls";
 
-vi.mock("execa", () => ({
-  execa: vi.fn().mockRejectedValue(new Error("not ignored")),
-}));
 vi.mock("../../core/config", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../core/config")>()),
   getIgnorePatterns: vi
@@ -115,14 +112,7 @@ describe("filterEligibleLsEntries", () => {
 
     expect(result).toEqual({
       status: "success",
-      names: [
-        "empty",
-        "keep.log",
-        "names",
-        "src",
-        "sub",
-        "visible.txt",
-      ],
+      names: ["empty", "keep.log", "names", "src", "sub", "visible.txt"],
     });
   });
 
@@ -175,9 +165,8 @@ describe("filterEligibleLsEntries", () => {
     "decodes POSIX tab, backslash, and newline filenames literally",
     async () => {
       const stdout =
-        ["tab\\tname.txt", "back\\\\slash.txt", "new\\nline.txt"].join(
-          "\n",
-        ) + "\n";
+        ["tab\\tname.txt", "back\\\\slash.txt", "new\\nline.txt"].join("\n") +
+        "\n";
 
       const result = await filterEligibleLsEntries(stdout, "names", workspace);
 
@@ -188,29 +177,29 @@ describe("filterEligibleLsEntries", () => {
     },
   );
 
-  it("drops files that Git ignores but keeps their eligible siblings", async () => {
+  it("lists files that Git ignores when other policy allows them", async () => {
+    await execa("git", ["init", "--quiet"], { cwd: root });
+    fs.removeSync(path.join(root, ".gitignore"));
+    fs.writeFileSync(path.join(root, ".gitignore"), "git-ignored.txt\n");
     fs.writeFileSync(path.join(root, "git-ignored.txt"), "x");
-    vi.mocked(execa).mockImplementation(((
-      _file: string,
-      args: string[],
-    ) => {
-      if (args[args.length - 1] === "git-ignored.txt") {
-        return { exitCode: 0 };
-      }
-      throw Object.assign(new Error("not ignored"), { exitCode: 1 });
-    }) as never);
+    expect(
+      (
+        await execa("git", ["check-ignore", "-q", "--", "git-ignored.txt"], {
+          cwd: root,
+          reject: false,
+        })
+      ).exitCode,
+    ).toBe(0);
+    const result = await filterEligibleLsEntries(
+      "git-ignored.txt\nvisible.txt\n",
+      ".",
+      workspace,
+    );
 
-    try {
-      const result = await filterEligibleLsEntries(
-        "git-ignored.txt\nvisible.txt\n",
-        ".",
-        workspace,
-      );
-
-      expect(result).toEqual({ status: "success", names: ["visible.txt"] });
-    } finally {
-      vi.mocked(execa).mockRejectedValue(new Error("not ignored"));
-    }
+    expect(result).toEqual({
+      status: "success",
+      names: ["git-ignored.txt", "visible.txt"],
+    });
   });
 
   it("fails closed without disclosure when ignore patterns cannot be loaded", async () => {
@@ -226,7 +215,8 @@ describe("filterEligibleLsEntries", () => {
 
     expect(result).toEqual({
       status: "ambiguous",
-      message: "Listing rejected: directory entries could not be attributed reliably.",
+      message:
+        "Listing rejected: directory entries could not be attributed reliably.",
     });
     expect(JSON.stringify(result)).not.toContain("visible");
     expect(JSON.stringify(result)).not.toContain("EISDIR");
@@ -247,7 +237,8 @@ describe("filterEligibleLsEntries", () => {
 
     expect(result).toEqual({
       status: "ambiguous",
-      message: "Listing rejected: directory entries could not be attributed reliably.",
+      message:
+        "Listing rejected: directory entries could not be attributed reliably.",
     });
     expect(JSON.stringify(result)).not.toContain("bad");
   });
@@ -261,7 +252,8 @@ describe("filterEligibleLsEntries", () => {
 
     expect(result).toEqual({
       status: "ambiguous",
-      message: "Listing rejected: directory entries could not be attributed reliably.",
+      message:
+        "Listing rejected: directory entries could not be attributed reliably.",
     });
     expect(JSON.stringify(result)).not.toContain("not-there");
   });
@@ -275,7 +267,8 @@ describe("filterEligibleLsEntries", () => {
 
     expect(result).toEqual({
       status: "ambiguous",
-      message: "Listing rejected: directory entries could not be attributed reliably.",
+      message:
+        "Listing rejected: directory entries could not be attributed reliably.",
     });
   });
 });

@@ -84,6 +84,14 @@ describe("workspace read policy", () => {
       ),
     ).rejects.toThrow("ignored");
   });
+  it("allows an otherwise eligible Git-ignored read when requested", async () => {
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    await expect(
+      validateReadPathAccess("git-ignored.txt", workspace, {
+        allowGitIgnored: true,
+      }),
+    ).resolves.toBe(path.join(fixture.root, "git-ignored.txt"));
+  });
   it("checks restrictions and ignore policy across directory links", async () => {
     const managedDirectory = path.join(fixture.root, "managed-dir");
     await fs.ensureDir(managedDirectory);

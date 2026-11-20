@@ -61,6 +61,7 @@ export const validatePathAccess = async (
   options: {
     gitNoIndex?: boolean;
     skipGitIgnoreCheck?: boolean;
+    skipSpektaIgnoreCheck?: boolean;
     workspaceRoot?: string;
     displayPath?: string;
     allowSensitiveEnv?: boolean;
@@ -91,16 +92,18 @@ export const validatePathAccess = async (
 
   if (relativePath !== "") {
     const ignoreOptions = { gitNoIndex: options.gitNoIndex };
-    if (options.workspaceRoot === undefined) {
-      await assertPathNotIgnored(relativePath, displayPath, ignoreOptions);
-    } else {
-      await assertPathNotIgnored(
-        relativePath,
-        displayPath,
-        ignoreOptions,
-        root,
-        options.skipGitIgnoreCheck,
-      );
+    if (!options.skipSpektaIgnoreCheck) {
+      if (options.workspaceRoot === undefined) {
+        await assertPathNotIgnored(relativePath, displayPath, ignoreOptions);
+      } else {
+        await assertPathNotIgnored(
+          relativePath,
+          displayPath,
+          ignoreOptions,
+          root,
+          options.skipGitIgnoreCheck,
+        );
+      }
     }
   }
 
@@ -162,7 +165,11 @@ export async function assertSensitivePathAccess(
 export const validateReadPathAccess = async (
   targetPath: string,
   workspace: ResolvedWorkspace,
-  options: { gitIgnoreAlreadyChecked?: boolean } = {},
+  options: {
+    gitIgnoreAlreadyChecked?: boolean;
+    allowGitIgnored?: boolean;
+    skipSpektaIgnoreCheck?: boolean;
+  } = {},
 ): Promise<string> => {
   const requestedName = path.basename(path.resolve(workspace.root, targetPath));
   if (RESTRICTED_FILES.includes(requestedName) && requestedName !== ".env") {
@@ -196,7 +203,9 @@ export const validateReadPathAccess = async (
   await validatePathAccess(absolutePath, {
     workspaceRoot: requestedRoot,
     displayPath: targetPath,
-    skipGitIgnoreCheck: options.gitIgnoreAlreadyChecked,
+    skipGitIgnoreCheck:
+      options.gitIgnoreAlreadyChecked || options.allowGitIgnored,
+    skipSpektaIgnoreCheck: options.skipSpektaIgnoreCheck,
     allowSensitiveEnv: sensitiveRelative !== undefined,
   });
   if (
@@ -206,12 +215,24 @@ export const validateReadPathAccess = async (
     await validatePathAccess(canonicalPath, {
       workspaceRoot: workspace.canonicalRoot,
       displayPath: targetPath,
-      skipGitIgnoreCheck: options.gitIgnoreAlreadyChecked,
+      skipGitIgnoreCheck:
+        options.gitIgnoreAlreadyChecked || options.allowGitIgnored,
+      skipSpektaIgnoreCheck: options.skipSpektaIgnoreCheck,
       allowSensitiveEnv: sensitiveRelative !== undefined,
     });
   }
   return canonicalPath;
 };
+
+/** Validate a read/list target while allowing Git-ignore status alone. */
+export function validateEligibleReadPathAccess(
+  targetPath: string,
+  workspace: ResolvedWorkspace,
+): Promise<string> {
+  return validateReadPathAccess(targetPath, workspace, {
+    allowGitIgnored: true,
+  });
+}
 
 export const validatePathAccessForWrite = async (
   targetPath: string,
