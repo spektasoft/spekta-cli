@@ -17,7 +17,7 @@ describe.skipIf(missing.length > 0)(
 
     async function prepareOrdinaryPatchFixture(): Promise<void> {
       fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
+        path.join(context.workspace, ".spektaignore"),
         "denied.txt\n",
       );
       fs.writeFileSync(
@@ -28,7 +28,7 @@ describe.skipIf(missing.length > 0)(
         path.join(context.workspace, "visible.txt"),
         "public-v1\n",
       );
-      await fixtureGit(["add", "--", ".gitignore", "visible.txt"]);
+      await fixtureGit(["add", "--", ".spektaignore", "visible.txt"]);
       await fixtureGit(["add", "-f", "--", "denied.txt"]);
       await fixtureGit(["commit", "-m", "PATCH_FIXTURE"]);
       fs.writeFileSync(
@@ -51,7 +51,7 @@ describe.skipIf(missing.length > 0)(
 
     async function prepareDeniedBinaryFixture(): Promise<void> {
       fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
+        path.join(context.workspace, ".spektaignore"),
         "secret.bin\n",
       );
       fs.writeFileSync(
@@ -91,7 +91,7 @@ describe.skipIf(missing.length > 0)(
     async function prepareDeniedRenameDestination(): Promise<void> {
       await fixtureGit(["mv", "filename-only", "renamed-file.txt"]);
       fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
+        path.join(context.workspace, ".spektaignore"),
         "*.private\n",
       );
       await fixtureGit(["mv", "renamed-file.txt", "denied.private"]);
@@ -148,6 +148,92 @@ describe.skipIf(missing.length > 0)(
       expect(result.mcp.content[0].text).toContain("spaces-blob");
     });
 
+    it("includes eligible Git-ignored tracked changes through CLI and MCP", async () => {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "ignored-change.txt\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "ignored-change.txt"),
+        "before\n",
+      );
+      await fixtureGit(["add", "-f", "--", "ignored-change.txt"]);
+      await fixtureGit(["commit", "-m", "IGNORED_TRACKED_DIFF"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "ignored-change.txt"),
+        "after\n",
+      );
+
+      const result = await both(["diff"]);
+
+      expect(result.mcp.isError).toBe(false);
+      for (const text of [result.cli, result.mcp.content[0].text]) {
+        expect(text).toContain("ignored-change.txt");
+        expect(text).toContain("+after");
+      }
+    });
+
+    it("requires a sensitive-file directive before disclosing Git-ignored diffs", async () => {
+      const target = "synthetic-private.key";
+      const privateBefore = "SYNTHETIC_PRIVATE_DIFF_BEFORE";
+      const privateAfter = "SYNTHETIC_PRIVATE_DIFF_AFTER";
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        `${target}\n`,
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, target),
+        `${privateBefore}\n`,
+      );
+      await fixtureGit(["add", "--", ".gitignore"]);
+      await fixtureGit(["add", "-f", "--", target]);
+      await fixtureGit(["commit", "-m", "SENSITIVE_IGNORED_DIFF_BASE"]);
+      fs.writeFileSync(
+        path.join(context.workspace, target),
+        `${privateAfter}\n`,
+      );
+      await fixtureGit(["add", "-f", "--", target]);
+
+      const expectConcealed = async () => {
+        const summary = await both(["diff", "--cached", "--name-only"]);
+        const patch = await both(["diff", "--cached"]);
+        for (const result of [summary, patch]) {
+          expect(result.mcp.isError).toBe(false);
+          for (const text of [result.cli, result.mcp.content[0].text]) {
+            expect(text).not.toContain(target);
+            expect(text).not.toContain(privateBefore);
+            expect(text).not.toContain(privateAfter);
+          }
+        }
+      };
+
+      await expectConcealed();
+      fs.writeFileSync(
+        path.join(context.workspace, ".spektaignore"),
+        `!${target}\n`,
+      );
+      await expectConcealed();
+
+      fs.appendFileSync(
+        path.join(context.workspace, ".spektaignore"),
+        `allow-sensitive: ${target}\n`,
+      );
+      const summary = await both(["diff", "--cached", "--name-only"]);
+      const patch = await both(["diff", "--cached"]);
+      for (const text of [summary.cli, summary.mcp.content[0].text])
+        expect(text).toContain(target);
+      for (const text of [patch.cli, patch.mcp.content[0].text]) {
+        expect(text).toContain(target);
+        expect(text).toContain(privateAfter);
+      }
+
+      fs.appendFileSync(
+        path.join(context.workspace, ".spektaignore"),
+        `${target}\n`,
+      );
+      await expectConcealed();
+    });
+
     const summaryCases = [
       { label: "name-only", args: ["diff", "--name-only"] },
       { label: "name-status", args: ["diff", "--name-status"] },
@@ -158,7 +244,7 @@ describe.skipIf(missing.length > 0)(
       "filters $label summaries by eligible paths",
       async ({ args }) => {
         fs.writeFileSync(
-          path.join(context.workspace, ".gitignore"),
+          path.join(context.workspace, ".spektaignore"),
           "denied.txt\n",
         );
         fs.writeFileSync(
@@ -169,7 +255,7 @@ describe.skipIf(missing.length > 0)(
           path.join(context.workspace, "visible.txt"),
           "visible\n",
         );
-        await fixtureGit(["add", "--", ".gitignore", "visible.txt"]);
+        await fixtureGit(["add", "--", ".spektaignore", "visible.txt"]);
         await fixtureGit(["add", "-f", "--", "denied.txt"]);
         await fixtureGit(["commit", "-m", "SUMMARY_FIXTURE"]);
         fs.writeFileSync(
@@ -217,6 +303,27 @@ describe.skipIf(missing.length > 0)(
       expect(result.cli).toContain("renamed-file.txt");
       expect(result.mcp.content[0].text).toContain("filename-only");
       expect(result.mcp.content[0].text).toContain("renamed-file.txt");
+    });
+
+    it("includes Git-ignored rename endpoints when both remain eligible", async () => {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "renamed-ignored.txt\n",
+      );
+      await fixtureGit([
+        "mv",
+        "--force",
+        "filename-only",
+        "renamed-ignored.txt",
+      ]);
+
+      const result = await both(["diff", "--cached"]);
+
+      expect(result.mcp.isError).toBe(false);
+      for (const text of [result.cli, result.mcp.content[0].text]) {
+        expect(text).toContain("filename-only");
+        expect(text).toContain("renamed-ignored.txt");
+      }
     });
 
     it("withholds a denied rename destination", async () => {

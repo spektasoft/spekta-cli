@@ -33,35 +33,46 @@ describe("sensitive file defaults", () => {
 describe("exact sensitive exceptions", () => {
   it("matches only the exact workspace-relative path", () => {
     expect(
-      hasExactSensitiveException("nested/private.key", ["!nested/private.key"]),
-    ).toBe(true);
-    expect(
-      hasExactSensitiveException(String.raw`nested\private.key`, [
-        "!nested/private.key",
+      hasExactSensitiveException("nested/private.key", [
+        "allow-sensitive: nested/private.key",
       ]),
     ).toBe(true);
     expect(
-      hasExactSensitiveException("nested/private.key", ["!private.key"]),
+      hasExactSensitiveException(String.raw`nested\private.key`, [
+        "allow-sensitive: nested/private.key",
+      ]),
+    ).toBe(true);
+    expect(
+      hasExactSensitiveException("nested/private.key", [
+        "allow-sensitive: private.key",
+      ]),
     ).toBe(false);
     expect(
-      hasExactSensitiveException("nested/other.key", ["!nested/private.key"]),
+      hasExactSensitiveException("nested/other.key", [
+        "allow-sensitive: nested/private.key",
+      ]),
     ).toBe(false);
-    expect(hasExactSensitiveException("private.key", ["!private.key"])).toBe(
-      true,
-    );
+    expect(
+      hasExactSensitiveException("private.key", [
+        "allow-sensitive: private.key",
+      ]),
+    ).toBe(true);
+    expect(
+      hasExactSensitiveException("nested/private.key", ["!nested/private.key"]),
+    ).toBe(false);
   });
 
   it.each([
-    "!*.key",
-    "!nested/*.key",
-    "!nested/private.ke?",
-    "!nested/private.[k]ey",
-    "!/nested/private.key",
-    "!./nested/private.key",
-    "!nested/../nested/private.key",
-    String.raw`!nested\private.key`,
+    "allow-sensitive: *.key",
+    "allow-sensitive: nested/*.key",
+    "allow-sensitive: nested/private.ke?",
+    "allow-sensitive: nested/private.[k]ey",
+    "allow-sensitive: /nested/private.key",
+    "allow-sensitive: ./nested/private.key",
+    "allow-sensitive: nested/../nested/private.key",
+    String.raw`allow-sensitive: nested\private.key`,
     "nested/private.key",
-    "!",
+    "allow-sensitive:",
   ])("does not grant an exception for %s", (pattern) => {
     expect(hasExactSensitiveException("nested/private.key", [pattern])).toBe(
       false,

@@ -70,8 +70,9 @@ export const NATIVE_HELP: Record<string, HelpTopic> = {
         heading: "Restrictions",
         lines: [
           "Only eligible files inside the workspace may be disclosed. Outside paths and symlink escapes are rejected.",
-          "Git ignore and Spekta ignore rules apply; explicit Spekta negations can allow Git-ignored files.",
-          "Restricted filenames .env, .gitignore and .spektaignore cannot be read, and files larger than 10 MB are rejected.",
+          "Git ignore and Spekta ignore rules apply; explicit Spekta negations can allow Git-ignored files but do not grant sensitive-file exceptions.",
+          "Sensitive defaults cover .env variants, private-key and certificate-store extensions, and common credential names. An exact workspace exception uses allow-sensitive: <path>; global configuration and ordinary negations cannot grant one. See guides/configuration.md for the exact defaults and symlink rules.",
+          "The restricted filenames .gitignore and .spektaignore cannot be read, and files larger than 10 MB are rejected.",
           "Unsupported options or nonpositive/reversed ranges yield usage_error before reading. unavailable_access conceals denied paths and existence; internal_failure conceals private diagnostics. Both identify operand positions when possible and exit nonzero. Help performs no read, save or initialization.",
         ],
       },

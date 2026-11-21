@@ -184,7 +184,7 @@ describe("workspace read policy", () => {
 
     await fs.appendFile(
       path.join(fixture.home, ".spektaignore"),
-      "!keys/private.key\n",
+      "!keys/private.key\nallow-sensitive: keys/private.key\n",
     );
     await fs.appendFile(
       path.join(fixture.root, ".spektaignore"),
@@ -197,6 +197,14 @@ describe("workspace read policy", () => {
     await fs.appendFile(
       path.join(fixture.root, ".spektaignore"),
       "!keys/private.key\n",
+    );
+    await expect(
+      validateReadPathAccess("keys/private.key", workspace),
+    ).rejects.toThrow("restricted system file");
+
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "allow-sensitive: keys/private.key\n",
     );
     await expect(
       validateReadPathAccess("keys/private.key", workspace),
@@ -234,6 +242,13 @@ describe("workspace read policy", () => {
     );
     await expect(
       validateReadPathAccess("key-alias.txt", workspace),
+    ).rejects.toThrow("restricted system file");
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "allow-sensitive: keys/private.key\n",
+    );
+    await expect(
+      validateReadPathAccess("key-alias.txt", workspace),
     ).resolves.toBe(path.join(fixture.root, "keys", "private.key"));
 
     await fs.appendFile(
@@ -251,7 +266,10 @@ describe("workspace read policy", () => {
     await expect(
       validateReadPathAccess(".env.example", workspace),
     ).resolves.toBe(path.join(fixture.root, ".env.example"));
-    await fs.appendFile(path.join(fixture.root, ".spektaignore"), "!.env\n");
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "allow-sensitive: .env\n",
+    );
     await expect(validateReadPathAccess(".env", workspace)).resolves.toBe(
       path.join(fixture.root, ".env"),
     );

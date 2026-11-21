@@ -2,11 +2,18 @@ import fs from "fs-extra";
 import path from "path";
 import { getAssetPaths, HOME_IGNORE } from "./paths.js";
 
+const SENSITIVE_EXCEPTION_DIRECTIVE = "allow-sensitive:";
+
 const parseIgnoreContent = (content: string): string[] => {
   return content
     .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith("#"));
+    .filter(
+      (line) =>
+        line &&
+        !line.startsWith("#") &&
+        !line.startsWith(SENSITIVE_EXCEPTION_DIRECTIVE),
+    );
 };
 
 export const getIgnorePatterns = async (

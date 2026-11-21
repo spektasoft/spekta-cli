@@ -196,7 +196,7 @@ describe("CLI and existing MCP workspace boundaries", () => {
     }
     expect(output.join("")).not.toContain("EXTERNAL");
   });
-  it("CLI and MCP reads enforce exact sensitive-file exceptions", async () => {
+  it("CLI and MCP reads require an exact workspace sensitive-file directive", async () => {
     const target = "keys/private.key";
     const sibling = "keys/other.key";
     await fs.outputFile(path.join(fixture.root, target), "SYNTHETIC_PRIVATE\n");
@@ -224,8 +224,43 @@ describe("CLI and existing MCP workspace boundaries", () => {
     expect(JSON.stringify(denied)).not.toContain("SYNTHETIC_PRIVATE");
 
     await fs.appendFile(
+      path.join(fixture.home, ".spektaignore"),
+      `allow-sensitive: ${target}\n`,
+    );
+    process.exitCode = undefined;
+    output.length = 0;
+    await dispatchCommand("read", [target]);
+    expect(process.exitCode).toBe(1);
+    expect(output.join("")).not.toContain(target);
+    expect(output.join("")).not.toContain("SYNTHETIC_PRIVATE");
+    const globalDenied = await TOOL_REGISTRY.spekta_read.handler({
+      paths: [target],
+    });
+    expect(globalDenied.isError).toBe(true);
+    expect(JSON.stringify(globalDenied)).not.toContain(target);
+    expect(JSON.stringify(globalDenied)).not.toContain("SYNTHETIC_PRIVATE");
+
+    await fs.remove(path.join(fixture.home, ".spektaignore"));
+    await fs.appendFile(
       path.join(fixture.root, ".spektaignore"),
       `!${target}\n`,
+    );
+    process.exitCode = undefined;
+    output.length = 0;
+    await dispatchCommand("read", [target]);
+    expect(process.exitCode).toBe(1);
+    expect(output.join("")).not.toContain(target);
+    expect(output.join("")).not.toContain("SYNTHETIC_PRIVATE");
+    const stillDenied = await TOOL_REGISTRY.spekta_read.handler({
+      paths: [target],
+    });
+    expect(stillDenied.isError).toBe(true);
+    expect(JSON.stringify(stillDenied)).not.toContain(target);
+    expect(JSON.stringify(stillDenied)).not.toContain("SYNTHETIC_PRIVATE");
+
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      `allow-sensitive: ${target}\n`,
     );
     process.exitCode = undefined;
     output.length = 0;

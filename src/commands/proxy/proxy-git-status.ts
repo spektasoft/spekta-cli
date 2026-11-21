@@ -249,7 +249,7 @@ async function areEligibleGitPaths(
       if (
         candidates.some(
           (candidate) =>
-            ignoreMatches.get(candidate.split(path.sep).join("/")) !== null,
+            ignoreMatches.get(candidate.split(path.sep).join("/")) === "spekta",
         )
       ) {
         eligibility.set(name, false);
@@ -294,10 +294,13 @@ export async function isEligibleGitPath(
         candidate,
         { gitNoIndex: true },
         resolved.canonicalRoot,
+        true,
       );
     }
     if (await fs.pathExists(target.absolutePath))
-      await validateReadPathAccess(name, resolved);
+      await validateReadPathAccess(name, resolved, {
+        allowGitIgnored: true,
+      });
     return true;
   } catch {
     return false;

@@ -86,13 +86,13 @@ Spekta respects a custom ignore hierarchy. Patterns are cumulative and follow th
 
 Spekta protects sensitive file names at any directory depth. The defaults cover `.env` and `.env.*`, except `.env.example`; files ending in `.pem`, `.key`, `.p12`, `.pfx`, `.jks`, or `.keystore`; and files named `.npmrc`, `.netrc`, or `credentials`. The existing restrictions on `.gitignore` and `.spektaignore` also remain in effect.
 
-To allow one sensitive path, add its exact workspace-relative path as a negation in the workspace `.spektaignore`, for example:
+To allow one sensitive path, add an `allow-sensitive:` directive with its exact workspace-relative path in the workspace `.spektaignore`, for example:
 
 ```text
-!test-fixtures/example.key
+allow-sensitive: test-fixtures/example.key
 ```
 
-Use forward slashes. A name without a slash identifies a file at the workspace root for this sensitive-file exception. Wildcard negations and global negations cannot grant a sensitive-file exception. A positive Spekta-ignore rule still blocks the path, and the exception does not override workspace boundaries or other access restrictions.
+Use forward slashes. A name without a slash identifies a file at the workspace root. Ordinary `!path` negations retain their ignore-rule meaning and do not grant sensitive-file exceptions. Global configuration cannot grant an exception. A positive Spekta-ignore rule still blocks the path, and the exception does not override workspace boundaries or other access restrictions.
 
 For a symlink to a sensitive target, except the exact canonical target path. The alias does not require a second sensitive-file exception. Other restrictions are checked for both the requested path and the canonical target.
 

@@ -27,12 +27,18 @@ export function hasExactSensitiveException(
 ): boolean {
   const normalized = relativePath.replaceAll("\\", "/");
   return workspacePatterns.some((pattern) => {
-    if (!pattern.startsWith("!")) return false;
-    const candidate = pattern.slice(1);
+    const directive = "allow-sensitive:";
+    if (!pattern.startsWith(directive)) return false;
+    const candidate = pattern.slice(directive.length).trim();
     if (
       !candidate ||
-      candidate.startsWith("/") ||
+      path.posix.isAbsolute(candidate) ||
+      path.win32.isAbsolute(candidate) ||
       /[\\*?[\]]/.test(candidate) ||
+      Array.from(candidate).some(
+        (character) =>
+          character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+      ) ||
       candidate
         .split("/")
         .some((part) => !part || part === "." || part === "..")

@@ -67,6 +67,20 @@ describe("CLI sensitive search policy", () => {
     errors.length = 0;
     process.exitCode = undefined;
     await dispatchCommand("rg", ["SYNTHETIC_CLI_PRIVATE", target]);
+    expect(process.exitCode).toBe(1);
+    expect(output.join("") + errors.join("")).not.toContain(target);
+    expect(output.join("") + errors.join("")).not.toContain(
+      "SYNTHETIC_CLI_PRIVATE",
+    );
+
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      `allow-sensitive: ${target}\n`,
+    );
+    output.length = 0;
+    errors.length = 0;
+    process.exitCode = undefined;
+    await dispatchCommand("rg", ["SYNTHETIC_CLI_PRIVATE", target]);
     expect(output.join("")).toContain("SYNTHETIC_CLI_PRIVATE");
   });
 });
@@ -141,11 +155,33 @@ describe("MCP sensitive search policy", () => {
       path.join(fixture.root, ".spektaignore"),
       `!${target}\n`,
     );
+    const ordinaryNegationDenied = await TOOL_REGISTRY.spekta_rg.handler({
+      patterns: ["SYNTHETIC_SEARCH"],
+      paths: [target],
+    });
+    expect(ordinaryNegationDenied.isError).toBe(true);
+    expect(JSON.stringify(ordinaryNegationDenied)).not.toContain(target);
+    expect(JSON.stringify(ordinaryNegationDenied)).not.toContain(
+      "SYNTHETIC_SEARCH_PRIVATE",
+    );
+
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      `allow-sensitive: ${target}\n`,
+    );
     const allowed = await TOOL_REGISTRY.spekta_rg.handler({
       patterns: ["SYNTHETIC_SEARCH"],
       paths: [target],
     });
     expect(allowed.content[0].text).toContain("SYNTHETIC_SEARCH_PRIVATE");
+
+    const cliOutput: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      cliOutput.push(String(chunk));
+      return true;
+    });
+    await dispatchCommand("rg", ["SYNTHETIC_SEARCH", target]);
+    expect(cliOutput.join("")).toContain("SYNTHETIC_SEARCH_PRIVATE");
 
     const deniedSibling = await TOOL_REGISTRY.spekta_rg.handler({
       patterns: ["SYNTHETIC_SEARCH"],
