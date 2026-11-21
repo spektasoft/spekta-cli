@@ -63,7 +63,7 @@ describe.skipIf(missing.length > 0)(
 
     it("filters deleted and denied paths in default show patches", async () => {
       fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
+        path.join(context.workspace, ".spektaignore"),
         "denied.txt\n",
       );
       fs.writeFileSync(
@@ -74,7 +74,7 @@ describe.skipIf(missing.length > 0)(
         path.join(context.workspace, "deleted-history.txt"),
         "VISIBLE_DELETED_BODY\n",
       );
-      await fixtureGit(["add", "--", ".gitignore", "deleted-history.txt"]);
+      await fixtureGit(["add", "--", ".spektaignore", "deleted-history.txt"]);
       await fixtureGit(["add", "-f", "--", "denied.txt"]);
       await fixtureGit(["commit", "-m", "DENIED_PATCH_MESSAGE"]);
       await fixtureGit(["rm", "--", "deleted-history.txt"]);
@@ -132,14 +132,14 @@ describe.skipIf(missing.length > 0)(
 
     it("withholds ignored historical blobs without echoing their selector", async () => {
       fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
+        path.join(context.workspace, ".spektaignore"),
         "historical-secret.txt\n",
       );
       fs.writeFileSync(
         path.join(context.workspace, "historical-secret.txt"),
         "HISTORICAL_SECRET_BLOB_BODY\n",
       );
-      await fixtureGit(["add", "--", ".gitignore"]);
+      await fixtureGit(["add", "--", ".spektaignore"]);
       await fixtureGit(["add", "-f", "--", "historical-secret.txt"]);
       await fixtureGit(["commit", "-m", "safe historical fixture"]);
 
@@ -151,9 +151,109 @@ describe.skipIf(missing.length > 0)(
       }
     });
 
-    async function setupMixedHistoryFixture() {
+    it("includes eligible Git-ignored historical names, patches, and blobs", async () => {
       fs.writeFileSync(
         path.join(context.workspace, ".gitignore"),
+        "ignored-history.txt\n",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, "ignored-history.txt"),
+        "history-before\n",
+      );
+      await fixtureGit(["add", "-f", "--", "ignored-history.txt"]);
+      await fixtureGit(["commit", "-m", "IGNORED_HISTORY_BASE"]);
+      fs.writeFileSync(
+        path.join(context.workspace, "ignored-history.txt"),
+        "history-after\n",
+      );
+      await fixtureGit(["add", "-f", "--", "ignored-history.txt"]);
+      await fixtureGit(["commit", "-m", "IGNORED_HISTORY_CHANGE"]);
+
+      const summary = await both(["log", "--name-only", "-n", "1"]);
+      const patch = await both(["show", "HEAD"]);
+      const blob = await both(["show", "HEAD:ignored-history.txt"]);
+
+      for (const result of [summary, patch]) {
+        expect(result.mcp.isError).toBe(false);
+        expect(result.cli).toContain("ignored-history.txt");
+        expect(result.mcp.content[0].text).toContain("ignored-history.txt");
+      }
+      expect(patch.mcp.content[0].text).toContain("history-after");
+      expect(blob.mcp.isError).toBe(false);
+      expect(blob.cli).toContain("history-after");
+      expect(blob.mcp.content[0].text).toContain("history-after");
+    });
+
+    it("requires a sensitive-file directive before disclosing Git-ignored history", async () => {
+      const target = "synthetic-private.key";
+      const privateBefore = "SYNTHETIC_PRIVATE_HISTORY_BEFORE";
+      const privateAfter = "SYNTHETIC_PRIVATE_HISTORY_AFTER";
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        `${target}\n`,
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, target),
+        `${privateBefore}\n`,
+      );
+      await fixtureGit(["add", "--", ".gitignore"]);
+      await fixtureGit(["add", "-f", "--", target]);
+      await fixtureGit(["commit", "-m", "SENSITIVE_IGNORED_HISTORY_BASE"]);
+      fs.writeFileSync(
+        path.join(context.workspace, target),
+        `${privateAfter}\n`,
+      );
+      await fixtureGit(["add", "-f", "--", target]);
+      await fixtureGit(["commit", "-m", "SENSITIVE_IGNORED_HISTORY_CHANGE"]);
+
+      const expectConcealed = async () => {
+        const summary = await both(["log", "--name-only", "-n", "1"]);
+        const patch = await both(["show", "HEAD"]);
+        const blob = await both(["show", `HEAD:${target}`]);
+        for (const result of [summary, patch, blob]) {
+          for (const text of [result.cli, result.mcp.content[0].text]) {
+            expect(text).not.toContain(target);
+            expect(text).not.toContain(privateBefore);
+            expect(text).not.toContain(privateAfter);
+          }
+        }
+      };
+
+      await expectConcealed();
+      fs.writeFileSync(
+        path.join(context.workspace, ".spektaignore"),
+        `!${target}\n`,
+      );
+      await expectConcealed();
+
+      fs.appendFileSync(
+        path.join(context.workspace, ".spektaignore"),
+        `allow-sensitive: ${target}\n`,
+      );
+      const summary = await both(["log", "--name-only", "-n", "1"]);
+      const patch = await both(["show", "HEAD"]);
+      const blob = await both(["show", `HEAD:${target}`]);
+      for (const result of [summary, patch]) {
+        expect(result.mcp.isError).toBe(false);
+        for (const text of [result.cli, result.mcp.content[0].text])
+          expect(text).toContain(target);
+      }
+      for (const text of [patch.cli, patch.mcp.content[0].text])
+        expect(text).toContain(privateAfter);
+      expect(blob.mcp.isError).toBe(false);
+      expect(blob.cli).toContain(privateAfter);
+      expect(blob.mcp.content[0].text).toContain(privateAfter);
+
+      fs.appendFileSync(
+        path.join(context.workspace, ".spektaignore"),
+        `${target}\n`,
+      );
+      await expectConcealed();
+    });
+
+    async function setupMixedHistoryFixture() {
+      fs.writeFileSync(
+        path.join(context.workspace, ".spektaignore"),
         "denied.txt\n",
       );
       fs.writeFileSync(path.join(context.workspace, "denied.txt"), "hidden\n");
@@ -161,7 +261,7 @@ describe.skipIf(missing.length > 0)(
         path.join(context.workspace, "visible.txt"),
         "visible\n",
       );
-      await fixtureGit(["add", "--", ".gitignore", "visible.txt"]);
+      await fixtureGit(["add", "--", ".spektaignore", "visible.txt"]);
       await fixtureGit(["add", "-f", "--", "denied.txt"]);
       await fixtureGit(["commit", "-m", "MIXED_HISTORY_SECRET"]);
       fs.removeSync(path.join(context.workspace, "denied.txt"));
@@ -230,7 +330,7 @@ describe.skipIf(missing.length > 0)(
       );
 
       fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
+        path.join(context.workspace, ".spektaignore"),
         "*.private\n",
       );
       await fixtureGit(["mv", "renamed-history.txt", "denied.private"]);
@@ -241,6 +341,28 @@ describe.skipIf(missing.length > 0)(
         expect(text).not.toContain("renamed-history.txt");
         expect(text).not.toContain("denied.private");
         expect(text).not.toContain("DENIED_RENAME");
+      }
+    });
+
+    it("includes both Git-ignored historical rename endpoints", async () => {
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        "renamed-history-ignored.txt\n",
+      );
+      await fixtureGit([
+        "mv",
+        "--force",
+        "filename-only",
+        "renamed-history-ignored.txt",
+      ]);
+      await fixtureGit(["commit", "-m", "IGNORED_HISTORY_RENAME"]);
+
+      const result = await both(["show", "--name-status", "HEAD"]);
+
+      expect(result.mcp.isError).toBe(false);
+      for (const text of [result.cli, result.mcp.content[0].text]) {
+        expect(text).toContain("filename-only");
+        expect(text).toContain("renamed-history-ignored.txt");
       }
     });
 

@@ -1,11 +1,10 @@
-import { execa } from "execa";
 import fs from "fs-extra";
 import ignore from "ignore";
 import path from "node:path";
 import { getIgnorePatterns } from "../../core/config";
 import {
-  isWhitelisted,
   RESTRICTED_FILES,
+  isWhitelisted,
   validateReadPathAccess,
 } from "../../utils/security";
 import type { ResolvedWorkspace } from "../../utils/workspace";
@@ -84,27 +83,39 @@ function parseLsOutput(stdout: string): string[] | null {
 }
 
 /** Directory-only ignore patterns only match when the path ends in a slash. */
-async function isIgnoredDirectory(
+export function isIgnoredDirectory(
   relativePath: string,
-  root: string,
   patterns: string[],
-): Promise<boolean> {
-  const directoryPath = `${relativePath.split(path.sep).join("/")}/`;
+): boolean {
+  return (
+    isSpektaPathIgnored(relativePath, patterns) ||
+    isSpektaPathIgnored(relativePath, patterns, true)
+  );
+}
+
+export function isSpektaPathIgnored(
+  relativePath: string,
+  patterns: string[],
+  directory = false,
+): boolean {
+  const normalized = relativePath.split(path.sep).join("/");
+  const candidate = directory ? `${normalized}/` : normalized;
   try {
-    if (patterns.length > 0 && ignore().add(patterns).ignores(directoryPath)) {
-      return true;
-    }
+    return patterns.length > 0 && ignore().add(patterns).ignores(candidate);
   } catch {
     return true;
   }
-  try {
-    await execa("git", ["check-ignore", "-q", "--", directoryPath], {
-      cwd: root,
-    });
-  } catch {
-    return false;
-  }
-  return !isWhitelisted(relativePath, patterns);
+}
+
+export function isExplicitSpektaDirectoryIgnored(
+  relativePath: string,
+  patterns: string[],
+): boolean {
+  const candidate = relativePath.split(path.sep).join("/");
+  return (
+    isSpektaPathIgnored(relativePath, patterns, true) &&
+    !isWhitelisted(candidate, patterns)
+  );
 }
 
 export async function isEligibleEntry(
@@ -118,14 +129,18 @@ export async function isEligibleEntry(
     const absolutePath = path.resolve(workspace.root, requested);
     // The decoded name is a literal directory entry. Passing it as a relative
     // workspace path would normalize POSIX backslashes as separators.
-    const canonicalPath = await validateReadPathAccess(absolutePath, workspace);
+    const canonicalPath = await validateReadPathAccess(
+      absolutePath,
+      workspace,
+      { allowGitIgnored: true, skipSpektaIgnoreCheck: true },
+    );
     const canonicalSegments = path
       .relative(workspace.canonicalRoot, canonicalPath)
       .split(path.sep);
     if (canonicalSegments.some((part) => RESTRICTED_FILES.includes(part))) {
       return false;
     }
-    if (!(await fs.stat(canonicalPath)).isDirectory()) return true;
+    const isDirectory = (await fs.stat(canonicalPath)).isDirectory();
     const requestedRelative = path.relative(workspace.root, absolutePath);
     const canonicalRelative = path.relative(
       workspace.canonicalRoot,
@@ -134,7 +149,9 @@ export async function isEligibleEntry(
     for (const relative of new Set([requestedRelative, canonicalRelative])) {
       if (
         relative !== "" &&
-        (await isIgnoredDirectory(relative, workspace.canonicalRoot, patterns))
+        (isDirectory
+          ? isIgnoredDirectory(relative, patterns)
+          : isSpektaPathIgnored(relative, patterns))
       ) {
         return false;
       }

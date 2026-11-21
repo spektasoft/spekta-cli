@@ -8,12 +8,14 @@ import { dispatchCommand } from "../../cli/commands";
 import { createToolRegistry } from "../../api/mcp-server/registry";
 import { getTokenCount } from "../../utils/read-utils";
 import { listContentAllowance } from "./proxy-ls-batch";
+import { execa } from "execa";
 
 let root: string;
 let bin: string;
 let workspace: string;
 let marker: string;
 let savedCwd: string;
+let systemPath: string | undefined;
 let savedExitCode: typeof process.exitCode;
 const repository = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -22,6 +24,7 @@ const repository = path.resolve(
 
 beforeEach(async () => {
   savedCwd = process.cwd();
+  systemPath = process.env.PATH;
   savedExitCode = process.exitCode;
   process.exitCode = undefined;
   root = await fs.mkdtemp(path.join(os.tmpdir(), "spekta-ls-public-"));
@@ -128,6 +131,152 @@ async function invoke(
 }
 
 describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
+  it("lists Git-ignored entries at nested levels without exposing Spekta-denied entries", async () => {
+    vi.stubEnv("PATH", [bin, systemPath].filter(Boolean).join(path.delimiter));
+    try {
+      await execa("git", ["init", "--quiet"], { cwd: workspace });
+    } finally {
+      vi.stubEnv(
+        "PATH",
+        [bin, systemPath].filter(Boolean).join(path.delimiter),
+      );
+    }
+    await fs.writeFile(
+      path.join(workspace, ".gitignore"),
+      "ignored-dir/\nignored-root.txt\n",
+    );
+    await fs.writeFile(path.join(workspace, "ignored-root.txt"), "x");
+    await fs.ensureDir(path.join(workspace, "ignored-dir"));
+    await fs.writeFile(path.join(workspace, "ignored-dir", "nested.txt"), "x");
+    await fs.writeFile(
+      path.join(workspace, ".spektaignore"),
+      "ignored-dir/denied.txt\n",
+    );
+    await fs.writeFile(path.join(workspace, "ignored-dir", "denied.txt"), "x");
+    try {
+      expect(
+        (
+          await execa("git", ["check-ignore", "-q", "--", "ignored-root.txt"], {
+            cwd: workspace,
+            reject: false,
+          })
+        ).exitCode,
+      ).toBe(0);
+      expect(
+        (
+          await execa(
+            "git",
+            ["check-ignore", "-q", "--", "ignored-dir/nested.txt"],
+            { cwd: workspace, reject: false },
+          )
+        ).exitCode,
+      ).toBe(0);
+    } finally {
+      vi.stubEnv(
+        "PATH",
+        [bin, systemPath].filter(Boolean).join(path.delimiter),
+      );
+    }
+
+    const rootListing = await invoke(transport, ["."]);
+    const nestedListing = await invoke(transport, ["ignored-dir"]);
+    expect(rootListing.text).toContain('"ignored-root.txt"');
+    expect(rootListing.text).toContain('"ignored-dir"');
+    expect(nestedListing.text).toContain('"nested.txt"');
+    expect(nestedListing.text).not.toContain("denied.txt");
+  });
+
+  it("rejects explicit listings through a Spekta-denied directory alias", async () => {
+    if (process.platform === "win32") return;
+    await fs.ensureDir(path.join(workspace, "real-directory"));
+    await fs.writeFile(
+      path.join(workspace, "real-directory", "visible.txt"),
+      "x",
+    );
+    await fs.symlink(
+      path.join(workspace, "real-directory"),
+      path.join(workspace, "denied-alias"),
+      "dir",
+    );
+    await fs.writeFile(
+      path.join(workspace, ".spektaignore"),
+      "denied-alias/\n",
+    );
+
+    const result = await invoke(transport, ["denied-alias"]);
+    expect(result.text).toContain("Operand 1: unavailable; unavailable_access");
+    expect(result.text).not.toContain("denied-alias");
+    expect(result.text).not.toContain("visible.txt");
+  });
+
+  it("keeps a trailing-slash negation from overriding the explicit operand", async () => {
+    await fs.ensureDir(path.join(workspace, "blocked", "child"));
+    await fs.writeFile(
+      path.join(workspace, "blocked", "child", "visible.txt"),
+      "x",
+    );
+    await fs.writeFile(
+      path.join(workspace, ".spektaignore"),
+      "blocked/\n!blocked/child/\n",
+    );
+
+    const result = await invoke(transport, ["blocked/child"]);
+    expect(result.text).toContain("Operand 1: unavailable; unavailable_access");
+    expect(result.text).not.toContain("blocked/child");
+    expect(result.text).not.toContain('"visible.txt"');
+  });
+
+  it("preserves the slashless legacy negation override for an explicit operand", async () => {
+    await fs.ensureDir(path.join(workspace, "blocked", "child"));
+    await fs.writeFile(
+      path.join(workspace, "blocked", "child", "visible.txt"),
+      "x",
+    );
+    await fs.writeFile(
+      path.join(workspace, ".spektaignore"),
+      "blocked/\n!blocked/child\n",
+    );
+
+    const result = await invoke(transport, ["blocked/child"]);
+    expect(result.text).toContain('Operand 1: returned; "blocked/child"');
+    expect(result.text).toContain("No eligible entries in this listing.");
+    expect(result.text).not.toContain('"visible.txt"');
+  });
+
+  it("hides a discovered symlink to a negated directory", async () => {
+    await fs.ensureDir(path.join(workspace, "blocked", "child"));
+    await fs.writeFile(
+      path.join(workspace, "blocked", "child", "secret-child.txt"),
+      "x",
+    );
+    await fs.symlink(
+      path.join(workspace, "blocked", "child"),
+      path.join(workspace, "child-alias"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await fs.writeFile(
+      path.join(workspace, ".spektaignore"),
+      "blocked/\n!blocked/child/\n",
+    );
+
+    const result = await invoke(transport, ["."]);
+    expect(result.text).not.toContain('"child-alias"');
+    expect(result.text).not.toContain("secret-child.txt");
+  });
+
+  it("checks slashless directory rules after a trailing-slash negation", async () => {
+    await fs.ensureDir(path.join(workspace, "private-dir"));
+    await fs.writeFile(path.join(workspace, "private-dir", "secret.txt"), "x");
+    await fs.writeFile(
+      path.join(workspace, ".spektaignore"),
+      "private-dir\n!private-dir/\n",
+    );
+
+    const result = await invoke(transport, ["."]);
+    expect(result.text).not.toContain('"private-dir"');
+    expect(result.text).not.toContain("secret.txt");
+  });
+
   it("uses the default root and treats explicit dot and spaced paths literally", async () => {
     await fs.writeFile(path.join(workspace, "root-entry"), "x");
     await fs.ensureDir(path.join(workspace, ".hidden dir"));
@@ -224,35 +373,39 @@ describe.each(["cli", "mcp"] as const)("public ls over %s", (transport) => {
     expect(empty.text.replace('"empty"', '"excluded"')).toBe(excluded.text);
   });
 
-  it("keeps entries whole and reports long results as incomplete", async () => {
-    const directory = "operand-" + "d".repeat(110);
-    await fs.ensureDir(path.join(workspace, directory));
-    const longNames = Array.from(
-      { length: 70 },
-      (_, index) =>
-        `entry-${String(index).padStart(2, "0")}-${randomBytes(48).toString("hex")}.txt`,
-    );
-    for (const name of longNames)
-      await fs.writeFile(path.join(workspace, directory, name), "x");
-    const result = await invoke(transport, [directory], 800);
-    expect(result.text).toContain(
-      "Operand 1: incomplete; output_limit_exceeded",
-    );
-    expect(result.text).toContain(
-      "Listing incomplete. List a narrower directory",
-    );
-    for (const line of result.text
-      .split("\n")
-      .filter((value) => value.startsWith('"entry-'))) {
-      expect(longNames.map((name) => JSON.stringify(name))).toContain(line);
-    }
-    expect(
-      longNames.some((name) => result.text.includes(JSON.stringify(name))),
-    ).toBe(true);
-    expect(
-      longNames.some((name) => !result.text.includes(JSON.stringify(name))),
-    ).toBe(true);
-  }, process.platform === "win32" ? 15_000 : 5_000);
+  it(
+    "keeps entries whole and reports long results as incomplete",
+    async () => {
+      const directory = "operand-" + "d".repeat(110);
+      await fs.ensureDir(path.join(workspace, directory));
+      const longNames = Array.from(
+        { length: 70 },
+        (_, index) =>
+          `entry-${String(index).padStart(2, "0")}-${randomBytes(48).toString("hex")}.txt`,
+      );
+      for (const name of longNames)
+        await fs.writeFile(path.join(workspace, directory, name), "x");
+      const result = await invoke(transport, [directory], 800);
+      expect(result.text).toContain(
+        "Operand 1: incomplete; output_limit_exceeded",
+      );
+      expect(result.text).toContain(
+        "Listing incomplete. List a narrower directory",
+      );
+      for (const line of result.text
+        .split("\n")
+        .filter((value) => value.startsWith('"entry-'))) {
+        expect(longNames.map((name) => JSON.stringify(name))).toContain(line);
+      }
+      expect(
+        longNames.some((name) => result.text.includes(JSON.stringify(name))),
+      ).toBe(true);
+      expect(
+        longNames.some((name) => !result.text.includes(JSON.stringify(name))),
+      ).toBe(true);
+    },
+    process.platform === "win32" ? 15_000 : 5_000,
+  );
 
   it("keeps duplicate operands and duplicate entry names in order", async () => {
     await fs.ensureDir(path.join(workspace, "repeat"));

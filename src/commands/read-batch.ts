@@ -14,7 +14,7 @@ import {
   type FileRequest,
   type VersionedFileLines,
 } from "../utils/read-utils";
-import { validateReadPathAccess } from "../utils/security";
+import { validateEligibleReadPathAccess } from "../utils/security";
 import {
   resolveWorkspace,
   type ResolvedWorkspace,
@@ -93,13 +93,17 @@ function renderSlot(
   if (!slot.data && !(reserve && slot.readPath)) {
     if (!reserve) return renderOutcomeRow(slot.position, slot.status, start);
     return mostExpensiveResponse(
-      ["unavailable", "unattempted", "version_mismatch", "internal_failure"].map(
-        (status) =>
-          renderOutcomeRow(
-            slot.position,
-            status as BatchOperandStatus,
-            MAX_NUMBER,
-          ),
+      [
+        "unavailable",
+        "unattempted",
+        "version_mismatch",
+        "internal_failure",
+      ].map((status) =>
+        renderOutcomeRow(
+          slot.position,
+          status as BatchOperandStatus,
+          MAX_NUMBER,
+        ),
       ),
       measure,
     );
@@ -238,7 +242,12 @@ export async function getReadBatchOutcome(
   try {
     resolvedWorkspace = await resolveWorkspace(workspace);
   } catch {
-    const text = renderBatch(slots, zeros, options.increaseHint, options.measure);
+    const text = renderBatch(
+      slots,
+      zeros,
+      options.increaseHint,
+      options.measure,
+    );
     if (options.measure(text, true) > options.budget) return rejectMetadata();
     return {
       status: "partial_result",
@@ -249,7 +258,7 @@ export async function getReadBatchOutcome(
 
   for (const slot of slots) {
     try {
-      slot.readPath = await validateReadPathAccess(
+      slot.readPath = await validateEligibleReadPathAccess(
         slot.request.path,
         resolvedWorkspace,
       );
@@ -282,7 +291,7 @@ export async function getReadBatchOutcome(
       );
       let currentPath: string;
       try {
-        currentPath = await validateReadPathAccess(
+        currentPath = await validateEligibleReadPathAccess(
           slot.request.path,
           resolvedWorkspace,
         );
@@ -318,7 +327,7 @@ export async function getReadBatchOutcome(
       slot.overviewContent = undefined;
       slot.costs = undefined;
       try {
-        const currentPath = await validateReadPathAccess(
+        const currentPath = await validateEligibleReadPathAccess(
           slot.request.path,
           resolvedWorkspace,
         );

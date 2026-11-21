@@ -6,7 +6,11 @@ import {
   resolveWorkspaceMutationTarget,
   type WorkspaceContext,
 } from "../../utils/workspace";
-import { RESTRICTED_FILES, validateReadPathAccess } from "../../utils/security";
+import {
+  assertSensitivePathAccess,
+  RESTRICTED_FILES,
+  validateReadPathAccess,
+} from "../../utils/security";
 import {
   assertPathNotIgnored,
   getIgnoreRuleMatches,
@@ -214,6 +218,11 @@ async function areEligibleGitPaths(
           eligibility.set(name, false);
           return;
         }
+        await assertSensitivePathAccess(
+          name,
+          path.relative(workspace.canonicalRoot, target.canonicalPath),
+          workspace.canonicalRoot,
+        );
         candidatesByName.set(name, candidates);
         targetsByName.set(name, target);
       } catch {
@@ -240,7 +249,7 @@ async function areEligibleGitPaths(
       if (
         candidates.some(
           (candidate) =>
-            ignoreMatches.get(candidate.split(path.sep).join("/")) !== null,
+            ignoreMatches.get(candidate.split(path.sep).join("/")) === "spekta",
         )
       ) {
         eligibility.set(name, false);
@@ -269,6 +278,11 @@ export async function isEligibleGitPath(
   try {
     const resolved = workspace ?? (await resolveWorkspace());
     const target = await resolveWorkspaceMutationTarget(name, resolved, true);
+    await assertSensitivePathAccess(
+      name,
+      path.relative(resolved.canonicalRoot, target.canonicalPath),
+      resolved.canonicalRoot,
+    );
     for (const candidate of new Set([
       name,
       path.relative(resolved.canonicalRoot, target.canonicalPath),
@@ -280,10 +294,13 @@ export async function isEligibleGitPath(
         candidate,
         { gitNoIndex: true },
         resolved.canonicalRoot,
+        true,
       );
     }
     if (await fs.pathExists(target.absolutePath))
-      await validateReadPathAccess(name, resolved);
+      await validateReadPathAccess(name, resolved, {
+        allowGitIgnored: true,
+      });
     return true;
   } catch {
     return false;

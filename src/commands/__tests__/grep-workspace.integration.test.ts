@@ -141,10 +141,8 @@ describe("workspace searches with real ripgrep", () => {
         "SIBLING",
         "RESTRICTED",
         "SPEKTA_IGNORED",
-        "GIT_IGNORED",
         "MANAGED_IGNORED",
         "GLOBAL_IGNORED",
-        "NESTED_IGNORED",
       ])
         expect(result).not.toContain(marker);
       expect(result).toContain("WHITELISTED");

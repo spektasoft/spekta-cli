@@ -84,6 +84,14 @@ describe("workspace read policy", () => {
       ),
     ).rejects.toThrow("ignored");
   });
+  it("allows an otherwise eligible Git-ignored read when requested", async () => {
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    await expect(
+      validateReadPathAccess("git-ignored.txt", workspace, {
+        allowGitIgnored: true,
+      }),
+    ).resolves.toBe(path.join(fixture.root, "git-ignored.txt"));
+  });
   it("checks restrictions and ignore policy across directory links", async () => {
     const managedDirectory = path.join(fixture.root, "managed-dir");
     await fs.ensureDir(managedDirectory);
@@ -102,12 +110,15 @@ describe("workspace read policy", () => {
     const restrictedNames = [".env", ".gitignore", ".spektaignore"];
     for (const name of restrictedNames)
       await fs.ensureDir(path.join(restrictedRoot, name));
-    for (const name of restrictedNames)
+    for (const name of restrictedNames) {
+      const alias = path.join(fixture.root, `alias${name}.txt`);
+      await fs.remove(alias);
       await fs.symlink(
         path.join(restrictedRoot, name),
-        path.join(fixture.root, `alias${name}.txt`),
+        alias,
         process.platform === "win32" ? "junction" : "dir",
       );
+    }
 
     const workspace = await resolveWorkspace({ root: fixture.root });
     await expect(
@@ -156,6 +167,114 @@ describe("workspace read policy", () => {
         "size limit",
       );
   });
+  it("requires exact workspace exceptions for sensitive paths", async () => {
+    await fs.outputFile(
+      path.join(fixture.root, "keys", "private.key"),
+      "synthetic private fixture",
+    );
+    await fs.outputFile(
+      path.join(fixture.root, "keys", "other.key"),
+      "synthetic neighboring fixture",
+    );
+    const workspace = await resolveWorkspace({ root: fixture.root });
+
+    await expect(
+      validateReadPathAccess("keys/private.key", workspace),
+    ).rejects.toThrow("restricted system file");
+
+    await fs.appendFile(
+      path.join(fixture.home, ".spektaignore"),
+      "!keys/private.key\nallow-sensitive: keys/private.key\n",
+    );
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "!keys/*.key\n",
+    );
+    await expect(
+      validateReadPathAccess("keys/private.key", workspace),
+    ).rejects.toThrow("restricted system file");
+
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "!keys/private.key\n",
+    );
+    await expect(
+      validateReadPathAccess("keys/private.key", workspace),
+    ).rejects.toThrow("restricted system file");
+
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "allow-sensitive: keys/private.key\n",
+    );
+    await expect(
+      validateReadPathAccess("keys/private.key", workspace),
+    ).resolves.toBe(path.join(fixture.root, "keys", "private.key"));
+    await expect(
+      validateReadPathAccess("keys/other.key", workspace),
+    ).rejects.toThrow("restricted system file");
+
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "keys/private.key\n",
+    );
+    await expect(
+      validateReadPathAccess("keys/private.key", workspace),
+    ).rejects.toThrow("restricted system file");
+  });
+
+  it("uses the canonical sensitive target for an alias exception", async () => {
+    if (process.platform === "win32") return;
+    await fs.outputFile(
+      path.join(fixture.root, "keys", "private.key"),
+      "synthetic private fixture",
+    );
+    await fs.symlink(
+      path.join(fixture.root, "keys", "private.key"),
+      path.join(fixture.root, "key-alias.txt"),
+    );
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    await expect(
+      validateReadPathAccess("key-alias.txt", workspace),
+    ).rejects.toThrow("restricted system file");
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "!keys/private.key\n",
+    );
+    await expect(
+      validateReadPathAccess("key-alias.txt", workspace),
+    ).rejects.toThrow("restricted system file");
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "allow-sensitive: keys/private.key\n",
+    );
+    await expect(
+      validateReadPathAccess("key-alias.txt", workspace),
+    ).resolves.toBe(path.join(fixture.root, "keys", "private.key"));
+
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "key-alias.txt\n!key-alias.txt\n",
+    );
+    await expect(
+      validateReadPathAccess("key-alias.txt", workspace),
+    ).rejects.toThrow("restricted system file");
+  });
+
+  it("allows an explicitly excepted environment file while keeping examples eligible", async () => {
+    await fs.outputFile(path.join(fixture.root, ".env.example"), "example");
+    const workspace = await resolveWorkspace({ root: fixture.root });
+    await expect(
+      validateReadPathAccess(".env.example", workspace),
+    ).resolves.toBe(path.join(fixture.root, ".env.example"));
+    await fs.appendFile(
+      path.join(fixture.root, ".spektaignore"),
+      "allow-sensitive: .env\n",
+    );
+    await expect(validateReadPathAccess(".env", workspace)).resolves.toBe(
+      path.join(fixture.root, ".env"),
+    );
+  });
+
   it("validates canonical absolute inputs to a symlinked workspace", async () => {
     await expect(
       validateReadPathAccess(

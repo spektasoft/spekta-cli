@@ -5,9 +5,12 @@ import { describe, expect, it, vi } from "vitest";
 import * as proxyExecution from "./proxy-execution";
 import { getTokenCount } from "../../utils/read-utils";
 import { resolveAllowanceSettings } from "../../core/config/allowance";
+import { HOME_IGNORE, refreshPaths } from "../../core/config/paths";
 import { formatProxyOutput } from "./proxy-output";
 import { boundGitCliResponse } from "./proxy-git-response-budget";
 import { missing, useRealGitFixture } from "./proxy-git.integration-harness";
+import { isEligibleGitPath } from "./proxy-git-status";
+import { resolveWorkspace } from "../../utils/workspace";
 
 describe.skipIf(missing.length > 0)(
   "Git status disclosure through CLI/MCP",
@@ -41,6 +44,67 @@ describe.skipIf(missing.length > 0)(
         }
       }
     }, 15000);
+    it("requires a sensitive-file directive for a Git-ignored tracked path", async () => {
+      const target = "synthetic-private.key";
+      fs.writeFileSync(
+        path.join(context.workspace, target),
+        "synthetic fixture",
+      );
+      fs.writeFileSync(
+        path.join(context.workspace, ".gitignore"),
+        `${target}\n`,
+      );
+      await context.fixtureGit(["add", "--", ".gitignore"]);
+      await context.fixtureGit(["add", "-f", "--", target]);
+      fs.removeSync(path.join(context.workspace, target));
+
+      const workspace = await resolveWorkspace({ root: context.workspace });
+      expect(await isEligibleGitPath(target, workspace)).toBe(false);
+      const denied = await context.both(["status", "--short"]);
+      expect(denied.mcp.isError).toBe(false);
+      expect(denied.cli).not.toContain(target);
+      expect(denied.mcp.content[0].text).not.toContain(target);
+      expect(JSON.stringify(denied)).not.toContain(target);
+
+      const previousHomeOverride = process.env.SPEKTA_HOME_OVERRIDE;
+      try {
+        process.env.SPEKTA_HOME_OVERRIDE = path.join(context.fixture, "home");
+        refreshPaths();
+        fs.ensureDirSync(path.dirname(HOME_IGNORE));
+        fs.writeFileSync(HOME_IGNORE, `allow-sensitive: ${target}\n`);
+        expect(await isEligibleGitPath(target, workspace)).toBe(false);
+        const globalDirective = await context.both(["status", "--short"]);
+        expect(globalDirective.mcp.isError).toBe(false);
+        expect(globalDirective.cli).not.toContain(target);
+        expect(globalDirective.mcp.content[0].text).not.toContain(target);
+      } finally {
+        if (previousHomeOverride === undefined)
+          delete process.env.SPEKTA_HOME_OVERRIDE;
+        else process.env.SPEKTA_HOME_OVERRIDE = previousHomeOverride;
+        refreshPaths();
+      }
+
+      fs.writeFileSync(
+        path.join(context.workspace, ".spektaignore"),
+        `!${target}\n`,
+      );
+      expect(await isEligibleGitPath(target, workspace)).toBe(false);
+      const ordinaryNegation = await context.both(["status", "--short"]);
+      expect(ordinaryNegation.mcp.isError).toBe(false);
+      expect(ordinaryNegation.cli).not.toContain(target);
+      expect(ordinaryNegation.mcp.content[0].text).not.toContain(target);
+
+      fs.appendFileSync(
+        path.join(context.workspace, ".spektaignore"),
+        `allow-sensitive: ${target}\n`,
+      );
+      expect(await isEligibleGitPath(target, workspace)).toBe(true);
+      const allowed = await context.both(["status", "--short"]);
+      expect(allowed.mcp.isError).toBe(false);
+      expect(allowed.cli).toContain(target);
+      expect(allowed.mcp.content[0].text).toContain(target);
+    });
+
     it("preserves staged, unstaged, and untracked short-status records", async () => {
       const result = await context.both(["status", "--short"]);
       expect(result.mcp.isError).toBe(false);
@@ -71,7 +135,7 @@ describe.skipIf(missing.length > 0)(
       expect(result.mcp.content[0].text).toContain('"untracked.txt"');
       expect(JSON.stringify(result)).not.toContain("ignored-new.txt");
     });
-    it("filters Git-ignored tracked paths without symlink setup", async () => {
+    it("includes eligible Git-ignored tracked paths without symlink setup", async () => {
       fs.writeFileSync(
         path.join(context.workspace, ".gitignore"),
         "file.txt\n",
@@ -81,8 +145,9 @@ describe.skipIf(missing.length > 0)(
 
       expect(result.mcp.isError).toBe(false);
       expect(result.mcp.content[0].text).toContain('"other.txt"');
-      expect(result.mcp.content[0].text).not.toContain('"file.txt"');
-      expect(JSON.stringify(result)).not.toMatch(/\.gitignore|file\.txt/);
+      expect(result.cli).toContain('"file.txt"');
+      expect(result.mcp.content[0].text).toContain('"file.txt"');
+      expect(JSON.stringify(result)).not.toContain(".gitignore");
     });
     it("uses explicit allowances and rejects values above the configured ceiling", async () => {
       process.env.SPEKTA_GIT_TOKEN_CEILING = "1200";
@@ -262,20 +327,6 @@ describe.skipIf(missing.length > 0)(
         1000,
       );
     }, 20000);
-
-    it("enforces Git ignore rules on tracked files", async () => {
-      fs.writeFileSync(
-        path.join(context.workspace, ".gitignore"),
-        "file.txt\n",
-      );
-
-      const result = await context.both(["status"]);
-
-      expect(result.mcp.isError).toBe(false);
-      expect(result.mcp.content[0].text).toContain("other.txt");
-      expect(result.mcp.content[0].text).not.toContain('"file.txt"');
-      expect(JSON.stringify(result)).not.toMatch(/gitignore|file\.txt/);
-    });
 
     it("omits escaping symlinks when file symlink creation is available", async (testContext) => {
       fs.writeFileSync(path.join(context.fixture, "outside.txt"), "outside");

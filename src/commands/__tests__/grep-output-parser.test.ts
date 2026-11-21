@@ -16,16 +16,20 @@ import { getGrepTokenLimit } from "../../core/config";
 vi.mock("../../utils/path-ignore", () => ({
   isPathIgnored: vi.fn().mockResolvedValue(false),
 }));
-vi.mock("../../utils/security", () => ({
-  validateReadPathAccess: vi.fn(
+vi.mock("../../utils/security", () => {
+  const validate = vi.fn(
     (target: string, workspace: { canonicalRoot: string }) => {
       if (target.includes("restricted") || target.includes("escape")) {
         return Promise.reject(new Error("denied"));
       }
       return Promise.resolve(path.resolve(workspace.canonicalRoot, target));
     },
-  ),
-}));
+  );
+  return {
+    validateEligibleReadPathAccess: validate,
+    validateReadPathAccess: validate,
+  };
+});
 import path from "node:path";
 
 beforeEach(() => vi.mocked(getGrepTokenLimit).mockReturnValue(2000));

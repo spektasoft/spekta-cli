@@ -19,6 +19,16 @@ afterEach(async () => {
 });
 
 describe("whitelisted ignored files in workspace searches", () => {
+  it("searches Git-ignored files without a Spekta whitelist", async () => {
+    const result = await getGrepContent(
+      { pattern: "needle", path: "git-ignored.txt" },
+      { root: fixture.root },
+    );
+
+    expect(result).toContain("GIT_IGNORED");
+    expect(result).not.toContain("RESTRICTED");
+  });
+
   it("finds the default whitelisted file once without user globs", async () => {
     const result = await getGrepContent(
       { pattern: "needle" },
@@ -27,11 +37,9 @@ describe("whitelisted ignored files in workspace searches", () => {
 
     expect(result.match(/WHITELISTED/g)).toHaveLength(1);
     for (const marker of [
-      "GIT_IGNORED",
       "SPEKTA_IGNORED",
       "MANAGED_IGNORED",
       "GLOBAL_IGNORED",
-      "NESTED_IGNORED",
       "RESTRICTED_ENV",
       "RESTRICTED_GIT",
       "RESTRICTED_SPEKTA",
@@ -127,12 +135,10 @@ describe("whitelisted ignored files in workspace searches", () => {
       ]) {
         expect(result).toContain(marker);
       }
-      if (includesNewlineName && supportsNewlineFilenames)
-        expect(result).toContain("NEWLINE_WHITE");
-      else expect(result).not.toContain("NEWLINE_WHITE");
+      if (supportsNewlineFilenames) expect(result).toContain("NEWLINE_WHITE");
       if (includesDotName) expect(result).toContain("DOTS_WHITE");
       else expect(result).not.toContain("DOTS_WHITE");
-      expect(result).not.toContain("NESTED_IGNORED");
+      expect(result).toContain("NESTED_IGNORED");
       expect(result).not.toContain("EXTERNAL");
     },
   );

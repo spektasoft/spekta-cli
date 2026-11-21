@@ -1,5 +1,6 @@
 import fs from "fs-extra";
 import path from "node:path";
+import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createToolRegistry } from "../api/mcp-server/registry";
 import { dispatchCommand } from "../cli/commands";
@@ -59,6 +60,36 @@ async function cli(args: string[]) {
 }
 
 describe("read allowances at CLI and MCP boundaries", () => {
+  it("keeps Git-ignored reads within the requested CLI and MCP budgets", async () => {
+    const ignoredPath = "ignored-big.txt";
+    await fs.writeFile(
+      path.join(fixture.root, ".gitignore"),
+      `${await fs.readFile(path.join(fixture.root, ".gitignore"), "utf8")}\n${ignoredPath}\n`,
+    );
+    await fs.writeFile(
+      path.join(fixture.root, ignoredPath),
+      Array.from(
+        { length: 200 },
+        (_, i) => `ignored evidence line ${i + 1}`,
+      ).join("\n"),
+    );
+    expect(
+      (
+        await execa("git", ["check-ignore", "-q", "--", ignoredPath], {
+          cwd: fixture.root,
+          reject: false,
+        })
+      ).exitCode,
+    ).toBe(0);
+
+    const mcpResult = await mcp(300, ignoredPath);
+    const cliResult = await cli([ignoredPath, "--allowance", "300"]);
+    expect(getTokenCount(mcpResult.content[0].text)).toBeLessThanOrEqual(300);
+    expect(getTokenCount(cliResult)).toBeLessThanOrEqual(300);
+    expect(mcpResult.content[0].text).toContain("output_limit_exceeded");
+    expect(cliResult).toContain("output_limit_exceeded");
+  });
+
   it("keeps the configured default and honors smaller and larger requests", async () => {
     expect((await mcp()).isError).toBe(true);
     const raised = await mcp(6000);

@@ -82,6 +82,20 @@ Spekta respects a custom ignore hierarchy. Patterns are cumulative and follow th
 
 **Note:** Add personal global patterns to `~/.spekta/.spektaignore` or project-specific patterns to `./.spektaignore`. Existing `.spektadefaultignore` files are legacy and are no longer read or modified.
 
+### Sensitive files
+
+Spekta protects sensitive file names at any directory depth. The defaults cover `.env` and `.env.*`, except `.env.example`; files ending in `.pem`, `.key`, `.p12`, `.pfx`, `.jks`, or `.keystore`; and files named `.npmrc`, `.netrc`, or `credentials`. The existing restrictions on `.gitignore` and `.spektaignore` also remain in effect.
+
+To allow one sensitive path, add an `allow-sensitive:` directive with its exact workspace-relative path in the workspace `.spektaignore`, for example:
+
+```text
+allow-sensitive: test-fixtures/example.key
+```
+
+Use forward slashes. A name without a slash identifies a file at the workspace root. Ordinary `!path` negations retain their ignore-rule meaning and do not grant sensitive-file exceptions. Global configuration cannot grant an exception. A positive Spekta-ignore rule still blocks the path, and the exception does not override workspace boundaries or other access restrictions.
+
+For a symlink to a sensitive target, except the exact canonical target path. The alias does not require a second sensitive-file exception. Other restrictions are checked for both the requested path and the canonical target.
+
 ### Whitelisting Git-ignored files
 
 If a file is ignored by `.gitignore` but you want Spekta to have access to it, you can whitelist it using the `!` prefix in your `.spektaignore`:

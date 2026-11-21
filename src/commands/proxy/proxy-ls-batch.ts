@@ -1,6 +1,4 @@
 import fs from "fs-extra";
-import ignore from "ignore";
-import { execa } from "execa";
 import path from "node:path";
 import {
   admitBatchMetadata,
@@ -13,6 +11,7 @@ import {
   resolveRequestAllowance,
 } from "../../core/config/allowance";
 import type { FailureOutcome } from "../../core/operation-outcome";
+import { getIgnorePatterns } from "../../core/config";
 import { getTokenCount } from "../../utils/read-utils";
 import {
   normalizeWorkspacePath,
@@ -20,10 +19,12 @@ import {
   type ResolvedWorkspace,
   type WorkspaceContext,
 } from "../../utils/workspace";
+import { validateReadPathAccess } from "../../utils/security";
 import { validateCommandArguments } from "./proxy-path-security";
-import { filterEligibleLsEntries } from "./proxy-ls";
-import { getIgnorePatterns } from "../../core/config";
-import { isWhitelisted } from "../../utils/security";
+import {
+  filterEligibleLsEntries,
+  isExplicitSpektaDirectoryIgnored,
+} from "./proxy-ls";
 import { formatProxyOutput } from "./proxy-output";
 import { redactSecrets } from "./proxy-secret-redaction";
 
@@ -144,9 +145,7 @@ function reserveMetadata(slots: ListSlot[], increaseHint: string): string {
           row(slot, status) + (slot.available ? `${EMPTY_LISTING}\n` : ""),
       );
       return rows.reduce((largest, candidate) =>
-        getTokenCount(candidate) > getTokenCount(largest)
-          ? candidate
-          : largest,
+        getTokenCount(candidate) > getTokenCount(largest) ? candidate : largest,
       );
     })
     .join("");
@@ -165,40 +164,24 @@ async function resolveListDirectory(
   try {
     const normalizedOperand = normalizeWorkspacePath(operand);
     validateCommandArguments([normalizedOperand], context);
-    const target = path.resolve(workspace.root, normalizedOperand);
-    const canonical = await fs.realpath(target);
-    const relative = path.relative(workspace.canonicalRoot, canonical);
-    if (
-      relative === ".." ||
-      relative.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(relative) ||
-      !(await fs.stat(canonical)).isDirectory()
-    )
-      return false;
-    const relativeDirectory = path
-      .relative(workspace.canonicalRoot, canonical)
-      .split(path.sep)
-      .join("/");
+    const canonical = await validateReadPathAccess(
+      normalizedOperand,
+      workspace,
+      { allowGitIgnored: true, skipSpektaIgnoreCheck: true },
+    );
+    if (!(await fs.stat(canonical)).isDirectory()) return false;
     const patterns = await getIgnorePatterns(workspace.canonicalRoot);
-    const ignorePath = relativeDirectory ? `${relativeDirectory}/` : "";
-    if (
-      ignorePath &&
-      patterns.length > 0 &&
-      ignore().add(patterns).ignores(ignorePath) &&
-      !isWhitelisted(relativeDirectory, patterns)
-    )
-      return false;
-    if (ignorePath) {
-      try {
-        await execa("git", ["check-ignore", "-q", "--", ignorePath], {
-          cwd: workspace.canonicalRoot,
-        });
-        if (!isWhitelisted(relativeDirectory, patterns)) return false;
-      } catch {
-        // A missing git executable or a non-ignored path does not deny access.
-      }
-    }
-    return true;
+    const requestedRelative = path.relative(
+      workspace.root,
+      path.resolve(workspace.root, normalizedOperand),
+    );
+    const canonicalRelative = path.relative(workspace.canonicalRoot, canonical);
+    return ![...new Set([requestedRelative, canonicalRelative])].some(
+      (relative) => {
+        if (relative === "") return false;
+        return isExplicitSpektaDirectoryIgnored(relative, patterns);
+      },
+    );
   } catch {
     return false;
   }
