@@ -61,7 +61,9 @@ import {
   createGitMcpResponse,
   getGitMcpAllowanceRejection,
   getMinimumGitMcpAllowance,
+  measureGitMcpResponse,
 } from "../../commands/proxy/proxy-git-response-budget";
+import { getWorkspaceReviewOutcome } from "../../commands/workspace-review";
 
 function measureFindMcpResponse(
   text: string,
@@ -103,6 +105,129 @@ export interface ToolRegistryEntry {
 }
 
 const registry: Record<string, ToolRegistryEntry> = {
+  spekta_workspace_review: {
+    schema: (params) =>
+      z.object({
+        source: z
+          .enum(["all", "staged", "unstaged"])
+          .optional()
+          .describe(
+            params.source?.description ||
+              "Change source: all (default), staged, or unstaged.",
+          ),
+        continuation: z
+          .string()
+          .optional()
+          .describe(
+            params.continuation?.description ||
+              "Continuation token returned by the previous page; restart if the selected changes have changed.",
+          ),
+        allowance: z
+          .number()
+          .optional()
+          .describe(
+            params.allowance?.description ||
+              "Optional response allowance in tokens for the complete response, within the configured Git ceiling.",
+          ),
+      }),
+    handler: async (rawArgs, context, requestId) => {
+      const parsed = z
+        .object({
+          source: z.enum(["all", "staged", "unstaged"]).optional(),
+          continuation: z.string().optional(),
+          allowance: z.unknown().optional(),
+        })
+        .strict()
+        .safeParse(rawArgs);
+      const allowanceResult = resolveRequestAllowance(
+        "git",
+        parsed.success ? parsed.data.allowance : undefined,
+      );
+      const allowance =
+        allowanceResult.status === "ok"
+          ? (allowanceResult.requested ??
+            allowanceResult.settings.defaultTokens)
+          : allowanceResult.settings.defaultTokens;
+      const respond = (text: string, isError: boolean) => {
+        const response = createGitMcpResponse(
+          text,
+          isError,
+          allowance,
+          requestId,
+        );
+        return { isError: response.isError, content: response.content };
+      };
+      if (!parsed.success)
+        return respond("usage_error: Invalid workspace review request.", true);
+      if (allowanceResult.status !== "ok") {
+        const message =
+          allowanceResult.status === "invalid"
+            ? "usage_error: Allowance must be a positive whole number."
+            : `output_limit_exceeded: Allowance exceeds the configured Git ceiling of ${allowanceResult.settings.ceilingTokens} tokens.`;
+        return respond(message, true);
+      }
+      if (allowance < getMinimumGitMcpAllowance(requestId)) {
+        return {
+          isError: true,
+          content: [
+            {
+              type: "text" as const,
+              text: getGitMcpAllowanceRejection(
+                allowance,
+                getMinimumGitMcpAllowance(requestId),
+                allowanceResult.settings.defaultTokens,
+                requestId,
+              ),
+            },
+          ],
+        };
+      }
+      const reviewBodyCeiling = Math.max(
+        1,
+        allowanceResult.settings.ceilingTokens -
+          measureGitMcpResponse("", false, requestId) -
+          16,
+      );
+      let bodyAllowance = Math.min(allowance, reviewBodyCeiling);
+      let outcome = await getWorkspaceReviewOutcome(
+        {
+          source: parsed.data.source,
+          continuation: parsed.data.continuation,
+          allowance: bodyAllowance,
+          ceiling: reviewBodyCeiling,
+        },
+        context,
+      );
+      let text =
+        outcome.status === "failure" ? outcome.message : outcome.content;
+      let isError = outcome.status !== "success";
+      while (
+        bodyAllowance > 1 &&
+        measureGitMcpResponse(text, isError, requestId) > allowance
+      ) {
+        bodyAllowance = Math.max(
+          1,
+          bodyAllowance -
+            Math.max(
+              25,
+              measureGitMcpResponse(text, isError, requestId) - allowance,
+            ),
+        );
+        outcome = await getWorkspaceReviewOutcome(
+          {
+            source: parsed.data.source,
+            continuation: parsed.data.continuation,
+            allowance: bodyAllowance,
+            ceiling: reviewBodyCeiling,
+          },
+          context,
+        );
+        text = outcome.status === "failure" ? outcome.message : outcome.content;
+        isError = outcome.status !== "success";
+      }
+      return respond(text, isError);
+    },
+  },
   spekta_read: {
     schema: (params) =>
       z.object({
@@ -562,8 +687,7 @@ const registry: Record<string, ToolRegistryEntry> = {
               : "",
           measure: (text, isError) =>
             measureFindMcpResponse(text, isError, requestId),
-          hasRtk:
-            findBackend === "native" || (await isRtkAvailable()),
+          hasRtk: findBackend === "native" || (await isRtkAvailable()),
           backend:
             findBackend === "native"
               ? (operand, predicates) =>

@@ -11,9 +11,7 @@ function isRtkExecutableOnWindowsPath(): boolean {
   const extensions = [
     "",
     ...new Set(
-      (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD")
-        .split(";")
-        .filter(Boolean),
+      (process.env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean),
     ),
   ];
   for (const entry of pathEntries) {
@@ -200,11 +198,12 @@ export function prepareRtkInvocation(
       );
       const paths = separator < 0 ? [] : commandArgs.slice(separator + 1);
       const mode = flags.includes("--stat") ? ["--numstat"] : ["--name-status"];
+      const renameDetection = flags.includes("--no-renames") ? [] : ["-M"];
       commandArgs = [
         ...revisions,
         ...mode,
         "-z",
-        "-M",
+        ...renameDetection,
         "--",
         ...(paths.length ? paths : ["."]),
       ];

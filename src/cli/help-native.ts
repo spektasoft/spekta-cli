@@ -9,6 +9,34 @@ const topic = (
 ): HelpTopic => ({ title, purpose, usage, sections, examples, complete: true });
 
 export const NATIVE_HELP: Record<string, HelpTopic> = {
+  "workspace-review": topic(
+    "workspace-review — Review tracked workspace changes",
+    "Page through eligible staged and unstaged tracked text changes without changing the repository.",
+    [
+      "spekta workspace-review [--source all|staged|unstaged] [--continuation TOKEN] [--allowance TOKENS]",
+      "spekta help workspace-review",
+    ],
+    [
+      {
+        heading: "Scope and continuation",
+        lines: [
+          "The default source is all; staged and unstaged changes are shown as separate sections, including when one file has both.",
+          "Use the Continuation value from a response with Complete: no to retrieve the next page. Large text patches continue at line boundaries.",
+          "A continuation is tied to the selected review state, including binary patch content. If selected content changes, restart without a continuation.",
+          "Binary changes are identified without their contents. Complete reports delivery; Coverage reports when binary content remains unreviewed.",
+          "Untracked files are outside this review, so an empty result does not establish that the whole workspace is unchanged.",
+          "If one line cannot fit the response allowance, increase it up to the configured ceiling. If the line still cannot fit, the response marks it unreviewed and reports incomplete coverage.",
+          "The response identifies HEAD as its baseline, or unborn HEAD before the first commit.",
+          "The complete rendered response must fit the configured Git response allowance.",
+        ],
+      },
+    ],
+    [
+      "spekta workspace-review",
+      "spekta workspace-review --source staged --allowance 2000",
+      "spekta workspace-review --continuation '<token from prior response>'",
+    ],
+  ),
   read: {
     title: "read — Read eligible workspace files",
     purpose:
