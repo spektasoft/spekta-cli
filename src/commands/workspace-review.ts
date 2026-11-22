@@ -1,14 +1,26 @@
 import { createHash } from "node:crypto";
+import fs from "fs-extra";
 import path from "node:path";
 import { executeRtkCommand } from "./proxy/proxy-execution";
 import { isEligibleGitPath } from "./proxy/proxy-git-status";
-import { resolveWorkspace, type WorkspaceContext } from "../utils/workspace";
+import {
+  isPathWithin,
+  resolveWorkspace,
+  resolveWorkspaceMutationTarget,
+  type WorkspaceContext,
+} from "../utils/workspace";
+import { getIgnoreRuleMatches } from "../utils/path-ignore";
+import {
+  assertSensitivePathAccess,
+  RESTRICTED_FILES,
+  validateReadPathAccess,
+} from "../utils/security";
 import { getTokenCount } from "../utils/read-utils";
 import { resolveRequestAllowance } from "../core/config/allowance";
 import { formatProxyOutput } from "./proxy/proxy-output";
 import { redactSecrets } from "./proxy/proxy-secret-redaction";
 
-export type WorkspaceReviewSource = "all" | "staged" | "unstaged";
+export type WorkspaceReviewSource = "all" | "staged" | "unstaged" | "untracked";
 
 export type WorkspaceReviewOutcome =
   | { status: "success"; content: string }
@@ -23,10 +35,12 @@ export interface WorkspaceReviewRequest {
 }
 
 interface ReviewSection {
-  source: "staged" | "unstaged";
+  source: "staged" | "unstaged" | "untracked";
   paths: string[];
-  kind: "text" | "binary";
+  kind: "text" | "binary" | "unavailable";
   rawContent: string;
+  stateDigest?: string;
+  stateFingerprint?: string;
   lines: string[];
 }
 
@@ -44,13 +58,220 @@ interface ReviewChunk {
 const RESTART =
   "Workspace review state changed; restart the review without a continuation.";
 
+function fileFingerprint(stats: fs.Stats): string {
+  return JSON.stringify([
+    stats.dev,
+    stats.ino,
+    stats.size,
+    stats.mtimeMs,
+    stats.ctimeMs,
+  ]);
+}
+
+async function digestFile(filePath: string): Promise<string> {
+  const hash = createHash("sha256");
+  await new Promise<void>((resolve, reject) => {
+    const stream = fs.createReadStream(filePath);
+    stream.on("data", (chunk: Buffer) => hash.update(chunk));
+    stream.on("end", resolve);
+    stream.on("error", reject);
+  });
+  return hash.digest("hex");
+}
+
 async function collectSections(
-  sources: Array<"staged" | "unstaged">,
+  sources: Array<"staged" | "unstaged" | "untracked">,
   context?: WorkspaceContext,
+  previousSections?: readonly ReviewSection[],
 ): Promise<ReviewSection[]> {
   const workspace = await resolveWorkspace(context);
   const sections: ReviewSection[] = [];
   for (const source of sources) {
+    if (source === "untracked") {
+      const manifest = await executeRtkCommand(
+        "git",
+        ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--"],
+        context,
+      );
+      if (!manifest.available)
+        throw new Error("The `rtk` executable was not found.");
+      if (manifest.exitCode !== 0)
+        throw new Error("Git workspace review failed.");
+      const records = manifest.stdout === "" ? [] : manifest.stdout.split("\0");
+      if (records.length && records.pop() !== "")
+        throw new Error("Git workspace review failed.");
+      const workspacePaths: string[] = [];
+      for (let index = 0; index < records.length; index += 1) {
+        const record = records[index];
+        if (!record || record.length < 4 || record[2] !== " ")
+          throw new Error("Git workspace review failed.");
+        const status = record.slice(0, 2);
+        const name = record.slice(3);
+        if (!name) throw new Error("Git workspace review failed.");
+        if (status.startsWith("R") || status.startsWith("C")) {
+          if (records[++index] === undefined)
+            throw new Error("Git workspace review failed.");
+        }
+        if (status !== "??") continue;
+        if (name.endsWith("/")) continue;
+        if (
+          path.isAbsolute(name) ||
+          path.win32.isAbsolute(name) ||
+          name.includes("\\") ||
+          Array.from(name).some(
+            (char) =>
+              char.charCodeAt(0) < 32 ||
+              char.charCodeAt(0) === 127 ||
+              char === "\ufffd",
+          ) ||
+          name.split("/").some((part) => !part || part === "." || part === "..")
+        )
+          throw new Error("Git workspace review failed.");
+        const absolutePath = path.resolve(workspace.root, name);
+        if (!isPathWithin(workspace.root, absolutePath)) continue;
+        workspacePaths.push(name);
+      }
+      const names = [...new Set(workspacePaths)].sort();
+      const candidatesByName = new Map<string, string[]>();
+      const targetsByName = new Map<
+        string,
+        Awaited<ReturnType<typeof resolveWorkspaceMutationTarget>>
+      >();
+      await Promise.all(
+        names.map(async (name) => {
+          try {
+            const target = await resolveWorkspaceMutationTarget(
+              name,
+              workspace,
+              true,
+            );
+            if (!isPathWithin(workspace.canonicalRoot, target.canonicalPath))
+              return;
+            const canonicalName = path
+              .relative(workspace.canonicalRoot, target.canonicalPath)
+              .split(path.sep)
+              .join("/");
+            const candidates = [...new Set([name, canonicalName])];
+            if (
+              candidates.some((candidate) =>
+                candidate
+                  .split("/")
+                  .some((part) => RESTRICTED_FILES.includes(part)),
+              )
+            )
+              return;
+            await assertSensitivePathAccess(
+              name,
+              canonicalName,
+              workspace.canonicalRoot,
+            );
+            candidatesByName.set(name, candidates);
+            targetsByName.set(name, target);
+          } catch {
+            // Ineligible paths are excluded before the batched ignore check.
+          }
+        }),
+      );
+      let ignoreMatches: ReadonlyMap<string, "spekta" | "git" | null>;
+      const allCandidates = [...candidatesByName.values()].flat();
+      try {
+        ignoreMatches = await getIgnoreRuleMatches(
+          allCandidates,
+          true,
+          workspace.canonicalRoot,
+        );
+      } catch {
+        ignoreMatches = new Map(
+          allCandidates.map((candidate) => [candidate, "git"]),
+        );
+      }
+      for (const name of names) {
+        const candidates = candidatesByName.get(name);
+        const target = targetsByName.get(name);
+        if (!candidates || !target) continue;
+        if (candidates.some((candidate) => ignoreMatches.get(candidate)))
+          continue;
+        try {
+          try {
+            await validateReadPathAccess(name, workspace, {
+              gitIgnoreAlreadyChecked: true,
+            });
+          } catch (error) {
+            if (
+              error instanceof Error &&
+              error.message.includes("File exceeds size limit")
+            ) {
+              const before = await fs.stat(target.canonicalPath);
+              if (!before.isFile()) continue;
+              const stateFingerprint = fileFingerprint(before);
+              const previous = previousSections?.find(
+                (section) =>
+                  section.source === source &&
+                  section.kind === "unavailable" &&
+                  section.paths[0] === name,
+              );
+              let stateDigest: string;
+              if (
+                previous?.stateFingerprint === stateFingerprint &&
+                previous.stateDigest
+              ) {
+                stateDigest = previous.stateDigest;
+              } else {
+                stateDigest = await digestFile(target.canonicalPath);
+              }
+              if (
+                stateFingerprint !==
+                fileFingerprint(await fs.stat(target.canonicalPath))
+              )
+                throw new Error(RESTART, { cause: error });
+              sections.push({
+                source,
+                paths: [name],
+                kind: "unavailable",
+                rawContent: "",
+                stateDigest,
+                stateFingerprint,
+                lines: [
+                  "Untracked file exceeds the readable size limit; content was not reviewed.\n",
+                ],
+              });
+            }
+            continue;
+          }
+          const stats = await fs.stat(target.canonicalPath);
+          if (!stats.isFile()) continue;
+          const bytes = await fs.readFile(target.canonicalPath);
+          const digest = createHash("sha256").update(bytes).digest("hex");
+          const hasNull = bytes.includes(0);
+          let text: string | undefined;
+          if (!hasNull) {
+            try {
+              text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+            } catch {
+              // Invalid UTF-8 is binary and must not be rendered as replacement text.
+            }
+          }
+          const binary = hasNull || text === undefined;
+          const lines = binary
+            ? ["Binary untracked file content is not displayed.\n"]
+            : text === ""
+              ? ["(empty untracked file)\n"]
+              : splitPatchLines(redactSecrets(text!));
+          sections.push({
+            source,
+            paths: [name],
+            kind: binary ? "binary" : "text",
+            rawContent: binary ? "" : text!,
+            stateDigest: digest,
+            lines,
+          });
+        } catch (error) {
+          if (error instanceof Error && error.message === RESTART) throw error;
+          // Ineligible and inaccessible paths are silently excluded to avoid disclosure.
+        }
+      }
+      continue;
+    }
     const diffArgs = source === "staged" ? ["--cached"] : [];
     const manifest = await executeRtkCommand(
       "git",
@@ -189,15 +410,20 @@ function rendered(
   const binaryCount = sections.filter(
     (section) => section.kind === "binary",
   ).length;
-  const hasPendingText = !complete;
+  const unavailableCount = sections.filter(
+    (section) => section.kind === "unavailable",
+  ).length;
+  const hasPendingText = sections
+    .slice(cursor.section)
+    .some((section) => section.kind === "text");
+  const scopeLabel = source === "all" ? "workspace" : source;
   const lines = [
-    "Tracked text review; untracked files are outside this review.",
-    `Selected scope: ${source === "all" ? "staged and unstaged" : source}.`,
+    `Selected scope: ${source === "all" ? "staged, unstaged, and untracked" : source}.`,
     `Baseline: ${baseline}.`,
     `Complete: ${complete ? "yes" : "no"}.`,
-    binaryCount || hasPendingText
-      ? `Coverage: incomplete;${binaryCount ? ` ${binaryCount} eligible binary change(s) are identified, but their contents are not displayed.` : ""}${hasPendingText ? " Eligible tracked text remains pending." : ""}`
-      : "Coverage: complete for eligible tracked text changes.",
+    binaryCount || unavailableCount || hasPendingText
+      ? `Coverage: incomplete;${binaryCount ? ` ${binaryCount} eligible binary change(s) are identified, but their contents are not displayed.` : ""}${unavailableCount ? ` ${unavailableCount} eligible untracked file(s) exceed the readable size limit and were not reviewed.` : ""}${hasPendingText ? ` Eligible ${scopeLabel} text remains pending.` : ""}`
+      : `Coverage: complete for eligible ${scopeLabel} text changes.`,
     ...(blocked === "allowance"
       ? [
           `The next line is not included at this allowance; retry with a higher allowance up to ${ceiling} tokens.`,
@@ -270,7 +496,9 @@ function createReviewVersion(
     source: section.source,
     paths: section.paths,
     kind: section.kind,
-    digest: createHash("sha256").update(section.rawContent).digest("hex"),
+    digest:
+      section.stateDigest ??
+      createHash("sha256").update(section.rawContent).digest("hex"),
   }));
   return createHash("sha256")
     .update(JSON.stringify({ source, baseline, state }))
@@ -278,16 +506,18 @@ function createReviewVersion(
     .slice(0, 24);
 }
 
-/** Retrieves whole eligible tracked diff sections with state-bound pagination. */
+/** Retrieves whole eligible workspace change sections with state-bound pagination. */
 export async function getWorkspaceReviewOutcome(
   request: WorkspaceReviewRequest,
   context?: WorkspaceContext,
 ): Promise<WorkspaceReviewOutcome> {
   const source = request.source ?? "all";
-  if (!(["all", "staged", "unstaged"] as string[]).includes(source))
+  if (
+    !(["all", "staged", "unstaged", "untracked"] as string[]).includes(source)
+  )
     return {
       status: "failure",
-      message: "Invalid source; choose all, staged, or unstaged.",
+      message: "Invalid source; choose all, staged, unstaged, or untracked.",
     };
   const ceiling = request.ceiling ?? request.allowance;
   if (
@@ -303,11 +533,15 @@ export async function getWorkspaceReviewOutcome(
   try {
     const sources =
       source === "all"
-        ? (["staged", "unstaged"] as const)
+        ? (["staged", "unstaged", "untracked"] as const)
         : ([source] as const);
     const sections = await collectSections([...sources], context);
     const baseline = await getReviewBaseline(context);
-    const verifiedSections = await collectSections([...sources], context);
+    const verifiedSections = await collectSections(
+      [...sources],
+      context,
+      sections,
+    );
     if (JSON.stringify(sections) !== JSON.stringify(verifiedSections))
       return { status: "failure", message: RESTART };
     const verifiedBaseline = await getReviewBaseline(context);
@@ -445,14 +679,15 @@ export async function getWorkspaceReviewOutcome(
       status: "failure",
       message:
         error instanceof Error &&
-        error.message === "The `rtk` executable was not found."
+        (error.message === "The `rtk` executable was not found." ||
+          error.message === RESTART)
           ? error.message
           : "Git workspace review failed before eligible changes could be checked.",
     };
   }
 }
 
-/** CLI entrypoint for the separate, read-only tracked workspace review. */
+/** CLI entrypoint for the separate, read-only workspace review. */
 export async function runWorkspaceReview(args: string[] = []): Promise<void> {
   let source: WorkspaceReviewSource = "all";
   let sourceSeen = false;
@@ -466,7 +701,7 @@ export async function runWorkspaceReview(args: string[] = []): Promise<void> {
       if (
         sourceSeen ||
         value === undefined ||
-        !["all", "staged", "unstaged"].includes(value)
+        !["all", "staged", "unstaged", "untracked"].includes(value)
       )
         malformed = true;
       else {
@@ -475,7 +710,10 @@ export async function runWorkspaceReview(args: string[] = []): Promise<void> {
       }
     } else if (arg.startsWith("--source=")) {
       const value = arg.slice("--source=".length);
-      if (sourceSeen || !["all", "staged", "unstaged"].includes(value))
+      if (
+        sourceSeen ||
+        !["all", "staged", "unstaged", "untracked"].includes(value)
+      )
         malformed = true;
       else {
         source = value as WorkspaceReviewSource;

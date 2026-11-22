@@ -10,21 +10,21 @@ const topic = (
 
 export const NATIVE_HELP: Record<string, HelpTopic> = {
   "workspace-review": topic(
-    "workspace-review — Review tracked workspace changes",
-    "Page through eligible staged and unstaged tracked text changes without changing the repository.",
+    "workspace-review — Review workspace changes",
+    "Page through eligible staged, unstaged, and untracked text changes without changing the repository.",
     [
-      "spekta workspace-review [--source all|staged|unstaged] [--continuation TOKEN] [--allowance TOKENS]",
+      "spekta workspace-review [--source all|staged|unstaged|untracked] [--continuation TOKEN] [--allowance TOKENS]",
       "spekta help workspace-review",
     ],
     [
       {
         heading: "Scope and continuation",
         lines: [
-          "The default source is all; staged and unstaged changes are shown as separate sections, including when one file has both.",
+          "The default source is all; staged, unstaged, and eligible untracked changes are shown as separate sections, including when one tracked file has staged and unstaged changes.",
           "Use the Continuation value from a response with Complete: no to retrieve the next page. Large text patches continue at line boundaries.",
           "A continuation is tied to the selected review state, including binary patch content. If selected content changes, restart without a continuation.",
           "Binary changes are identified without their contents. Complete reports delivery; Coverage reports when binary content remains unreviewed.",
-          "Untracked files are outside this review, so an empty result does not establish that the whole workspace is unchanged.",
+          "Untracked files are labeled separately. Restricted, ignored, sensitive, or out-of-workspace paths are omitted.",
           "If one line cannot fit the response allowance, increase it up to the configured ceiling. If the line still cannot fit, the response marks it unreviewed and reports incomplete coverage.",
           "The response identifies HEAD as its baseline, or unborn HEAD before the first commit.",
           "The complete rendered response must fit the configured Git response allowance.",

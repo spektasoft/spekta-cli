@@ -56,7 +56,7 @@ export const COMMANDS: Record<string, CommandDefinition> = {
     run: runReview,
   },
   "workspace-review": {
-    name: "Review Tracked Workspace Changes",
+    name: "Review Workspace Changes",
     run: runWorkspaceReview,
   },
   read: {

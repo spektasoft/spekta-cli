@@ -109,11 +109,11 @@ const registry: Record<string, ToolRegistryEntry> = {
     schema: (params) =>
       z.object({
         source: z
-          .enum(["all", "staged", "unstaged"])
+          .enum(["all", "staged", "unstaged", "untracked"])
           .optional()
           .describe(
             params.source?.description ||
-              "Change source: all (default), staged, or unstaged.",
+              "Change source: all (default), staged, unstaged, or untracked.",
           ),
         continuation: z
           .string()
@@ -133,7 +133,7 @@ const registry: Record<string, ToolRegistryEntry> = {
     handler: async (rawArgs, context, requestId) => {
       const parsed = z
         .object({
-          source: z.enum(["all", "staged", "unstaged"]).optional(),
+          source: z.enum(["all", "staged", "unstaged", "untracked"]).optional(),
           continuation: z.string().optional(),
           allowance: z.unknown().optional(),
         })

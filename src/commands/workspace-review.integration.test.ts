@@ -13,7 +13,7 @@ import {
   useRealGitFixture,
 } from "./proxy/proxy-git.integration-harness";
 
-describe.skipIf(missing.length > 0)("tracked workspace review CLI", () => {
+describe.skipIf(missing.length > 0)("workspace review CLI", () => {
   const context = useRealGitFixture();
 
   it("separates staged and unstaged changes for one file and narrows source", async () => {
@@ -97,11 +97,315 @@ describe.skipIf(missing.length > 0)("tracked workspace review CLI", () => {
     expect(cli).toContain("Selected scope: staged.");
   });
 
-  it("does not name restricted paths or claim untracked coverage", async () => {
+  it("skips nested untracked repositories without failing the workspace review", async () => {
+    const nestedRepo = path.join(context.workspace, "embedded-review-repo");
+    fs.ensureDirSync(nestedRepo);
+    await execa("git", ["init", "--quiet", "--template="], { cwd: nestedRepo });
+    fs.writeFileSync(path.join(nestedRepo, "inner.txt"), "nested content\n");
+
+    const result = await getWorkspaceReviewOutcome({
+      source: "all",
+      allowance: 1000,
+    });
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content).not.toContain("embedded-review-repo");
+      expect(result.content).not.toContain("nested content");
+    }
+  });
+
+  it("includes a zero-byte untracked file in the review", async () => {
+    const name = "empty-untracked-review.txt";
+    fs.writeFileSync(path.join(context.workspace, name), "");
+    const result = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      allowance: 1000,
+    });
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content).toContain(name);
+      expect(result.content).toContain("(empty untracked file)");
+    }
+  });
+
+  it("includes eligible untracked files in the default scope and supports an untracked-only CLI scope", async () => {
+    const name = "new-untracked-review.txt";
+    fs.writeFileSync(
+      path.join(context.workspace, name),
+      "untracked review content\n",
+    );
+
+    const all = await getWorkspaceReviewOutcome({
+      source: "all",
+      allowance: 1000,
+    });
+    expect(all.status).toBe("success");
+    if (all.status !== "success") return;
+    expect(all.content).toContain(
+      "Selected scope: staged, unstaged, and untracked.",
+    );
+    expect(all.content).toContain("+staged-copy");
+    expect(all.content).toContain("+unstaged-copy");
+    expect(all.content).toContain(`## untracked section`);
+    expect(all.content).toContain("untracked review content");
+
+    vi.mocked(console.log).mockClear();
+    await runWorkspaceReview(["--source", "untracked", "--allowance", "1000"]);
+    const cli = vi
+      .mocked(console.log)
+      .mock.calls.map(([value]) => String(value))
+      .join("\n");
+    expect(cli).toContain("Selected scope: untracked.");
+    expect(cli).toContain("untracked review content");
+    expect(cli).not.toContain("+staged-copy");
+    expect(cli).not.toContain("+unstaged-copy");
+    expect(getTokenCount(`${cli}\n`)).toBeLessThanOrEqual(1000);
+  });
+
+  it("pages untracked text and invalidates continuation when an untracked file changes", async () => {
+    const firstName = "a-untracked-page.txt";
+    const secondName = "b-untracked-page.txt";
+    const firstPath = path.join(context.workspace, firstName);
+    fs.writeFileSync(
+      firstPath,
+      Array.from({ length: 40 }, (_, index) => `untracked-row-${index}`).join(
+        "\n",
+      ) + "\nghp_abcdefghijklmnopqrstuvwxyz",
+    );
+    fs.writeFileSync(
+      path.join(context.workspace, secondName),
+      "second untracked file\n",
+    );
+
+    const firstPage = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      allowance: 250,
+      ceiling: 8000,
+    });
+    expect(firstPage.status, JSON.stringify(firstPage)).toBe("success");
+    if (firstPage.status !== "success") return;
+    expect(firstPage.content).toContain("Complete: no");
+    expect(firstPage.content).toContain("## untracked section");
+    const continuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+      firstPage.content,
+    )?.[1];
+    expect(continuation).toBeDefined();
+    if (!continuation) return;
+
+    const pages = [firstPage.content];
+    let nextContinuation: string | undefined = continuation;
+    for (let page = 0; page < 20 && nextContinuation; page++) {
+      const next = await getWorkspaceReviewOutcome({
+        source: "untracked",
+        continuation: nextContinuation,
+        allowance: 250,
+        ceiling: 8000,
+      });
+      expect(next.status, JSON.stringify(next)).toBe("success");
+      if (next.status !== "success") return;
+      pages.push(next.content);
+      nextContinuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+        next.content,
+      )?.[1];
+      if (next.content.includes("Complete: yes")) break;
+    }
+    const combined = pages.join("\n");
+    expect(combined).toContain("Complete: yes");
+    expect(combined).toContain("[REDACTED]");
+    expect(combined).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz");
+    for (let index = 0; index < 40; index++) {
+      expect(combined.split("\n")).toContain(`untracked-row-${index}`);
+    }
+
+    fs.appendFileSync(firstPath, "changed after page one\n");
+    const changed = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      continuation,
+      allowance: 250,
+      ceiling: 8000,
+    });
+    expect(changed.status).toBe("failure");
+    if (changed.status === "failure")
+      expect(changed.message).toContain("restart the review");
+
+    const createPage = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      allowance: 250,
+      ceiling: 8000,
+    });
+    if (createPage.status !== "success") return;
+    const createContinuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+      createPage.content,
+    )?.[1];
+    expect(createContinuation).toBeDefined();
+    fs.writeFileSync(
+      path.join(context.workspace, "created-after-page.txt"),
+      "new\n",
+    );
+    const created = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      continuation: createContinuation,
+      allowance: 250,
+      ceiling: 8000,
+    });
+    expect(created.status).toBe("failure");
+
+    const deletePage = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      allowance: 250,
+      ceiling: 8000,
+    });
+    if (deletePage.status !== "success") return;
+    const deleteContinuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+      deletePage.content,
+    )?.[1];
+    expect(deleteContinuation).toBeDefined();
+    fs.unlinkSync(path.join(context.workspace, secondName));
+    const deleted = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      continuation: deleteContinuation,
+      allowance: 250,
+      ceiling: 8000,
+    });
+    expect(deleted.status).toBe("failure");
+  });
+
+  it("identifies untracked binary files without content and invalidates their continuation", async () => {
+    const binaryPath = path.join(context.workspace, "a-review-binary.bin");
+    fs.writeFileSync(
+      binaryPath,
+      Buffer.concat([Buffer.from([0]), Buffer.from("binary-secret-payload")]),
+    );
+    fs.writeFileSync(
+      path.join(context.workspace, "z-review-long.txt"),
+      Array.from({ length: 40 }, (_, index) => `binary-page-row-${index}`).join(
+        "\n",
+      ),
+    );
+    const first = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      allowance: 300,
+      ceiling: 8000,
+    });
+    expect(first.status).toBe("success");
+    if (first.status !== "success") return;
+    expect(first.content).toContain("eligible binary change(s)");
+    expect(first.content).toContain(
+      "Binary untracked file content is not displayed.",
+    );
+    expect(first.content).not.toContain("binary-secret-payload");
+    const continuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+      first.content,
+    )?.[1];
+    expect(continuation).toBeDefined();
+    if (!continuation) return;
+    fs.writeFileSync(
+      binaryPath,
+      Buffer.concat([Buffer.from([0]), Buffer.from("changed-secret-payload")]),
+    );
+    const stale = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      continuation,
+      allowance: 300,
+      ceiling: 8000,
+    });
+    expect(stale.status).toBe("failure");
+  });
+
+  it("reports oversized eligible untracked files as unreviewed", async () => {
+    const name = "oversized-untracked.txt";
+    fs.writeFileSync(
+      path.join(context.workspace, name),
+      Buffer.alloc(10 * 1024 * 1024 + 1, 0x61),
+    );
+    const result = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      allowance: 1000,
+    });
+    expect(result.status).toBe("success");
+    if (result.status !== "success") return;
+    expect(result.content).toContain("Coverage: incomplete");
+    expect(result.content).toContain("oversized-untracked.txt");
+    expect(result.content).toContain("content was not reviewed");
+    expect(result.content).not.toContain("a".repeat(100));
+  });
+
+  it("requires a restart when oversized untracked content changes while being hashed", async () => {
+    const name = "mutating-oversized-untracked.txt";
+    const target = path.join(context.workspace, name);
+    fs.writeFileSync(target, Buffer.alloc(10 * 1024 * 1024 + 1, 0x61));
+    const originalCreateReadStream = fs.createReadStream.bind(fs);
+    const createReadStreamSpy = vi
+      .spyOn(fs, "createReadStream")
+      .mockImplementation((filePath) => {
+        const stream = originalCreateReadStream(filePath);
+        if (path.resolve(String(filePath)) === target) {
+          stream.once("open", () => fs.appendFileSync(target, "changed"));
+        }
+        return stream;
+      });
+    try {
+      const result = await getWorkspaceReviewOutcome({
+        source: "untracked",
+        allowance: 1000,
+      });
+      expect(result.status).toBe("failure");
+      if (result.status === "failure")
+        expect(result.message).toContain("restart the review");
+    } finally {
+      createReadStreamSpy.mockRestore();
+    }
+  });
+  it("does not name restricted or ignored untracked paths", async () => {
+    const restricted = path.join(context.workspace, "private-dir", ".env");
+    const ignoredName = "ignored-review-secret.txt";
+    const spektaIgnoredName = "spekta-ignored-review-secret.txt";
+    fs.ensureDirSync(path.dirname(restricted));
+    fs.writeFileSync(restricted, "restricted-untracked-secret\n");
+    fs.writeFileSync(
+      path.join(context.workspace, ignoredName),
+      "ignored-review-secret-payload\n",
+    );
+    fs.writeFileSync(
+      path.join(context.workspace, spektaIgnoredName),
+      "spekta-ignored-review-secret-payload\n",
+    );
+    fs.writeFileSync(
+      path.join(context.workspace, "id_rsa"),
+      "private-key-secret-payload\n",
+    );
+    fs.writeFileSync(
+      path.join(context.workspace, ".gitignore"),
+      `\n/${ignoredName}\n`,
+    );
+    fs.writeFileSync(
+      path.join(context.workspace, ".spektaignore"),
+      `\n/${spektaIgnoredName}\n`,
+    );
+
     fs.writeFileSync(
       path.join(context.workspace, ".env"),
       "restricted-change\n",
     );
+    if (process.platform !== "win32") {
+      fs.symlinkSync(
+        path.join(context.workspace, ".env"),
+        path.join(context.workspace, "env-review-link"),
+      );
+      fs.symlinkSync(
+        path.join(context.workspace, ignoredName),
+        path.join(context.workspace, "ignored-review-link"),
+      );
+      const outsideTarget = path.join(
+        path.dirname(context.workspace),
+        "outside-review-target.txt",
+      );
+      fs.writeFileSync(outsideTarget, "outside-review-secret-payload\n");
+      fs.symlinkSync(
+        outsideTarget,
+        path.join(context.workspace, "outside-review-link"),
+      );
+    }
     await context.fixtureGit(["add", "--", ".env"]);
     const result = await getWorkspaceReviewOutcome({
       source: "all",
@@ -109,8 +413,21 @@ describe.skipIf(missing.length > 0)("tracked workspace review CLI", () => {
     });
     expect(result.status).toBe("success");
     if (result.status !== "success") return;
-    expect(result.content).toContain("untracked files are outside this review");
     expect(result.content).not.toContain(".env");
+    expect(result.content).not.toContain("private-dir");
+    expect(result.content).not.toContain("restricted-untracked-secret");
+    expect(result.content).not.toContain(ignoredName);
+    expect(result.content).not.toContain("ignored-review-secret-payload");
+    expect(result.content).not.toContain(spektaIgnoredName);
+    expect(result.content).not.toContain(
+      "spekta-ignored-review-secret-payload",
+    );
+    expect(result.content).not.toContain("id_rsa");
+    expect(result.content).not.toContain("private-key-secret-payload");
+    expect(result.content).not.toContain("env-review-link");
+    expect(result.content).not.toContain("ignored-review-link");
+    expect(result.content).not.toContain("outside-review-link");
+    expect(result.content).not.toContain("outside-review-secret-payload");
   });
 
   it("conceals a tracked rename when either endpoint is restricted", async () => {
@@ -359,6 +676,29 @@ describe.skipIf(missing.length > 0)("tracked workspace review CLI", () => {
       if (empty.status === "success") {
         expect(empty.content).toContain("Baseline: unborn HEAD.");
         expect(empty.content).toContain("Complete: yes");
+      }
+      fs.writeFileSync(
+        path.join(workspace, "untracked-before-first-commit.txt"),
+        "unborn untracked content\n",
+      );
+      const allWithUntracked = await getWorkspaceReviewOutcome(
+        { source: "all", allowance: 1000, ceiling: 8000 },
+        { root: workspace },
+      );
+      expect(allWithUntracked.status).toBe("success");
+      if (allWithUntracked.status === "success") {
+        expect(allWithUntracked.content).toContain("Baseline: unborn HEAD.");
+        expect(allWithUntracked.content).toContain("unborn untracked content");
+      }
+      const untrackedOnly = await getWorkspaceReviewOutcome(
+        { source: "untracked", allowance: 1000, ceiling: 8000 },
+        { root: workspace },
+      );
+      expect(untrackedOnly.status).toBe("success");
+      if (untrackedOnly.status === "success") {
+        expect(untrackedOnly.content).toContain("Baseline: unborn HEAD.");
+        expect(untrackedOnly.content).toContain("Selected scope: untracked.");
+        expect(untrackedOnly.content).toContain("unborn untracked content");
       }
       fs.writeFileSync(
         path.join(workspace, "staged.txt"),

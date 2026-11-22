@@ -22,6 +22,7 @@ import { createToolRegistry } from "./registry";
 let fixture: WorkspaceFixture;
 let stagedNames: string[];
 let unstagedNames: string[];
+let untrackedNames: string[];
 let patchRevision: string;
 let binaryRevision: string;
 const credential = "ghp_abcdefghijklmnopqrstuvwxyz";
@@ -101,6 +102,13 @@ function patchFor(name: string): string {
 
 function setupGitResponse(): void {
   executeRtkCommand.mockImplementation((_command: string, args: string[]) => {
+    if (args[0] === "status")
+      return {
+        available: true,
+        stdout: untrackedNames.map((name) => `?? ${name}\0`).join(""),
+        stderr: "",
+        exitCode: 0,
+      };
     const staged = args.includes("--cached");
     const names = staged ? stagedNames : unstagedNames;
     if (args.includes("--name-only"))
@@ -126,6 +134,7 @@ beforeEach(async () => {
   fixture = await createWorkspaceFixture();
   stagedNames = ["shared.txt", "staged.txt", ".env"];
   unstagedNames = ["shared.txt", "unstaged.txt"];
+  untrackedNames = ["untracked.txt"];
   patchRevision = "original";
   binaryRevision = "binary-v1";
   for (const name of [
@@ -137,9 +146,17 @@ beforeEach(async () => {
     "credential.txt",
     "giant.txt",
     "private-key.txt",
+    "untracked.txt",
+    "untracked-large.txt",
+    "untracked-sensitive.txt",
+    "id_rsa",
     ".env",
   ])
     await fs.writeFile(path.join(fixture.root, name), "workspace content\n");
+  await fs.writeFile(
+    path.join(fixture.root, "untracked.txt"),
+    "untracked unique content\n",
+  );
   setupGitResponse();
 });
 
@@ -148,7 +165,7 @@ afterEach(async () => {
   await fixture.cleanup();
 });
 
-describe("MCP tracked workspace review", () => {
+describe("MCP workspace review", () => {
   it("registers the tool and reports staged and unstaged sections for one file separately", async () => {
     const tool = createToolRegistry({
       root: fixture.root,
@@ -163,17 +180,242 @@ describe("MCP tracked workspace review", () => {
         })
         .safeParse({ source: "all", allowance: 1000 }).success,
     ).toBe(true);
+    expect(
+      tool
+        .schema({
+          source: { description: "scope" },
+          continuation: { description: "page" },
+          allowance: { description: "tokens" },
+        })
+        .safeParse({ source: "untracked", allowance: 1000 }).success,
+    ).toBe(true);
 
     const response = await tool.handler({ allowance: 8000 });
     const text = response.content[0].text;
     expect(response.isError, text).not.toBe(true);
-    expect(text).toContain("Selected scope: staged and unstaged.");
+    expect(text).toContain("Selected scope: staged, unstaged, and untracked.");
     expect(text.match(/## staged section/g)).toHaveLength(2);
     expect(text.match(/## unstaged section/g)).toHaveLength(2);
-    expect(text).toContain(
-      "Tracked text review; untracked files are outside this review.",
-    );
+    expect(text).toContain("## untracked section");
+    expect(text).toContain("untracked unique content");
+    expect(text).not.toContain("untracked files are outside this review");
     expect(text).not.toContain(".env");
+  });
+
+  it("renders a zero-byte untracked file as an explicit empty section", async () => {
+    const name = "empty-untracked.txt";
+    await fs.writeFile(path.join(fixture.root, name), Buffer.alloc(0));
+    untrackedNames = [name];
+    const tool = createToolRegistry({
+      root: fixture.root,
+    }).spekta_workspace_review;
+
+    const response = await tool.handler({
+      source: "untracked",
+      allowance: 1000,
+    });
+    const text = response.content[0].text;
+    expect(response.isError, text).not.toBe(true);
+    expect(text).toContain(`## untracked section 1: "${name}"`);
+    expect(text).toContain("(empty untracked file)");
+    expect(text).toContain("Complete: yes.");
+    expect(text).toContain(
+      "Coverage: complete for eligible untracked text changes.",
+    );
+  });
+
+  it("reviews only untracked files across bounded pages and invalidates changed content", async () => {
+    untrackedNames = ["untracked-large.txt"];
+    await fs.writeFile(
+      path.join(fixture.root, "untracked-large.txt"),
+      Array.from({ length: 120 }, (_, index) => `untracked row ${index}`).join(
+        "\n",
+      ) + "\nghp_abcdefghijklmnopqrstuvwxyz",
+    );
+    const tool = createToolRegistry({
+      root: fixture.root,
+    }).spekta_workspace_review;
+    const requestId = "workspace-review-untracked";
+    const allowance = 500;
+    const envelopeTokens = (response: unknown) =>
+      getTokenCount(
+        `${JSON.stringify({ jsonrpc: "2.0", id: requestId, result: response })}\n`,
+      );
+
+    let response = await tool.handler(
+      { source: "untracked", allowance },
+      undefined,
+      requestId,
+    );
+    expect(response.isError, response.content[0].text).not.toBe(true);
+    expect(response.content[0].text).toContain("Selected scope: untracked.");
+    expect(response.content[0].text).toContain("Complete: no");
+    expect(response.content[0].text).toContain("## untracked section");
+    expect(response.content[0].text).not.toContain("diff --git");
+    expect(envelopeTokens(response)).toBeLessThanOrEqual(allowance);
+
+    const firstPage = response.content[0].text;
+    const continuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+      firstPage,
+    )?.[1];
+    expect(continuation).toBeDefined();
+
+    const pages = [firstPage];
+    for (
+      let page = 0;
+      page < 10 && pages.at(-1)?.includes("Complete: no");
+      page++
+    ) {
+      const nextContinuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+        pages.at(-1)!,
+      )?.[1];
+      expect(nextContinuation).toBeDefined();
+      response = await tool.handler(
+        { source: "untracked", continuation: nextContinuation, allowance },
+        undefined,
+        requestId,
+      );
+      expect(response.isError).not.toBe(true);
+      expect(envelopeTokens(response)).toBeLessThanOrEqual(allowance);
+      pages.push(response.content[0].text);
+    }
+    expect(pages.at(-1)).toContain("Complete: yes");
+    expect(pages.join("\n")).toContain("untracked row 119");
+    expect(pages.join("\n")).toContain("[REDACTED]");
+    expect(pages.join("\n")).not.toContain("ghp_abcdefghijklmnopqrstuvwxyz");
+
+    const staleFirstPage = await tool.handler(
+      { source: "untracked", allowance },
+      undefined,
+      requestId,
+    );
+    const staleContinuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+      staleFirstPage.content[0].text,
+    )?.[1];
+    expect(staleContinuation).toBeDefined();
+    await fs.appendFile(
+      path.join(fixture.root, "untracked-large.txt"),
+      "changed\n",
+    );
+    const stale = await tool.handler(
+      { source: "untracked", continuation: staleContinuation, allowance },
+      undefined,
+      requestId,
+    );
+    expect(stale.isError).toBe(true);
+    expect(stale.content[0].text).toContain("restart the review");
+
+    const createFirstPage = await tool.handler(
+      { source: "untracked", allowance },
+      undefined,
+      requestId,
+    );
+    const createContinuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+      createFirstPage.content[0].text,
+    )?.[1];
+    expect(createContinuation).toBeDefined();
+    untrackedNames = [...untrackedNames, "created-after-page.txt"];
+    await fs.writeFile(
+      path.join(fixture.root, "created-after-page.txt"),
+      "created\n",
+    );
+    const created = await tool.handler(
+      { source: "untracked", continuation: createContinuation, allowance },
+      undefined,
+      requestId,
+    );
+    expect(created.isError).toBe(true);
+
+    const deleteFirstPage = await tool.handler(
+      { source: "untracked", allowance },
+      undefined,
+      requestId,
+    );
+    const deleteContinuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+      deleteFirstPage.content[0].text,
+    )?.[1];
+    expect(deleteContinuation).toBeDefined();
+    untrackedNames = untrackedNames.filter(
+      (name) => name !== "created-after-page.txt",
+    );
+    await fs.remove(path.join(fixture.root, "created-after-page.txt"));
+    const deleted = await tool.handler(
+      { source: "untracked", continuation: deleteContinuation, allowance },
+      undefined,
+      requestId,
+    );
+    expect(deleted.isError).toBe(true);
+  });
+
+  it("identifies binary untracked content and invalidates continuation when it changes", async () => {
+    const binaryPath = path.join(fixture.root, "a-untracked-binary.bin");
+    const textPath = path.join(fixture.root, "z-untracked-long.txt");
+    await fs.writeFile(
+      binaryPath,
+      Buffer.concat([Buffer.from([0]), Buffer.from("binary-secret-payload")]),
+    );
+    await fs.writeFile(
+      textPath,
+      Array.from({ length: 120 }, (_, index) => `binary row ${index}`).join(
+        "\n",
+      ),
+    );
+    untrackedNames = ["a-untracked-binary.bin", "z-untracked-long.txt"];
+    const tool = createToolRegistry({
+      root: fixture.root,
+    }).spekta_workspace_review;
+    const requestId = "workspace-review-binary";
+    const response = await tool.handler(
+      { source: "untracked", allowance: 500 },
+      undefined,
+      requestId,
+    );
+    const text = response.content[0].text;
+    expect(response.isError, text).not.toBe(true);
+    expect(text).toContain("eligible binary change(s)");
+    expect(text).toContain("Binary untracked file content is not displayed.");
+    expect(text).not.toContain("binary-secret-payload");
+    const continuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+      text,
+    )?.[1];
+    expect(continuation).toBeDefined();
+    await fs.writeFile(
+      binaryPath,
+      Buffer.concat([Buffer.from([0]), Buffer.from("changed-secret-payload")]),
+    );
+    const stale = await tool.handler(
+      { source: "untracked", continuation, allowance: 500 },
+      undefined,
+      requestId,
+    );
+    expect(stale.isError).toBe(true);
+  });
+  it("does not disclose restricted untracked paths", async () => {
+    untrackedNames = [
+      "untracked.txt",
+      ".env",
+      "id_rsa",
+      "external-file.txt",
+      "ignored-alias.txt",
+      ...(process.platform === "win32" ? [] : ["alias.env.txt"]),
+    ];
+    const tool = createToolRegistry({
+      root: fixture.root,
+    }).spekta_workspace_review;
+
+    const response = await tool.handler({
+      source: "untracked",
+      allowance: 8000,
+    });
+    const text = response.content[0].text;
+    expect(response.isError, text).not.toBe(true);
+    expect(text).toContain("untracked unique content");
+    expect(text).not.toContain(".env");
+    expect(text).not.toContain("id_rsa");
+    expect(text).not.toContain("external-file.txt");
+    expect(text).not.toContain("ignored-alias.txt");
+    expect(text).not.toContain("alias.env.txt");
+    expect(text).not.toContain("workspace content");
   });
 
   it("narrows the selected source and paginates complete sections within the MCP budget", async () => {
