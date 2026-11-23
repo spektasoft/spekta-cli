@@ -25,9 +25,29 @@ let unstagedNames: string[];
 let untrackedNames: string[];
 let patchRevision: string;
 let binaryRevision: string;
+let unbornHead: boolean;
+let binaryFallback: boolean;
+let stagedRename: [string, string] | undefined;
+let unmergedName: string | undefined;
 const credential = "ghp_abcdefghijklmnopqrstuvwxyz";
 
 function patchFor(name: string): string {
+  if (name === "binary.bin")
+    if (binaryFallback)
+      return [
+        `diff --git a/${name} b/${name}`,
+        `Binary files a/${name} and b/${name} differ`,
+        "",
+      ].join("\n");
+  if (name === "allowance.txt")
+    return [
+      `diff --git a/${name} b/${name}`,
+      `--- a/${name}`,
+      `+++ b/${name}`,
+      "@@ -1 +1 @@",
+      `+${Array.from({ length: 2000 }, (_, index) => `allowance${index}`).join(" ")}`,
+      "",
+    ].join("\n");
   if (name === "binary.bin")
     return [
       `diff --git a/${name} b/${name}`,
@@ -102,21 +122,74 @@ function patchFor(name: string): string {
 
 function setupGitResponse(): void {
   executeRtkCommand.mockImplementation((_command: string, args: string[]) => {
+    if (args[0] === "rev-parse" && args.includes("--verify"))
+      return {
+        available: true,
+        stdout: unbornHead ? "" : "deadbeef",
+        stderr: "",
+        exitCode: unbornHead ? 128 : 0,
+      };
+    if (args[0] === "symbolic-ref")
+      return {
+        available: true,
+        stdout: unbornHead ? "refs/heads/main" : "",
+        stderr: "",
+        exitCode: unbornHead ? 0 : 1,
+      };
+    if (args[0] === "show-ref")
+      return {
+        available: true,
+        stdout: "",
+        stderr: "",
+        exitCode: unbornHead ? 1 : 0,
+      };
     if (args[0] === "status")
       return {
         available: true,
-        stdout: untrackedNames.map((name) => `?? ${name}\0`).join(""),
+        stdout: args.includes("--untracked-files=no")
+          ? ""
+          : untrackedNames.map((name) => `?? ${name}\0`).join(""),
         stderr: "",
         exitCode: 0,
       };
     const staged = args.includes("--cached");
     const names = staged ? stagedNames : unstagedNames;
-    if (args.includes("--name-only"))
+    if (args.includes("--name-only") || args.includes("--name-status"))
       return {
         available: true,
-        stdout: names.length
-          ? `${names.map((name) => `M\0${name}`).join("\0")}\0`
-          : "",
+        stdout:
+          staged && stagedRename
+            ? `R100\0work/${stagedRename[0]}\0work/${stagedRename[1]}\0`
+            : names.length
+              ? `${names.map((name) => `M\0work/${name}`).join("\0")}\0`
+              : "",
+        stderr: "",
+        exitCode: 0,
+      };
+    if (args.includes("--raw"))
+      return {
+        available: true,
+        stdout: `:${binaryRevision}\0`,
+        stderr: "",
+        exitCode: 0,
+      };
+    if (unmergedName && args.includes(unmergedName))
+      return {
+        available: true,
+        stdout: `* Unmerged path work/${unmergedName}\n`,
+        stderr: "",
+        exitCode: 0,
+      };
+    if (staged && stagedRename)
+      return {
+        available: true,
+        stdout: [
+          `diff --git a/work/${stagedRename[0]} b/work/${stagedRename[1]}`,
+          `similarity index 100%`,
+          `rename from work/${stagedRename[0]}`,
+          `rename to work/${stagedRename[1]}`,
+          "",
+        ].join("\n"),
         stderr: "",
         exitCode: 0,
       };
@@ -137,6 +210,10 @@ beforeEach(async () => {
   untrackedNames = ["untracked.txt"];
   patchRevision = "original";
   binaryRevision = "binary-v1";
+  binaryFallback = false;
+  unbornHead = false;
+  stagedRename = undefined;
+  unmergedName = undefined;
   for (const name of [
     "shared.txt",
     "staged.txt",
@@ -222,6 +299,147 @@ describe("MCP workspace review", () => {
     expect(text).toContain(
       "Coverage: complete for eligible untracked text changes.",
     );
+  });
+
+  it("uses the unborn HEAD baseline while reviewing staged and untracked changes", async () => {
+    unbornHead = true;
+    stagedNames = ["staged.txt"];
+    unstagedNames = [];
+    untrackedNames = ["untracked.txt"];
+    const tool = createToolRegistry({
+      root: fixture.root,
+    }).spekta_workspace_review;
+    const requestId = "workspace-review-unborn-head";
+    const allowance = 1000;
+    const response = await tool.handler(
+      { source: "all", allowance },
+      undefined,
+      requestId,
+    );
+    const text = response.content[0].text;
+    expect(response.isError, text).not.toBe(true);
+    expect(text).toContain("Baseline: unborn HEAD.");
+    expect(text).toContain('## staged section 1: "work/staged.txt"');
+    expect(text).toContain('## untracked section 2: "untracked.txt"');
+    expect(text).toContain("untracked unique content");
+    expect(
+      getTokenCount(
+        `${JSON.stringify({ jsonrpc: "2.0", id: requestId, result: response })}\n`,
+      ),
+    ).toBeLessThanOrEqual(allowance);
+  });
+
+  it("shows both eligible rename endpoints and conceals a restricted endpoint", async () => {
+    const tool = createToolRegistry({
+      root: fixture.root,
+    }).spekta_workspace_review;
+    const oldName = "rename-old.txt";
+    const newName = "rename-new.txt";
+    await fs.writeFile(path.join(fixture.root, oldName), "rename content\n");
+    await fs.writeFile(path.join(fixture.root, newName), "rename content\n");
+    stagedRename = [oldName, newName];
+
+    const eligible = await tool.handler({ source: "staged", allowance: 1000 });
+    expect(eligible.content[0].text).toContain(
+      `"work/${oldName}" -> "work/${newName}"`,
+    );
+    expect(eligible.content[0].text).toContain(`rename from work/${oldName}`);
+    expect(eligible.content[0].text).toContain(`rename to work/${newName}`);
+
+    stagedRename = [".env", "public-after-restricted-rename.txt"];
+    const concealed = await tool.handler({ source: "staged", allowance: 1000 });
+    expect(concealed.content[0].text).not.toContain(".env");
+    expect(concealed.content[0].text).not.toContain(
+      "public-after-restricted-rename.txt",
+    );
+  });
+
+  it("reports unsupported tracked sections as unavailable without failing siblings", async () => {
+    stagedNames = ["staged.txt", "shared.txt"];
+    unmergedName = "staged.txt";
+    const tool = createToolRegistry({
+      root: fixture.root,
+    }).spekta_workspace_review;
+    const response = await tool.handler({ source: "staged", allowance: 1000 });
+    expect(response.isError).not.toBe(true);
+    expect(response.content[0].text).toContain("Coverage: incomplete");
+    expect(response.content[0].text).toContain(
+      "eligible section(s) could not be displayed",
+    );
+    expect(response.content[0].text).toContain('"work/staged.txt"');
+    expect(response.content[0].text).toContain('"work/shared.txt"');
+  });
+
+  it("retries an allowance-blocked MCP line within the response envelope", async () => {
+    stagedNames = ["allowance.txt"];
+    const tool = createToolRegistry({
+      root: fixture.root,
+    }).spekta_workspace_review;
+    const requestId = "workspace-review-allowance-retry";
+    const allowance = 500;
+    const blocked = await tool.handler(
+      { source: "staged", allowance },
+      undefined,
+      requestId,
+    );
+    expect(blocked.isError).not.toBe(true);
+    expect(blocked.content[0].text).toContain("retry with a higher allowance");
+    expect(
+      getTokenCount(
+        `${JSON.stringify({ jsonrpc: "2.0", id: requestId, result: blocked })}\n`,
+      ),
+    ).toBeLessThanOrEqual(allowance);
+    const continuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+      blocked.content[0].text,
+    )?.[1];
+    expect(continuation).toBeDefined();
+
+    const retried = await tool.handler(
+      { source: "staged", continuation, allowance: 7900 },
+      undefined,
+      requestId,
+    );
+    expect(retried.isError).not.toBe(true);
+    expect(retried.content[0].text).toContain("allowance1999");
+    expect(
+      getTokenCount(
+        `${JSON.stringify({ jsonrpc: "2.0", id: requestId, result: retried })}\n`,
+      ),
+    ).toBeLessThanOrEqual(7900);
+  });
+
+  it("treats envelope shrinkage at the body ceiling as completion unavailable", async () => {
+    const priorCeiling = process.env.SPEKTA_GIT_TOKEN_CEILING;
+    process.env.SPEKTA_GIT_TOKEN_CEILING = "1600";
+    try {
+      stagedNames = ["shared.txt"];
+      patchRevision = '\\"'.repeat(1000);
+      const tool = createToolRegistry({
+        root: fixture.root,
+      }).spekta_workspace_review;
+      const requestId = "workspace-review-escaped-ceiling";
+      const allowance = 1600;
+      const response = await tool.handler(
+        { source: "staged", allowance },
+        undefined,
+        requestId,
+      );
+      const text = response.content[0].text;
+      expect(response.isError, text).toBe(true);
+      expect(text).toContain(
+        "completion is unavailable through this operation",
+      );
+      expect(text).not.toContain("retry with a higher allowance");
+      expect(
+        getTokenCount(
+          `${JSON.stringify({ jsonrpc: "2.0", id: requestId, result: response })}\n`,
+        ),
+      ).toBeLessThanOrEqual(allowance);
+    } finally {
+      if (priorCeiling === undefined)
+        delete process.env.SPEKTA_GIT_TOKEN_CEILING;
+      else process.env.SPEKTA_GIT_TOKEN_CEILING = priorCeiling;
+    }
   });
 
   it("reviews only untracked files across bounded pages and invalidates changed content", async () => {
@@ -518,6 +736,7 @@ describe("MCP workspace review", () => {
   });
 
   it("identifies binary coverage and invalidates continuation when binary content changes", async () => {
+    binaryFallback = true;
     stagedNames = ["large.txt", "binary.bin"];
     const tool = createToolRegistry({
       root: fixture.root,
@@ -530,6 +749,14 @@ describe("MCP workspace review", () => {
     expect(complete.content[0].text).toContain("Complete: yes");
     expect(complete.content[0].text).not.toContain("binary-v1");
     expect(complete.content[0].text).not.toContain("GIT binary patch");
+    const gitCalls = executeRtkCommand.mock.calls as unknown as Array<
+      [string, string[]]
+    >;
+    expect(
+      gitCalls.some(
+        ([, args]) => args.includes("--raw") && args.includes("--full-index"),
+      ),
+    ).toBe(true);
 
     const firstPage = await tool.handler({ source: "staged", allowance: 500 });
     const continuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(

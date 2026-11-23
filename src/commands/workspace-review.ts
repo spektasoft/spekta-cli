@@ -3,6 +3,7 @@ import fs from "fs-extra";
 import path from "node:path";
 import { executeRtkCommand } from "./proxy/proxy-execution";
 import { isEligibleGitPath } from "./proxy/proxy-git-status";
+import { findRepositoryRoot } from "./proxy/proxy-git-policy";
 import {
   isPathWithin,
   resolveWorkspace,
@@ -232,7 +233,7 @@ async function collectSections(
                 stateDigest,
                 stateFingerprint,
                 lines: [
-                  "Untracked file exceeds the readable size limit; content was not reviewed.\n",
+                  "Untracked file exceeds the readable size limit; content was not reviewed.",
                 ],
               });
             }
@@ -253,9 +254,9 @@ async function collectSections(
           }
           const binary = hasNull || text === undefined;
           const lines = binary
-            ? ["Binary untracked file content is not displayed.\n"]
+            ? ["Binary untracked file content is not displayed."]
             : text === ""
-              ? ["(empty untracked file)\n"]
+              ? ["(empty untracked file)"]
               : splitPatchLines(redactSecrets(text!));
           sections.push({
             source,
@@ -275,7 +276,7 @@ async function collectSections(
     const diffArgs = source === "staged" ? ["--cached"] : [];
     const manifest = await executeRtkCommand(
       "git",
-      ["diff", ...diffArgs, "--name-only", "-z", "--"],
+      ["diff", ...diffArgs, "--no-relative", "-M", "--name-status", "-z", "--"],
       context,
     );
     if (!manifest.available)
@@ -302,6 +303,7 @@ async function collectSections(
       changes.push(names);
     }
     const seen = new Set<string>();
+    const repositoryRoot = findRepositoryRoot(context);
     for (const names of changes) {
       if (
         names.some(
@@ -323,7 +325,7 @@ async function collectSections(
       )
         throw new Error("Git workspace review failed.");
       const relativeNames = names.map((name) =>
-        path.relative(workspace.root, path.resolve(workspace.root, name)),
+        path.relative(workspace.root, path.resolve(repositoryRoot, name)),
       );
       const eligible = await Promise.all(
         relativeNames.map((name) => isEligibleGitPath(name, workspace)),
@@ -337,23 +339,41 @@ async function collectSections(
         [
           "diff",
           ...diffArgs,
+          "--no-relative",
           "-M",
           "--binary",
           "--no-ext-diff",
           "--no-textconv",
           "--no-color",
           "--",
-          ...names,
+          ...relativeNames,
         ],
         context,
       );
       if (!patch.available)
         throw new Error("The `rtk` executable was not found.");
       if (patch.exitCode !== 0) throw new Error("Git workspace review failed.");
-      if (!patch.stdout || !patch.stdout.startsWith("diff --git "))
-        throw new Error("Git workspace review failed.");
-      if ((patch.stdout.match(/^diff --git /gm) ?? []).length !== 1)
-        throw new Error("Git workspace review failed.");
+      if (!patch.stdout) continue;
+      const unsupported =
+        /^\* Unmerged path /m.test(patch.stdout) ||
+        /^diff --(?:cc|combined) /m.test(patch.stdout) ||
+        /^@@@/m.test(patch.stdout);
+      if (
+        unsupported ||
+        !patch.stdout.startsWith("diff --git ") ||
+        (patch.stdout.match(/^diff --git /gm) ?? []).length !== 1
+      ) {
+        sections.push({
+          source,
+          paths: names,
+          kind: "unavailable",
+          rawContent: patch.stdout,
+          lines: [
+            "Section cannot be displayed in this review format; content was not reviewed.",
+          ],
+        });
+        continue;
+      }
       const binary =
         /^GIT binary patch(?:\s|$)/m.test(patch.stdout) ||
         /^Binary files .+ differ$/m.test(patch.stdout);
@@ -361,7 +381,16 @@ async function collectSections(
       if (binary && /^Binary files .+ differ$/m.test(patch.stdout)) {
         const identity = await executeRtkCommand(
           "git",
-          ["diff", ...diffArgs, "--raw", "--full-index", "-z", "--", ...names],
+          [
+            "diff",
+            ...diffArgs,
+            "--no-relative",
+            "--raw",
+            "--full-index",
+            "-z",
+            "--",
+            ...relativeNames,
+          ],
           context,
         );
         if (!identity.available || identity.exitCode !== 0 || !identity.stdout)
@@ -422,7 +451,7 @@ function rendered(
     `Baseline: ${baseline}.`,
     `Complete: ${complete ? "yes" : "no"}.`,
     binaryCount || unavailableCount || hasPendingText
-      ? `Coverage: incomplete;${binaryCount ? ` ${binaryCount} eligible binary change(s) are identified, but their contents are not displayed.` : ""}${unavailableCount ? ` ${unavailableCount} eligible untracked file(s) exceed the readable size limit and were not reviewed.` : ""}${hasPendingText ? ` Eligible ${scopeLabel} text remains pending.` : ""}`
+      ? `Coverage: incomplete;${binaryCount ? ` ${binaryCount} eligible binary change(s) are identified, but their contents are not displayed.` : ""}${unavailableCount ? ` ${unavailableCount} eligible section(s) could not be displayed and were not reviewed.` : ""}${hasPendingText ? ` Eligible ${scopeLabel} text remains pending.` : ""}`
       : `Coverage: complete for eligible ${scopeLabel} text changes.`,
     ...(blocked === "allowance"
       ? [
@@ -431,7 +460,7 @@ function rendered(
       : []),
     ...(blocked === "ceiling"
       ? [
-          `The line remains unreviewed because it cannot fit within the configured ceiling of ${ceiling} tokens.`,
+          `The line remains unreviewed because it cannot fit within the configured ceiling of ${ceiling} tokens; completion is unavailable through this operation.`,
         ]
       : []),
     `Continuation: ${continuationToken}.`,
@@ -631,9 +660,10 @@ export async function getWorkspaceReviewOutcome(
         baseline,
         blocked,
         ceiling,
-        blocked !== undefined &&
-          cursor.section === pageStart.section &&
-          cursor.line === pageStart.line,
+        blocked === "ceiling" ||
+          (blocked !== undefined &&
+            cursor.section === pageStart.section &&
+            cursor.line === pageStart.line),
       );
       if (getTokenCount(content) <= request.allowance) break;
       const lastChunk = chunks.at(-1)!;
@@ -653,9 +683,10 @@ export async function getWorkspaceReviewOutcome(
       baseline,
       blocked,
       ceiling,
-      blocked !== undefined &&
-        cursor.section === pageStart.section &&
-        cursor.line === pageStart.line,
+      blocked === "ceiling" ||
+        (blocked !== undefined &&
+          cursor.section === pageStart.section &&
+          cursor.line === pageStart.line),
     );
     if (getTokenCount(content) > request.allowance)
       return { status: "failure", message: "output_limit_exceeded." };

@@ -330,6 +330,32 @@ describe.skipIf(missing.length > 0)("workspace review CLI", () => {
     expect(result.content).not.toContain("a".repeat(100));
   });
 
+  it("allows an oversized single untracked line to be retried with a larger allowance", async () => {
+    const name = "oversized-untracked-line.txt";
+    fs.writeFileSync(
+      path.join(context.workspace, name),
+      `${Array.from({ length: 700 }, (_, index) => `untracked${index}`).join(" ")}\n`,
+    );
+    const blocked = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      allowance: 300,
+      ceiling: 5000,
+    });
+    expect(blocked.status).toBe("incomplete");
+    if (blocked.status !== "incomplete") return;
+    expect(blocked.content).toContain("higher allowance");
+    expect(getTokenCount(blocked.content)).toBeLessThanOrEqual(300);
+
+    const retried = await getWorkspaceReviewOutcome({
+      source: "untracked",
+      allowance: 5000,
+      ceiling: 5000,
+    });
+    expect(retried.status).toBe("success");
+    if (retried.status === "success")
+      expect(retried.content).toContain("untracked699");
+  });
+
   it("requires a restart when oversized untracked content changes while being hashed", async () => {
     const name = "mutating-oversized-untracked.txt";
     const target = path.join(context.workspace, name);
@@ -447,6 +473,219 @@ describe.skipIf(missing.length > 0)("workspace review CLI", () => {
     if (result.status === "success") {
       expect(result.content).not.toContain(source);
       expect(result.content).not.toContain(".gitignore");
+    }
+  });
+
+  it("shows both endpoints for an eligible staged rename", async () => {
+    const source = "eligible-rename-old.txt";
+    const destination = "eligible-rename-new.txt";
+    fs.writeFileSync(path.join(context.workspace, source), "rename content\n");
+    await context.fixtureGit(["add", "--", source]);
+    await context.fixtureGit(["commit", "-m", "ELIGIBLE_RENAME", "--", source]);
+    await context.fixtureGit(["mv", "--", source, destination]);
+
+    const result = await getWorkspaceReviewOutcome({
+      source: "staged",
+      allowance: 1000,
+      ceiling: 8000,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content).toContain(`"${source}" -> "${destination}"`);
+      expect(result.content).toContain("rename from eligible-rename-old.txt");
+      expect(result.content).toContain("rename to eligible-rename-new.txt");
+    }
+  });
+
+  it("conceals both endpoints when a rename starts at a restricted path", async () => {
+    const source = ".env";
+    const destination = "public-after-restricted-rename.txt";
+    await context.fixtureGit(["mv", "--", source, destination]);
+
+    const result = await getWorkspaceReviewOutcome({
+      source: "staged",
+      allowance: 1000,
+      ceiling: 8000,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content).not.toContain(source);
+      expect(result.content).not.toContain(destination);
+      expect(result.content).not.toContain("restricted-secret");
+    }
+  });
+
+  it("conceals both endpoints when a rename destination is spekta-ignored", async () => {
+    const source = "eligible-before-spekta-ignore.txt";
+    const destination = "spekta-ignored-rename-destination.txt";
+    fs.writeFileSync(path.join(context.workspace, source), "public content\n");
+    await context.fixtureGit(["add", "--", source]);
+    await context.fixtureGit([
+      "commit",
+      "-m",
+      "SPEKTA_IGNORED_RENAME",
+      "--",
+      source,
+    ]);
+    fs.writeFileSync(
+      path.join(context.workspace, ".spektaignore"),
+      `/${destination}\n`,
+    );
+    await context.fixtureGit(["mv", "--", source, destination]);
+
+    const result = await getWorkspaceReviewOutcome({
+      source: "staged",
+      allowance: 1000,
+      ceiling: 8000,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content).not.toContain(source);
+      expect(result.content).not.toContain(destination);
+    }
+  });
+
+  it("reports a real unmerged path as unavailable while reviewing eligible siblings", async () => {
+    const conflict = "review-unmerged-conflict.txt";
+    const sibling = "review-unmerged-sibling.txt";
+    const initialBranch = await context.fixtureGit([
+      "branch",
+      "--show-current",
+    ]);
+    fs.writeFileSync(path.join(context.workspace, conflict), "base\n");
+    await context.fixtureGit(["add", "--", conflict]);
+    await context.fixtureGit(["commit", "-m", "UNMERGED_BASE", "--", conflict]);
+    await context.fixtureGit(["branch", "review-unmerged-other"]);
+    fs.writeFileSync(path.join(context.workspace, conflict), "main side\n");
+    await context.fixtureGit(["commit", "-am", "UNMERGED_MAIN"]);
+    await context.fixtureGit(["checkout", "review-unmerged-other"]);
+    fs.writeFileSync(path.join(context.workspace, conflict), "other side\n");
+    await context.fixtureGit(["commit", "-am", "UNMERGED_OTHER"]);
+    await context.fixtureGit(["checkout", initialBranch]);
+    fs.writeFileSync(
+      path.join(context.workspace, sibling),
+      "eligible sibling\n",
+    );
+    await context.fixtureGit(["add", "--", sibling]);
+    await context.fixtureGit([
+      "commit",
+      "-m",
+      "UNMERGED_SIBLING",
+      "--",
+      sibling,
+    ]);
+    const merge = await execa(
+      "git",
+      ["merge", "--no-edit", "review-unmerged-other"],
+      { cwd: context.workspace, reject: false },
+    );
+    expect(merge.exitCode).not.toBe(0);
+    const mergeStatus = await context.fixtureGit([
+      "status",
+      "--porcelain=v1",
+      "-z",
+    ]);
+    expect(mergeStatus).toContain(`UU ${conflict}\0`);
+    fs.writeFileSync(
+      path.join(context.workspace, sibling),
+      "eligible sibling changed\n",
+    );
+
+    const result = await getWorkspaceReviewOutcome({
+      source: "unstaged",
+      allowance: 1500,
+      ceiling: 8000,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content).toContain("Coverage: incomplete");
+      expect(result.content).toContain("could not be displayed");
+      expect(result.content).toContain("eligible sibling changed");
+    }
+  });
+
+  it("reviews a modified source and its copy as separate tracked paths", async () => {
+    const source = "copy-source-review.txt";
+    const destination = "copy-destination-review.txt";
+    fs.writeFileSync(
+      path.join(context.workspace, source),
+      "original copy source\n",
+    );
+    await context.fixtureGit(["add", "--", source]);
+    await context.fixtureGit([
+      "commit",
+      "-m",
+      "COPY_REVIEW_BASE",
+      "--",
+      source,
+    ]);
+    fs.writeFileSync(
+      path.join(context.workspace, source),
+      "modified copy source\n",
+    );
+    fs.copyFileSync(
+      path.join(context.workspace, source),
+      path.join(context.workspace, destination),
+    );
+    await context.fixtureGit(["add", "--", source, destination]);
+    await context.fixtureGit(["config", "diff.relative", "true"]);
+
+    const result = await getWorkspaceReviewOutcome({
+      source: "staged",
+      allowance: 1200,
+      ceiling: 8000,
+    });
+
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content).toContain(source);
+      expect(result.content).toContain(destination);
+      expect(result.content).toContain("+modified copy source");
+      expect(result.content).not.toContain("could not be displayed");
+    }
+  });
+
+  it("resolves repository-relative manifests from a nested review workspace", async () => {
+    const nestedWorkspace = path.join(context.workspace, "nested-review-root");
+    const nestedFile = "nested-review-file.txt";
+    const outsideFile = "outside-nested-review.txt";
+    fs.ensureDirSync(nestedWorkspace);
+    fs.writeFileSync(path.join(nestedWorkspace, nestedFile), "nested before\n");
+    fs.writeFileSync(
+      path.join(context.workspace, outsideFile),
+      "outside before\n",
+    );
+    await context.fixtureGit(["add", "--", "nested-review-root", outsideFile]);
+    await context.fixtureGit([
+      "commit",
+      "-m",
+      "NESTED_WORKSPACE_BASE",
+      "--",
+      "nested-review-root",
+      outsideFile,
+    ]);
+    fs.writeFileSync(path.join(nestedWorkspace, nestedFile), "nested after\n");
+    fs.writeFileSync(
+      path.join(context.workspace, outsideFile),
+      "outside after\n",
+    );
+    await context.fixtureGit(["config", "diff.relative", "true"]);
+
+    const result = await getWorkspaceReviewOutcome(
+      { source: "unstaged", allowance: 1200, ceiling: 8000 },
+      { root: nestedWorkspace },
+    );
+
+    expect(result.status).toBe("success");
+    if (result.status === "success") {
+      expect(result.content).toContain(nestedFile);
+      expect(result.content).toContain("+nested after");
+      expect(result.content).not.toContain(outsideFile);
+      expect(result.content).not.toContain("outside after");
     }
   });
 
@@ -660,6 +899,71 @@ describe.skipIf(missing.length > 0)("workspace review CLI", () => {
     }
   });
 
+  it("reports CLI ceiling-blocked lines within the requested response budget", async () => {
+    const name = "cli-ceiling-blocked-line.txt";
+    const target = path.join(context.workspace, name);
+    fs.writeFileSync(target, "before\n");
+    await context.fixtureGit(["add", "--", name]);
+    await context.fixtureGit(["commit", "-m", "CLI_CEILING_BASE", "--", name]);
+    fs.writeFileSync(
+      target,
+      `before\n${"ceiling-blocked-line ".repeat(40000)}\n`,
+    );
+
+    vi.mocked(console.log).mockClear();
+    process.exitCode = undefined;
+    await runWorkspaceReview(["--source", "unstaged", "--allowance", "1000"]);
+    const cli = vi
+      .mocked(console.log)
+      .mock.calls.map(([value]) => String(value))
+      .join("\n");
+
+    expect(process.exitCode).toBe(1);
+    expect(getTokenCount(`${cli}\n`)).toBeLessThanOrEqual(1000);
+    expect(cli).toContain("Complete: no");
+    expect(cli).toContain("line remains unreviewed");
+    expect(cli).toContain("completion is unavailable through this operation");
+    expect(cli).toContain("Continuation: unavailable (no progress).");
+    expect(cli).not.toContain("ceiling-blocked-line ");
+  });
+
+  it("does not offer a continuation after a partial page reaches the ceiling", async () => {
+    const name = "partial-ceiling-page.txt";
+    const target = path.join(context.workspace, name);
+    fs.writeFileSync(target, "before\n");
+    await context.fixtureGit(["add", "--", name]);
+    await context.fixtureGit([
+      "commit",
+      "-m",
+      "PARTIAL_CEILING_BASE",
+      "--",
+      name,
+    ]);
+    fs.writeFileSync(
+      target,
+      `before\nsmall eligible change\n${"ceiling-blocked-line ".repeat(40000)}\n`,
+    );
+
+    const result = await getWorkspaceReviewOutcome({
+      source: "unstaged",
+      allowance: 1000,
+      ceiling: 1000,
+    });
+
+    expect(result.status).toBe("incomplete");
+    if (result.status === "incomplete") {
+      expect(result.content).toContain("Complete: no");
+      expect(result.content).toContain("+small eligible change");
+      expect(result.content).toContain(
+        "Continuation: unavailable (no progress).",
+      );
+      expect(result.content).toContain(
+        "completion is unavailable through this operation",
+      );
+      expect(getTokenCount(result.content)).toBeLessThanOrEqual(1000);
+    }
+  });
+
   it("identifies the unborn HEAD baseline and leaves repository state unchanged", async () => {
     const workspace = fs.mkdtempSync(
       path.join(os.tmpdir(), "spekta-review-unborn-"),
@@ -705,6 +1009,46 @@ describe.skipIf(missing.length > 0)("workspace review CLI", () => {
         "new tracked content\n",
       );
       await execa("git", ["add", "--", "staged.txt"], { cwd: workspace });
+      fs.writeFileSync(
+        path.join(workspace, "staged.txt"),
+        "new tracked content with unstaged edit\n",
+      );
+      fs.writeFileSync(
+        path.join(workspace, "untracked-before-first-commit.txt"),
+        "unborn untracked content\n",
+      );
+      const combined = await getWorkspaceReviewOutcome(
+        { source: "all", allowance: 1500, ceiling: 8000 },
+        { root: workspace },
+      );
+      expect(combined.status).toBe("success");
+      if (combined.status === "success") {
+        expect(combined.content).toContain("Baseline: unborn HEAD.");
+        expect(combined.content).toContain("## staged section");
+        expect(combined.content).toContain("## unstaged section");
+        expect(combined.content).toContain("## untracked section");
+        expect(combined.content).toContain("+new tracked content");
+        expect(combined.content).toContain(
+          "+new tracked content with unstaged edit",
+        );
+        expect(combined.content).toContain("unborn untracked content");
+      }
+
+      vi.spyOn(process, "cwd").mockReturnValue(workspace);
+      vi.mocked(console.log).mockClear();
+      process.exitCode = undefined;
+      await runWorkspaceReview(["--source", "all", "--allowance", "1500"]);
+      const cli = vi
+        .mocked(console.log)
+        .mock.calls.map(([value]) => String(value))
+        .join("\n");
+      expect(process.exitCode).toBeUndefined();
+      expect(getTokenCount(`${cli}\n`)).toBeLessThanOrEqual(1500);
+      expect(cli).toContain("Baseline: unborn HEAD.");
+      expect(cli).toContain("+new tracked content");
+      expect(cli).toContain("+new tracked content with unstaged edit");
+      expect(cli).toContain("unborn untracked content");
+
       const before = await execa("git", ["status", "--porcelain=v1", "-z"], {
         cwd: workspace,
       });
@@ -723,6 +1067,37 @@ describe.skipIf(missing.length > 0)("workspace review CLI", () => {
         cwd: workspace,
       });
       expect(after.stdout).toBe(before.stdout);
+
+      const pagedPath = path.join(workspace, "unborn-paged-review.txt");
+      fs.writeFileSync(
+        pagedPath,
+        `${Array.from({ length: 40 }, (_, index) => `unborn-page-${index}`).join("\n")}\n`,
+      );
+      const firstPage = await getWorkspaceReviewOutcome(
+        { source: "all", allowance: 300, ceiling: 8000 },
+        { root: workspace },
+      );
+      expect(firstPage.status).toBe("success");
+      if (firstPage.status !== "success") return;
+      expect(firstPage.content).toContain("Baseline: unborn HEAD.");
+      const continuation = /Continuation: ([a-f0-9]{24}:\d+:\d+)\./.exec(
+        firstPage.content,
+      )?.[1];
+      expect(continuation).toBeDefined();
+      if (!continuation) return;
+      fs.appendFileSync(pagedPath, "changed after first page\n");
+      const stale = await getWorkspaceReviewOutcome(
+        {
+          source: "all",
+          continuation,
+          allowance: 300,
+          ceiling: 8000,
+        },
+        { root: workspace },
+      );
+      expect(stale.status).toBe("failure");
+      if (stale.status === "failure")
+        expect(stale.message).toContain("restart the review");
     } finally {
       fs.removeSync(workspace);
     }

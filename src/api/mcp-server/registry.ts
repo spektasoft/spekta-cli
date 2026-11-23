@@ -189,6 +189,7 @@ const registry: Record<string, ToolRegistryEntry> = {
           16,
       );
       let bodyAllowance = Math.min(allowance, reviewBodyCeiling);
+      const callerAtReviewBodyCeiling = allowance >= reviewBodyCeiling;
       let outcome = await getWorkspaceReviewOutcome(
         {
           source: parsed.data.source,
@@ -218,7 +219,9 @@ const registry: Record<string, ToolRegistryEntry> = {
             source: parsed.data.source,
             continuation: parsed.data.continuation,
             allowance: bodyAllowance,
-            ceiling: reviewBodyCeiling,
+            ceiling: callerAtReviewBodyCeiling
+              ? bodyAllowance
+              : reviewBodyCeiling,
           },
           context,
         );
