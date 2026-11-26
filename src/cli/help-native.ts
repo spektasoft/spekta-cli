@@ -9,6 +9,35 @@ const topic = (
 ): HelpTopic => ({ title, purpose, usage, sections, examples, complete: true });
 
 export const NATIVE_HELP: Record<string, HelpTopic> = {
+  "workspace-review": topic(
+    "workspace-review — Review workspace changes",
+    "Page through eligible staged, unstaged, and untracked text changes without changing the repository.",
+    [
+      "spekta workspace-review [--source all|staged|unstaged|untracked] [--continuation TOKEN] [--allowance TOKENS]",
+      "spekta help workspace-review",
+    ],
+    [
+      {
+        heading: "Scope and continuation",
+        lines: [
+          "The default source is all; staged, unstaged, and eligible untracked changes are shown as separate sections, including when one tracked file has staged and unstaged changes.",
+          "Use the Continuation value from a response with Complete: no to retrieve the next page. Large text patches continue at line boundaries.",
+          "A continuation is tied to the selected review state, including binary patch content. If selected content changes, restart without a continuation.",
+          "Binary changes are identified without their contents. Complete reports delivery; Coverage reports when binary content remains unreviewed.",
+          "Sections Git cannot represent in this review format are marked unavailable and count as unreviewed coverage.",
+          "Untracked files are labeled separately. Restricted, ignored, sensitive, or out-of-workspace paths are omitted.",
+          "If one line cannot fit the response allowance, increase it up to the configured ceiling. If the line still cannot fit, the response marks it unreviewed, reports incomplete coverage, and states that completion is unavailable through this operation.",
+          "The response identifies HEAD as its baseline, or unborn HEAD before the first commit.",
+          "The complete rendered response must fit the configured Git response allowance.",
+        ],
+      },
+    ],
+    [
+      "spekta workspace-review",
+      "spekta workspace-review --source staged --allowance 2000",
+      "spekta workspace-review --continuation '<token from prior response>'",
+    ],
+  ),
   read: {
     title: "read — Read eligible workspace files",
     purpose:

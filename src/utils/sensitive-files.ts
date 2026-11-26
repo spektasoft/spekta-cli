@@ -8,7 +8,7 @@ const SENSITIVE_EXTENSIONS = [
   ".jks",
   ".keystore",
 ];
-const SENSITIVE_NAMES = [".npmrc", ".netrc", "credentials"];
+const SENSITIVE_NAMES = [".npmrc", ".netrc", "credentials", "id_rsa"];
 
 export function isSensitivePath(targetPath: string): boolean {
   const name = path.posix.basename(targetPath.replaceAll("\\", "/"));

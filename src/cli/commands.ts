@@ -21,6 +21,7 @@ import { runSync } from "../commands/sync";
 import { runWrite } from "../commands/write";
 import { runDiagnostic } from "../commands/diagnostic";
 import { runDiagnosticInteractive } from "../commands/diagnostic-interactive";
+import { runWorkspaceReview } from "../commands/workspace-review";
 import { runRtkProxy } from "../commands/proxy";
 import { searchableSelect } from "../ui/ui";
 import {
@@ -53,6 +54,10 @@ export const COMMANDS: Record<string, CommandDefinition> = {
   review: {
     name: "Run Git Review",
     run: runReview,
+  },
+  "workspace-review": {
+    name: "Review Workspace Changes",
+    run: runWorkspaceReview,
   },
   read: {
     name: "Read Files",

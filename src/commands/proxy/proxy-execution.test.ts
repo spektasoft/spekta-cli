@@ -268,6 +268,26 @@ describe("executeRtkCommand", () => {
     }
   });
 
+  it("keeps rename detection enabled by default for diff summaries", () => {
+    const invocation = prepareRtkInvocation("git", ["diff", "--name-only"]);
+
+    expect(invocation.args).toContain("--name-status");
+    expect(invocation.args).toContain("-M");
+    expect(invocation.args).not.toContain("--no-renames");
+  });
+
+  it("preserves explicit --no-renames for diff summaries", () => {
+    const invocation = prepareRtkInvocation("git", [
+      "diff",
+      "--name-only",
+      "--no-renames",
+    ]);
+
+    expect(invocation.args).toContain("--name-status");
+    expect(invocation.args).toContain("--no-renames");
+    expect(invocation.args).not.toContain("-M");
+  });
+
   it("routes ls through the raw RTK proxy listing", async () => {
     vi.mocked(execa).mockResolvedValueOnce({
       stdout: "listing",

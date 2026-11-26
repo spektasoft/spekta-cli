@@ -23,7 +23,13 @@ export const loadToolDefinitions = async (
     return cachedTools;
   }
 
-  const toolNames = ["read", "replace", "write", "rg"] as const;
+  const toolNames = [
+    "read",
+    "replace",
+    "write",
+    "rg",
+    "workspace-review",
+  ] as const;
   const tools: ToolDefinition[] = [];
 
   for (const name of toolNames) {

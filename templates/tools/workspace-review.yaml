@@ -1,0 +1,14 @@
+name: spekta_workspace_review
+description: |
+  Review eligible workspace text changes with bounded continuation. Staged, unstaged, and eligible untracked changes are reported separately. Large sections continue by complete lines. Binary changes are identified without exposing their contents and make review coverage explicitly incomplete. A line that cannot fit remains unreviewed and reports whether a higher allowance can help. Continuations are tied to the selected change state and require a restart if that state changes. Restricted, ignored, sensitive, and out-of-workspace paths are omitted.
+
+params:
+  source:
+    description: "Change source: all (default), staged, unstaged, or untracked."
+  continuation:
+    description: "Continuation token from the previous page. Restart the review if selected changes have changed."
+  allowance:
+    description: "Optional positive whole-number token allowance for the complete response, within the configured Git ceiling."
+
+xml_example: |
+  <workspace_review source="all" />
